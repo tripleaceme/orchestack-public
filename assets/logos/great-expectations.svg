@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Great Expectations">
+  <rect width="24" height="24" rx="5" fill="#FF6310"/>
+  <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+        font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11"
+        fill="#ffffff" letter-spacing="-0.2">GX</text>
+</svg>

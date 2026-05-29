@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-team dev schemas with dbt Core — OrcheStack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="../../index.html" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div class="docs-search">
+        <input type="text" placeholder="Search the docs...">
+        <span class="kbd">⌘K</span>
+      </div>
+      <ul>
+        <li><a class="nav-link" href="../../docs/install.html">Get started</a></li>
+        <li><a class="nav-link" href="../../services.html">Services</a></li>
+        <li><a class="nav-link active" href="../index.html">Docs</a></li>
+        <li><a class="nav-link" href="#">Blog</a></li>
+        <li><a class="nav-link" href="../../contact.html">Contact</a></li>
+      </ul>
+      <div class="cta">
+        <span class="nav-social">
+          <a class="nav-icon" href="#" aria-label="Discord" title="Discord">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.07.07 0 0 0-.073.035c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.07.07 0 0 0-.073-.035A19.74 19.74 0 0 0 3.683 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.055 19.9 19.9 0 0 0 5.993 3.03.07.07 0 0 0 .076-.027c.461-.63.873-1.295 1.226-1.995a.07.07 0 0 0-.038-.098 13.1 13.1 0 0 1-1.872-.892.07.07 0 0 1-.007-.116c.126-.094.252-.192.372-.291a.07.07 0 0 1 .073-.01c3.927 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .074.009c.12.099.246.198.373.292a.07.07 0 0 1-.006.116 12.3 12.3 0 0 1-1.873.891.07.07 0 0 0-.037.099c.36.7.772 1.365 1.225 1.994a.07.07 0 0 0 .076.028 19.84 19.84 0 0 0 6.002-3.03.07.07 0 0 0 .032-.054c.5-5.177-.838-9.674-3.548-13.66a.06.06 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+          </a>
+          <a class="nav-icon" href="#" aria-label="GitHub" title="GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.2 11.39.6.11.8-.26.8-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.17 0 0 1-.32 3.3 1.23.96-.27 1.98-.4 3-.41 1.02.01 2.04.14 3 .41 2.3-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.91 1.24 3.22 0 4.62-2.81 5.64-5.49 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.2.69.81.57 4.76-1.58 8.19-6.08 8.19-11.38C24 5.87 18.63.5 12 .5z"/></svg>
+          </a>
+        </span>
+        <a class="btn btn-primary btn-sm" href="../../docs/install.html">Get started</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="docs-layout">
+
+  <aside class="docs-sidebar">
+    <div class="group">
+      <div class="group-title">Get started</div>
+      <ul>
+        <li><a href="../index.html">Overview</a></li>
+        <li><a href="../install.html">Step 1 — Install OrcheStack</a></li>
+        <li><a href="../signup.html">Step 2 — Sign up</a></li>
+        <li><a href="../configure.html">Step 3 — Configure services</a></li>
+        <li><a href="../first-pipeline.html">Step 4 — Run first pipeline</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Concepts</div>
+      <ul>
+        <li><a href="../architecture.html">Architecture</a></li>
+        <li><a href="../hot-cold-tiers.html">Hot & cold tiers</a></li>
+        <li><a href="../roles-permissions.html">Roles & permissions</a></li>
+        <li><a href="../sessions.html">Service sessions</a></li>
+        <li><a href="../account-management.html">Account management</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Guides</div>
+      <ul>
+        <li><a href="dbt-to-github.html">Pushing your dbt project to GitHub</a></li>
+        <li><a class="active" href="dbt-dev-schemas.html">Multi-team dev schemas with dbt</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Services</div>
+      <ul>
+        <li><a href="../services/airbyte.html">Airbyte</a></li>
+        <li><a href="../services/airflow.html">Apache Airflow</a></li>
+        <li><a href="../services/dbt.html">dbt Core</a></li>
+        <li><a href="../services/postgres.html">PostgreSQL</a></li>
+        <li><a href="../services/minio.html">MinIO</a></li>
+        <li><a href="../services/metabase.html">Metabase</a></li>
+        <li><a href="../services/openmetadata.html">OpenMetadata</a></li>
+        <li><a href="../services/great-expectations.html">Great Expectations</a></li>
+        <li><a href="../services/pgadmin.html">pgAdmin</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Operations</div>
+      <ul>
+        <li><a href="../credentials.html">Managing credentials</a></li>
+        <li><a href="../backup-restore.html">Backup & restore</a></li>
+        <li><a href="../upgrading.html">Upgrading OrcheStack</a></li>
+        <li><a href="../troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Reference</div>
+      <ul>
+        <li><a href="../cli.html">CLI commands</a></li>
+        <li><a href="../api.html">REST API</a></li>
+        <li><a href="../compose-reference.html">docker-compose reference</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="docs-main">
+    <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Guides</a> › Multi-team dev schemas</div>
+    <h1>Multi-team dev schemas with dbt Core</h1>
+    <p class="lede">Without per-developer schemas, every dbt run overwrites production tables. Here's the pattern most mature analytics teams use, adapted to OrcheStack's single-PostgreSQL setup.</p>
+
+<h2 id="the-problem">The problem</h2>
+<p>Picture this without dev schemas: three engineers all run <code class="inline">dbt run</code> pointing at the production <code class="inline">marts</code> schema. Alice iterates on a new <code class="inline">fct_orders</code> model; Bob starts a migration on the same model; Ayoade builds a dashboard that queries it. At any given moment, nobody knows whether <code class="inline">marts.fct_orders</code> contains Alice's version, Bob's migration, or the last version that actually worked. Metabase dashboards break. Analysts see inconsistent numbers. The team blames each other instead of the toolchain.</p>
+<p>The root cause: everyone writing to the same schema. Fix: give each developer their own schema.</p>
+
+<h2 id="the-pattern">The dev-schema pattern</h2>
+<p>Each engineer gets a personal schema in the warehouse — <code class="inline">dev_ayoade</code>, <code class="inline">dev_alice</code>, <code class="inline">dev_bob</code>. They run dbt locally with <code class="inline">--target dev</code>, which writes to that personal schema. Production runs happen via OrcheStack's nightly DAG using <code class="inline">--target prod</code>, which writes to the shared <code class="inline">marts</code> schema.</p>
+<p>Flow:</p>
+<pre>LOCAL  : Alice → dbt run --target dev → writes to dev_alice.fct_orders
+LOCAL  : Bob   → dbt run --target dev → writes to dev_bob.fct_orders
+PROD   : DAG   → dbt run --target prod → writes to marts.fct_orders  (merged code)</pre>
+<p>Metabase, OpenMetadata, and stakeholders only look at <code class="inline">marts</code>. Nothing they see moves unless a PR merges to <code class="inline">main</code> and the nightly DAG runs.</p>
+
+<h2 id="admin-setup">Admin creates the dev schemas</h2>
+<p>From pgAdmin (or psql on the host), the platform admin runs this once per engineer:</p>
+<pre>-- Create a personal dev schema for each engineer
+CREATE SCHEMA dev_ayoade AUTHORIZATION dbt_user;
+CREATE SCHEMA dev_alice  AUTHORIZATION dbt_user;
+CREATE SCHEMA dev_bob    AUTHORIZATION dbt_user;
+
+-- Grant the dbt_user full control over each schema
+GRANT ALL ON SCHEMA dev_ayoade TO dbt_user;
+GRANT ALL ON SCHEMA dev_alice  TO dbt_user;
+GRANT ALL ON SCHEMA dev_bob    TO dbt_user;
+
+-- Optionally grant read access to analysts for inspection
+GRANT USAGE ON SCHEMA dev_ayoade TO analyst_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA dev_ayoade TO analyst_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
+  GRANT SELECT ON TABLES TO analyst_user;</pre>
+<div class="callout">
+  <p><strong>Smaller team alternative.</strong> If you have 1–2 engineers, a single shared <code class="inline">dev_marts</code> schema is fine. The dbt convention scales up later — you only need per-person schemas when conflicts actually happen.</p>
+</div>
+
+<h2 id="developer-profile">Each developer's profiles.yml</h2>
+<p>Each engineer puts a <code class="inline">profiles.yml</code> on their laptop at <code class="inline">~/.dbt/profiles.yml</code> (or in the project root — dbt finds both). The file is per-machine; never commit it.</p>
+<pre>OrcheStack:
+  target: dev                    # default when you just type 'dbt run'
+  outputs:
+    dev:
+      type: postgres
+      host: OrcheStack.acme.ng     # or the IP / localhost for self-host
+      user: dbt_user
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      port: 5432
+      dbname: OrcheStack
+      schema: dev_ayoade         # ← your personal schema
+      threads: 4
+    prod:
+      type: postgres
+      host: OrcheStack.acme.ng
+      user: dbt_user
+      password: "{{ env_var('DBT_PASSWORD') }}"
+      port: 5432
+      dbname: OrcheStack
+      schema: marts              # ← shared production schema
+      threads: 8</pre>
+<p>Each engineer replaces <code class="inline">dev_ayoade</code> with their own schema name.</p>
+<p>Set <code class="inline">DBT_PASSWORD</code> in your shell's <code class="inline">.env</code> or <code class="inline">~/.bashrc</code> — never paste it into profiles.yml directly.</p>
+
+<h2 id="local-workflow">Local development workflow</h2>
+<p>Once the profile is configured, the daily loop is:</p>
+<pre># Iterate on your model — writes to dev_ayoade.fct_orders
+dbt run --select fct_orders
+
+# Test it locally against your dev data
+dbt test --select fct_orders
+
+# When you're happy, push to a branch
+git checkout -b feature/new-orders-mart
+git commit -am "Refactor fct_orders to include returns"
+git push origin feature/new-orders-mart</pre>
+<p>Notice: you never typed <code class="inline">--target prod</code>. Default is <code class="inline">dev</code>. Production is unreachable by accident.</p>
+
+<h2 id="promote-to-prod">Promoting to production</h2>
+<p>Open a pull request on GitHub. The team reviews the model — was the transformation right? Did tests pass?</p>
+<p>Once merged to <code class="inline">main</code>, the next OrcheStack nightly DAG run does:</p>
+<pre>git pull origin main
+dbt build --target prod</pre>
+<p>Which rebuilds <code class="inline">marts.fct_orders</code> with the new code. Metabase dashboards refresh on their own cadence and show the new data.</p>
+<p>If the DAG fails (tests didn't pass against real data, for example), <code class="inline">marts.fct_orders</code> stays unchanged — Metabase keeps showing the last good version until someone fixes and re-merges. Failing safely is the whole point.</p>
+
+<h2 id="naming">Naming conventions</h2>
+<table>
+  <thead><tr><th>Schema name</th><th>Purpose</th><th>Who writes</th></tr></thead>
+  <tbody>
+    <tr><td><code class="inline">marts</code></td><td>Production — what stakeholders see</td><td>The nightly DAG, from merged main</td></tr>
+    <tr><td><code class="inline">raw</code></td><td>Airbyte-landed raw data</td><td>Airbyte only</td></tr>
+    <tr><td><code class="inline">dev_&lt;username&gt;</code></td><td>Personal development schema</td><td>That engineer</td></tr>
+    <tr><td><code class="inline">staging_&lt;ticket&gt;</code></td><td>Shared WIP for a multi-person feature</td><td>Feature team</td></tr>
+    <tr><td><code class="inline">test_&lt;something&gt;</code></td><td>CI test runs (ephemeral)</td><td>CI pipelines, auto-dropped after</td></tr>
+  </tbody>
+</table>
+
+<h2 id="gotchas">Gotchas</h2>
+<ul>
+  <li><strong>profiles.yml in the repo.</strong> Do not commit it. Commit <code class="inline">profiles.yml.example</code> as a template and list <code class="inline">profiles.yml</code> in <code class="inline">.gitignore</code>.</li>
+  <li><strong>Forgotten dev schemas.</strong> Old engineers leave; their dev schemas accumulate. Periodically run <code class="inline">DROP SCHEMA dev_&lt;leaver&gt; CASCADE;</code>.</li>
+  <li><strong>Running <code class="inline">--target prod</code> locally by mistake.</strong> Painful when it happens. Defend against it by giving the dbt_user only SELECT on <code class="inline">marts</code> for developer-facing PostgreSQL roles; the nightly DAG uses a different user with write access.</li>
+  <li><strong>Schema per branch</strong> (Snowflake-only pattern) doesn't translate to PostgreSQL. Stick with per-engineer schemas.</li>
+</ul>
+
+    <div class="next-prev">
+      <a href="dbt-to-github.html">
+        <span class="dir">← Previous</span>
+        <span class="title">Pushing your dbt project to GitHub</span>
+      </a>
+      <a class="next" href="../services/airbyte.html">
+        <span class="dir">Next</span>
+        <span class="title">Airbyte →</span>
+      </a>
+    </div>
+  </main>
+
+  <aside class="docs-toc">
+    <div class="toc-title">On this page</div>
+    <ul>
+      <li><a class="active" href="#the-problem">The problem</a></li>
+      <li><a href="#the-pattern">The dev-schema pattern</a></li>
+      <li><a href="#admin-setup">Admin creates the dev schemas</a></li>
+      <li><a href="#developer-profile">Each developer's profiles.yml</a></li>
+      <li><a href="#local-workflow">Local development workflow</a></li>
+      <li><a href="#promote-to-prod">Promoting to production</a></li>
+      <li><a href="#naming">Naming conventions</a></li>
+      <li><a href="#gotchas">Gotchas</a></li>
+    </ul>
+  </aside>
+
+</div>
+
+</body>
+</html>

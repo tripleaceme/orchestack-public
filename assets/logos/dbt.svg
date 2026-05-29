@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="dbt">
+  <rect width="24" height="24" rx="5" fill="#FF694A"/>
+  <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central"
+        font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10"
+        fill="#ffffff" letter-spacing="-0.2">dbt</text>
+</svg>

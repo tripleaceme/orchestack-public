@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pick your tools — OrcheStack setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="https://OrcheStack.africa" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div class="cta">
+        <span class="muted" style="font-size:13.5px">Signed in as <strong style="color:var(--navy)">ayoade@acme.ng</strong></span>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="setup-wrap">
+  <div class="setup-card">
+    <div class="eyebrow">Step 2 of 4</div>
+    <div class="step-indicator">
+      <span>Progress</span>
+      <span class="dots">
+        <span class="dot done"></span>
+        <span class="dot active"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </span>
+    </div>
+
+    <h1>Pick your tools</h1>
+    <p class="sub">
+      Choose one tool per pipeline layer. Defaults are battle-tested — pick them if you're unsure.
+      Options marked <strong style="color:var(--accent)">(coming soon)</strong> are on our roadmap but
+      not supported in this release.
+    </p>
+
+    <form id="picker-form" action="configure.html" method="GET" novalidate>
+      <div class="picker">
+
+        <div class="picker-row">
+          <div class="label">Ingestion<small>Pulls data from sources</small></div>
+          <select name="ingestion">
+            <option selected>Airbyte  (recommended)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Orchestration<small>Required — schedules every run</small></div>
+          <select name="orchestration" disabled>
+            <option selected>Apache Airflow  (core)</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Warehouse<small>Structured analytics store</small></div>
+          <select name="warehouse">
+            <option selected>PostgreSQL  (recommended)</option>
+            <option data-coming-soon="true">ClickHouse  (coming soon)</option>
+            <option data-coming-soon="true">DuckDB  (coming soon)</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Data lake<small>Open end for ML / DS (optional)</small></div>
+          <select name="lake">
+            <option selected>MinIO  (recommended)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Transformation<small>SQL models → marts</small></div>
+          <select name="transformation">
+            <option selected>dbt Core  (recommended)</option>
+            <option data-coming-soon="true">SQLMesh  (coming soon)</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Data quality<small>Assertions on your marts</small></div>
+          <select name="quality">
+            <option selected>Great Expectations  (recommended)</option>
+            <option data-coming-soon="true">Soda Core  (coming soon)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Governance<small>Lineage + data catalogue</small></div>
+          <select name="governance">
+            <option selected>OpenMetadata  (recommended)</option>
+            <option data-coming-soon="true">DataHub  (coming soon)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">BI / Visualisation<small>Dashboards for stakeholders</small></div>
+          <select name="bi">
+            <option selected>Metabase  (recommended)</option>
+            <option data-coming-soon="true">Apache Superset  (coming soon)</option>
+            <option data-coming-soon="true">Lightdash  (coming soon)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+        <div class="picker-row">
+          <div class="label">Database admin UI<small>Web SQL client for engineers</small></div>
+          <select name="admin_ui">
+            <option selected>pgAdmin  (recommended)</option>
+            <option data-coming-soon="true">Adminer  (coming soon)</option>
+            <option data-coming-soon="true">pgweb  (coming soon)</option>
+            <option>None</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="selection-summary" id="summary">
+        <strong>Your stack</strong>
+        <span id="summary-text">Airbyte, Apache Airflow, PostgreSQL, MinIO, dbt Core, Great Expectations, OpenMetadata, Metabase, pgAdmin</span>
+      </div>
+
+      <div class="setup-nav">
+        <a class="btn btn-ghost" href="welcome.html">← Back</a>
+        <div class="spacer"></div>
+        <button type="submit" class="btn btn-primary">Continue →</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<!-- ==================== Coming-soon modal ==================== -->
+<div class="modal-overlay" id="cs-overlay" role="dialog" aria-modal="true" aria-labelledby="cs-title" aria-hidden="true">
+  <div class="modal">
+    <span class="badge-cs">Coming soon</span>
+    <h2 id="cs-title">ClickHouse is on the roadmap</h2>
+    <p class="modal-sub" id="cs-body">
+      We're working on bringing <strong id="cs-tool">ClickHouse</strong> to OrcheStack. For now, please
+      use <strong id="cs-recommended">PostgreSQL</strong> — here's why we recommend it:
+    </p>
+    <div class="reasons-title" id="cs-reasons-title">Why PostgreSQL is the best choice today</div>
+    <ul class="reasons" id="cs-reasons"></ul>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" id="cs-ok">Got it — use the recommended</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ============================================================
+  // State + helpers
+  // ============================================================
+  const STORAGE_KEY = 'OrcheStack.setup';
+
+  const form = document.getElementById('picker-form');
+  const summary = document.getElementById('summary-text');
+
+  // Strip "(recommended)", "(core)", "(coming soon)" etc. from option text.
+  // Regex handles single OR double space before the parenthesis — more
+  // forgiving than a simple split.
+  function cleanName(val) {
+    return String(val).replace(/\s+\(.*?\)\s*$/, '').trim();
+  }
+
+  // Find the recommended option for a given select (the one marked "(recommended)"
+  // or "(core)" — or the first option as a fallback).
+  function findRecommendedOption(select) {
+    for (const opt of select.options) {
+      const t = opt.textContent || '';
+      if (/\(recommended\)/i.test(t) || /\(core\)/i.test(t)) return opt;
+    }
+    return select.options[0];
+  }
+
+  function updateSummary() {
+    const picks = [];
+    form.querySelectorAll('select').forEach(s => {
+      const val = cleanName(s.value);
+      if (val && val !== 'None') picks.push(val);
+    });
+    summary.textContent = picks.join(', ');
+  }
+
+  // ============================================================
+  // Why-recommended reasoning per layer (for the modal)
+  // ============================================================
+  const RECOMMENDATIONS = {
+    warehouse: {
+      recommended: "PostgreSQL",
+      reasons: [
+        "30+ years in production — the world's most deployed open-source database",
+        "Largest community of any database: 100k+ Stack Overflow answers, extensive docs and tutorials",
+        "Works out of the box with every OrcheStack component (dbt, Metabase, Airflow, OpenMetadata)",
+        "Handles 95% of SME analytical workloads — ClickHouse shines above ~1 TB, DuckDB is for local single-user analysis",
+      ],
+    },
+    transformation: {
+      recommended: "dbt Core",
+      reasons: [
+        "The industry standard for analytics engineering — used by 1000+ data teams worldwide",
+        "500+ community packages on dbt Hub for tests, macros, and connector integrations",
+        "Richest learning resources: dbt Fundamentals course, certifications, countless community tutorials",
+        "SQLMesh is promising but its ecosystem and package library are much younger",
+      ],
+    },
+    quality: {
+      recommended: "Great Expectations",
+      reasons: [
+        "The most established open-source data quality framework — 8+ years in production",
+        "Hundreds of pre-built expectations and integrations with dbt, Airflow, and pandas",
+        "Active Slack community, detailed documentation, rich tutorial content",
+        "Soda Core is simpler but has fewer features and a smaller ecosystem",
+      ],
+    },
+    governance: {
+      recommended: "OpenMetadata",
+      reasons: [
+        "Purpose-built for the modern data stack with native connectors for dbt, Airbyte, and Metabase",
+        "Lighter to operate than DataHub — single PostgreSQL + Elasticsearch vs a multi-service stack",
+        "Rapid development with a transparent roadmap and an active Slack community",
+        "DataHub is more mature at LinkedIn-scale enterprises, but heavier than most SMEs need",
+      ],
+    },
+    bi: {
+      recommended: "Metabase",
+      reasons: [
+        "The friendliest BI tool for non-technical users — ask questions via a query builder, no SQL required",
+        "Massive community and extensive onboarding documentation for stakeholders",
+        "Deploys as a single container with no extra services required",
+        "Superset is more powerful but requires more technical setup; Lightdash requires dbt expertise first",
+      ],
+    },
+    admin_ui: {
+      recommended: "pgAdmin",
+      reasons: [
+        "The official PostgreSQL administration tool, maintained by the PostgreSQL project itself",
+        "Full-featured: ERD views, query plans, server stats, backup helpers",
+        "The most documented Postgres admin tool — every tutorial online uses it",
+        "Adminer is lighter (~50 MB vs ~500 MB) but less approachable; pgweb is read-only",
+      ],
+    },
+  };
+
+  // ============================================================
+  // Coming-soon modal wiring
+  // ============================================================
+  const overlay = document.getElementById('cs-overlay');
+  const csTitle = document.getElementById('cs-title');
+  const csToolEl = document.getElementById('cs-tool');
+  const csRecommendedEl = document.getElementById('cs-recommended');
+  const csReasonsTitle = document.getElementById('cs-reasons-title');
+  const csReasons = document.getElementById('cs-reasons');
+  const csOk = document.getElementById('cs-ok');
+
+  let pendingSelect = null;  // the <select> to revert after user dismisses modal
+
+  function showComingSoonModal(select, pickedTool) {
+    const layer = select.name;
+    const rec = RECOMMENDATIONS[layer];
+    if (!rec) return;   // defensive — shouldn't happen for configured layers
+
+    csTitle.textContent = `${pickedTool} is on the roadmap`;
+    csToolEl.textContent = pickedTool;
+    csRecommendedEl.textContent = rec.recommended;
+    csReasonsTitle.textContent = `Why ${rec.recommended} is the best choice today`;
+    csReasons.innerHTML = rec.reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('');
+
+    pendingSelect = select;
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+    csOk.focus();
+  }
+
+  function closeComingSoonModal() {
+    overlay.classList.remove('show');
+    overlay.setAttribute('aria-hidden', 'true');
+    // Revert the pending select to its recommended option.
+    if (pendingSelect) {
+      const rec = findRecommendedOption(pendingSelect);
+      if (rec) pendingSelect.value = rec.value;
+      pendingSelect = null;
+      updateSummary();
+    }
+  }
+
+  csOk.addEventListener('click', closeComingSoonModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeComingSoonModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay.classList.contains('show')) closeComingSoonModal();
+  });
+
+  // Attach change handler to every select — if the chosen option is marked
+  // data-coming-soon="true", show the educational modal.
+  form.querySelectorAll('select').forEach(s => {
+    s.addEventListener('change', () => {
+      const opt = s.selectedOptions[0];
+      if (opt && opt.dataset.comingSoon === 'true') {
+        showComingSoonModal(s, cleanName(opt.textContent));
+      }
+      updateSummary();
+    });
+  });
+
+  // ============================================================
+  // Persistence: restore previous choices, save on submit
+  // ============================================================
+  function restore() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw).selections || {};
+      Object.entries(data).forEach(([key, stored]) => {
+        const sel = form.querySelector(`[name="${key}"]`);
+        if (!sel) return;
+        for (const opt of sel.options) {
+          if (cleanName(opt.textContent) === stored) { sel.value = opt.value; break; }
+        }
+      });
+    } catch (e) { /* ignore malformed storage */ }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const selections = {};
+    form.querySelectorAll('select').forEach(s => {
+      selections[s.name] = cleanName(s.value);
+    });
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    existing.selections = selections;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    window.location.href = 'configure.html';
+  });
+
+  // ============================================================
+  // Utilities
+  // ============================================================
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  restore();
+  updateSummary();
+</script>
+
+</body>
+</html>

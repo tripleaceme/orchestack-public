@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OrcheStack — A cost-effective open-source data platform for Nigerian organisations</title>
+  <meta name="description" content="Deploy a complete modern data stack in minutes. Pick your tools, sign up, run your first pipeline — all on a single host.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="index.html" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <ul>
+        <li><a class="nav-link" href="docs/install.html">Get started</a></li>
+        <li><a class="nav-link" href="services.html">Services</a></li>
+        <li><a class="nav-link" href="docs/index.html">Docs</a></li>
+        <li><a class="nav-link" href="#">Blog</a></li>
+        <li><a class="nav-link" href="contact.html">Contact</a></li>
+      </ul>
+      <div class="cta">
+        <span class="nav-social">
+          <a class="nav-icon" href="#" aria-label="Discord" title="Discord">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.07.07 0 0 0-.073.035c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.07.07 0 0 0-.073-.035A19.74 19.74 0 0 0 3.683 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.055 19.9 19.9 0 0 0 5.993 3.03.07.07 0 0 0 .076-.027c.461-.63.873-1.295 1.226-1.995a.07.07 0 0 0-.038-.098 13.1 13.1 0 0 1-1.872-.892.07.07 0 0 1-.007-.116c.126-.094.252-.192.372-.291a.07.07 0 0 1 .073-.01c3.927 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .074.009c.12.099.246.198.373.292a.07.07 0 0 1-.006.116 12.3 12.3 0 0 1-1.873.891.07.07 0 0 0-.037.099c.36.7.772 1.365 1.225 1.994a.07.07 0 0 0 .076.028 19.84 19.84 0 0 0 6.002-3.03.07.07 0 0 0 .032-.054c.5-5.177-.838-9.674-3.548-13.66a.06.06 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+          </a>
+          <a class="nav-icon" href="#" aria-label="GitHub" title="GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.2 11.39.6.11.8-.26.8-.58v-2.02c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.17 0 0 1-.32 3.3 1.23.96-.27 1.98-.4 3-.41 1.02.01 2.04.14 3 .41 2.3-1.55 3.3-1.23 3.3-1.23.66 1.65.24 2.87.12 3.17.77.84 1.24 1.91 1.24 3.22 0 4.62-2.81 5.64-5.49 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.2.69.81.57 4.76-1.58 8.19-6.08 8.19-11.38C24 5.87 18.63.5 12 .5z"/></svg>
+          </a>
+        </span>
+        <a class="btn btn-primary btn-sm" href="docs/install.html">Get started</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <!--
+    Animated hero background: tool logos drift slowly while small
+    brand-coloured dots fade along short paths, suggesting data moving
+    through the stack. All behind the hero copy at low opacity so text
+    readability wins.
+  -->
+  <div class="hero-bg" aria-hidden="true">
+    <div class="hero-bg-logo l1"><img src="assets/logos/airbyte.svg" alt=""></div>
+    <div class="hero-bg-logo l2"><img src="assets/logos/postgresql.svg" alt=""></div>
+    <div class="hero-bg-logo l3"><img src="assets/logos/airflow.svg" alt=""></div>
+    <div class="hero-bg-logo l4"><img src="assets/logos/dbt.svg" alt=""></div>
+    <div class="hero-bg-logo l5"><img src="assets/logos/minio.svg" alt=""></div>
+    <div class="hero-bg-logo l6"><img src="assets/logos/metabase.svg" alt=""></div>
+    <div class="hero-bg-logo l7"><img src="assets/logos/great-expectations.svg" alt=""></div>
+    <span class="hero-bg-dot d1"></span>
+    <span class="hero-bg-dot d2"></span>
+    <span class="hero-bg-dot d3"></span>
+    <span class="hero-bg-dot d4"></span>
+    <span class="hero-bg-dot d5"></span>
+    <span class="hero-bg-dot d6"></span>
+  </div>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <h1>Deploy a complete open-source data stack in minutes.</h1>
+        <p class="sub">OrcheStack is a cost-effective, containerised data platform built for Nigerian organisations. Pick one tool per pipeline layer, sign up, and your modern data infrastructure is ready — no cloud bills, no vendor lock-in.</p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="docs/install.html">Get started →</a>
+          <a class="btn btn-secondary" href="docs/index.html">View documentation</a>
+        </div>
+        <div class="muted" style="font-size:13px">Only the control plane runs at install. Services pull and start when you configure them.</div>
+      </div>
+      <div class="terminal" aria-hidden="true">
+        <div class="row"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span></div>
+        <div><span class="prompt">$</span> docker compose up -d OrcheStack
+          <span class="out">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
+          <span class="out" style="color:#b6c2cc">Ready at http://localhost. Sign up to configure your stack.</span>
+        </div>
+        <div style="margin-top:10px"><span class="prompt">$</span> # open http://localhost — sign up, pick services,
+          <span class="out">#   OrcheStack pulls and starts only what you enabled.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline" class="pipeline-section">
+  <div class="wrap">
+    <div class="pipeline-head">
+      <div class="section-eyebrow">The stack</div>
+      <h2 class="section-title">End-to-end modern data pipeline in minutes.</h2>
+      <p class="section-sub">From ingestion through transformation and storage to visualization — in minutes. These are OrcheStack's tested defaults; pick alternatives for any layer during setup.</p>
+      <p class="pipeline-note muted">(More connectors, warehouses and BI tools coming soon ✌)</p>
+    </div>
+
+    <div class="pipeline-diagram">
+      <!--
+        CSS grid lays out four rows of bands. Arrows are absolutely-positioned
+        in the gutter between grid cells so they don't disturb layout.
+        Each <div class="pipe-band"> is label-strip + white body.
+      -->
+      <div class="pipe-cell area-orch">
+        <div class="pipe-band label-orch">
+          <div class="pipe-band-label">Orchestrator</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/airflow.svg" alt="Apache Airflow logo" loading="lazy">
+              Apache Airflow
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-cell area-transf">
+        <div class="pipe-band label-transf">
+          <div class="pipe-band-label">Transformation</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/dbt.svg" alt="dbt logo" loading="lazy">
+              dbt Core
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-plus" aria-hidden="true"><span>+</span></div>
+
+      <div class="pipe-cell area-qual">
+        <div class="pipe-band label-qual">
+          <div class="pipe-band-label">Data quality</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/great-expectations.svg" alt="Great Expectations logo" loading="lazy">
+              Great Expectations
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-cell area-sources">
+        <div class="pipe-band label-sources">
+          <div class="pipe-band-label">Data sources</div>
+          <div class="pipe-band-body">
+            <div class="pipe-sources-copy">
+              <strong>350+ sources</strong>
+              APIs, CSV, database,<br>Stripe, Sheets…
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-cell area-ingest">
+        <div class="pipe-band label-ingest">
+          <div class="pipe-band-label">Ingestion</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/airbyte.svg" alt="Airbyte logo" loading="lazy">
+              Airbyte
+            </span>
+          </div>
+        </div>
+        <span class="pipe-arrow-right" aria-hidden="true">→</span>
+      </div>
+
+      <div class="pipe-cell area-storage">
+        <div class="pipe-band label-storage">
+          <div class="pipe-band-label">Storage</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/postgresql.svg" alt="PostgreSQL logo" loading="lazy">
+              PostgreSQL
+            </span>
+          </div>
+        </div>
+        <span class="pipe-arrow-right" aria-hidden="true">→</span>
+        <span class="pipe-arrow-down" aria-hidden="true">↕</span>
+      </div>
+
+      <div class="pipe-cell area-viz">
+        <div class="pipe-band label-viz">
+          <div class="pipe-band-label">Visualization</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/metabase.svg" alt="Metabase logo" loading="lazy">
+              Metabase
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-cell area-lake">
+        <div class="pipe-band label-lake">
+          <div class="pipe-band-label">Data lake</div>
+          <div class="pipe-band-body">
+            <span class="pipe-tool">
+              <img src="assets/logos/minio.svg" alt="MinIO logo" loading="lazy">
+              MinIO
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="pipeline-footer muted">
+      Swap any layer at install — Superset or Lightdash for BI, ClickHouse or DuckDB for warehouse, SQLMesh for transforms, Soda Core for quality. <a href="services.html">See all supported tools →</a>
+    </p>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-eyebrow">Architecture</div>
+    <h2 class="section-title">Lazy-pull, resource-aware by default.</h2>
+    <p class="section-sub">Install ships minimal. Services pull and start only when you enable them. Hot-tier services stay running for stakeholders. Cold-tier services spin up on schedule or on click, then shut down when idle.</p>
+
+    <div class="arch">
+      <div class="tier">
+        <div class="tier-head">
+          <span class="chip chip-base">Base install</span>
+          <span class="tier-desc">Ships with every OrcheStack container — runs from day zero</span>
+        </div>
+        <div class="chips-row">
+          <span class="svc-chip">Reverse Proxy</span>
+          <span class="svc-chip">Front-facing site</span>
+          <span class="svc-chip">Streamlit UI</span>
+          <span class="svc-chip">PostgreSQL</span>
+          <span class="svc-chip">Service Orchestrator</span>
+        </div>
+      </div>
+      <div class="tier">
+        <div class="tier-head">
+          <span class="chip chip-hot">Hot tier</span>
+          <span class="tier-desc">Pulled on configure — stays running while enabled</span>
+        </div>
+        <div class="chips-row">
+          <span class="svc-chip">MinIO</span>
+          <span class="svc-chip">Metabase</span>
+          <span class="svc-chip">Airflow scheduler</span>
+        </div>
+      </div>
+      <div class="tier">
+        <div class="tier-head">
+          <span class="chip chip-cold">Cold tier</span>
+          <span class="tier-desc">Pulled on configure — starts on demand, stops when idle</span>
+        </div>
+        <div class="chips-row">
+          <span class="svc-chip">Airbyte</span>
+          <span class="svc-chip">Airflow workers</span>
+          <span class="svc-chip">dbt Core</span>
+          <span class="svc-chip">Great Expectations</span>
+          <span class="svc-chip">Elementary</span>
+          <span class="svc-chip">pgAdmin</span>
+          <span class="svc-chip">OpenMetadata</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div style="text-align:center; margin-bottom: 52px;">
+      <h2 class="section-title" style="margin: 0 0 12px;">4 steps to your next data project</h2>
+      <p class="section-sub" style="margin: 0 auto;">No Kubernetes, no cloud accounts, no licences. Just Docker and your host machine.</p>
+    </div>
+
+    <div class="steps4">
+
+      <!-- Step 1 — Install Docker + OrcheStack (OS-tabbed) -->
+      <div class="step4">
+        <div class="step4-left">
+          <div class="step4-num">1</div>
+          <div class="step4-copy">
+            <h3>Install OrcheStack</h3>
+            <p>OrcheStack ships as a single Docker Compose file. Install Docker for your OS, then pull our compose file — one command each.</p>
+          </div>
+        </div>
+        <div class="step4-right">
+          <!--
+            OS tabs: the panels share 99% of the install command — the only
+            real OS-specific step is installing Docker Desktop / Engine.
+            Tabs stay because users searching "install on Windows/Linux/Mac"
+            expect to see their platform called out explicitly.
+          -->
+          <div class="os-tabs" role="tablist" aria-label="Choose your OS">
+            <button type="button" class="os-tab active" data-os="macos-arm" role="tab" aria-selected="true">macOS ARM</button>
+            <button type="button" class="os-tab" data-os="macos-x64"  role="tab" aria-selected="false">macOS x64</button>
+            <button type="button" class="os-tab" data-os="linux-arm"  role="tab" aria-selected="false">Linux ARM</button>
+            <button type="button" class="os-tab" data-os="linux-x64"  role="tab" aria-selected="false">Linux x64</button>
+            <button type="button" class="os-tab" data-os="windows"    role="tab" aria-selected="false">Windows</button>
+          </div>
+
+          <div class="os-panel active" data-os="macos-arm" role="tabpanel">
+            <div class="term-block">
+<pre><span class="comment"># 1. Install Docker Desktop (Apple Silicon build)</span>
+<span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
+
+<span class="comment"># 2. Pull OrcheStack</span>
+<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+              <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="os-panel" data-os="macos-x64" role="tabpanel">
+            <div class="term-block">
+<pre><span class="comment"># 1. Install Docker Desktop (Intel build)</span>
+<span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
+
+<span class="comment"># 2. Pull OrcheStack</span>
+<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+              <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="os-panel" data-os="linux-arm" role="tabpanel">
+            <div class="term-block">
+<pre><span class="comment"># 1. Install Docker Engine (ARM64, e.g. Raspberry Pi / Graviton)</span>
+<span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
+
+<span class="comment"># 2. Pull OrcheStack</span>
+<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+              <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="os-panel" data-os="linux-x64" role="tabpanel">
+            <div class="term-block">
+<pre><span class="comment"># 1. Install Docker Engine</span>
+<span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
+
+<span class="comment"># 2. Pull OrcheStack</span>
+<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+              <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+
+          <div class="os-panel" data-os="windows" role="tabpanel">
+            <div class="term-block">
+<pre><span class="comment"># 1. Install WSL2 + Docker Desktop (PowerShell, admin)</span>
+<span class="prompt-line">&gt;</span> wsl --install
+
+<span class="comment"># 2. Inside WSL Ubuntu, pull OrcheStack</span>
+<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+              <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2 — Start the platform -->
+      <div class="step4">
+        <div class="step4-left">
+          <div class="step4-num">2</div>
+          <div class="step4-copy">
+            <h3>Start the control plane</h3>
+            <p>Only the base control plane starts — about 2 GB of RAM. Other services wait until you enable them in the next step.</p>
+          </div>
+        </div>
+        <div class="step4-right">
+          <div class="term-block">
+<pre><span class="prompt-line">$</span> docker compose up -d OrcheStack
+<span class="comment">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
+<span class="comment">Ready at http://localhost</span></pre>
+            <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 — Sign up & pick your stack -->
+      <div class="step4">
+        <div class="step4-left">
+          <div class="step4-num">3</div>
+          <div class="step4-copy">
+            <h3>Sign up &amp; pick your stack</h3>
+            <p>Open <code class="inline">http://localhost</code>. The first user becomes Admin. Then pick one tool per pipeline layer — OrcheStack pulls only the Docker images you chose.</p>
+          </div>
+        </div>
+        <div class="step4-right">
+          <div class="term-block">
+<pre><span class="comment"># OrcheStack opens the setup wizard</span>
+<span class="comment"># → Welcome → Pick tools → Enter creds → Deploy</span>
+
+<span class="comment"># Ingestion   → Airbyte</span>
+<span class="comment"># Transform   → dbt Core</span>
+<span class="comment"># Warehouse   → PostgreSQL</span>
+<span class="comment"># Quality     → Great Expectations</span>
+<span class="comment"># BI          → Metabase</span></pre>
+            <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4 — See it in action (screenshot slot) -->
+      <div class="step4">
+        <div class="step4-left">
+          <div class="step4-num">4</div>
+          <div class="step4-copy">
+            <h3>See it in action</h3>
+            <p>All services are now wired together. Run the default DAG on demand or leave it on the nightly schedule — your dashboards update automatically.</p>
+          </div>
+        </div>
+        <div class="step4-right">
+          <div class="step4-screenshot">
+            <!-- Replace with a real screenshot of the Streamlit dashboard once captured -->
+            <div class="step4-screenshot-placeholder">
+              Streamlit admin dashboard<br>
+              <span style="font-weight:500; color: var(--muted); font-size:12.5px; margin-top:6px; display:block;">(Screenshot placeholder — swap in your dashboard PNG)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="final-cta">
+  <div class="wrap">
+    <div class="final-cta-card">
+      <h2>The fastest way to build a modern data stack using open-source tools.</h2>
+      <p class="lede">Start your next data project in minutes.</p>
+      <div class="final-cta-buttons">
+        <a class="btn btn-primary" href="docs/install.html">Get Started</a>
+        <a class="btn btn-secondary" href="docs/index.html">Check Out the Docs</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <a class="brand" href="index.html">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div>© 2026 OrcheStack. A cost-effective open-source data platform.</div>
+      <div><a href="docs/index.html">Documentation</a> · <a href="services.html">Services</a> · <a href="contact.html">Support</a></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // OS-tab switcher — delegates from the shared .os-tabs container.
+  // Expects siblings with class .os-panel and matching data-os.
+  document.querySelectorAll('.os-tabs').forEach(tabStrip => {
+    const panels = tabStrip.parentElement.querySelectorAll('.os-panel');
+    tabStrip.addEventListener('click', event => {
+      const btn = event.target.closest('.os-tab');
+      if (!btn) return;
+      const target = btn.dataset.os;
+      tabStrip.querySelectorAll('.os-tab').forEach(t => {
+        const active = t === btn;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      panels.forEach(p => p.classList.toggle('active', p.dataset.os === target));
+    });
+  });
+
+  // Copy-to-clipboard on terminal blocks. Skips comment/prompt markers so
+  // users get the runnable command, not the annotations.
+  document.querySelectorAll('.term-block .copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pre = btn.parentElement.querySelector('pre');
+      if (!pre) return;
+      const text = Array.from(pre.querySelectorAll(':scope > *, :scope'))
+        .map(() => null)  // fall through to textContent below
+        .join('') || pre.textContent;
+      try {
+        await navigator.clipboard.writeText(pre.textContent.replace(/^\$\s?/gm, ''));
+        const original = btn.innerHTML;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+        setTimeout(() => { btn.innerHTML = original; }, 1400);
+      } catch { /* clipboard API unavailable — silently no-op */ }
+    });
+  });
+</script>
+
+</body>
+</html>

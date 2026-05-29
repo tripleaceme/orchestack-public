@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up — OrcheStack</title>
+  <meta name="description" content="Create your OrcheStack account. First user becomes platform admin.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+
+<!--
+  Nav links to the public marketing site go to the externally-hosted OrcheStack
+  website (not baked into this image). The default build assumes the site lives
+  at https://OrcheStack.africa. Forks wanting to white-label should
+  sed-replace that URL across signup.html, login.html and setup/*.html.
+-->
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="https://OrcheStack.africa" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <ul>
+        <li><a class="nav-link" href="https://OrcheStack.africa">Home</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/services">Services</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/docs/">Docs</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/contact">Contact</a></li>
+      </ul>
+      <div class="cta">
+        <a class="btn btn-secondary btn-sm" href="login.html">Log in</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="auth-wrap">
+  <div class="auth-card">
+    <a href="https://OrcheStack.africa" class="brand">
+      <div class="brand-mark">O</div>
+      <span>OrcheStack</span>
+    </a>
+    <h1>Create your account</h1>
+    <p class="sub">The first person to sign up becomes Admin.<br>Subsequent users can be added after setup.</p>
+
+    <div class="callout">
+      <strong>ℹ  No users exist yet</strong> — you'll be created as Admin. Admins can add Engineers and Analysts later.
+    </div>
+
+    <!--
+      In production, this form POSTs to /app/api/signup. The backend creates
+      the user, sets `onboarding_completed = false`, issues a session cookie,
+      and redirects to /setup/welcome.html. For this static demo we short-circuit
+      and navigate directly to the setup flow.
+    -->
+    <form id="signup-form" action="setup/welcome.html" method="GET">
+      <div class="form-group">
+        <label for="s-fullname">Full name</label>
+        <input id="s-fullname" name="full_name" type="text" placeholder="Ayoade Adegbite" required autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label for="s-email">Email</label>
+        <input id="s-email" name="email" type="email" placeholder="you@company.ng" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="s-username">Username</label>
+        <input id="s-username" name="username" type="text" placeholder="ayoade" pattern="[a-zA-Z0-9_.\-]{3,32}" required autocomplete="username">
+        <div class="hint">Letters, numbers, dot, dash, underscore. 3–32 characters.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-role">Role</label>
+        <select id="s-role" name="role" disabled>
+          <option>Admin  (first user — auto-promoted)</option>
+        </select>
+        <div class="hint">Future users can be given Engineer, Analyst, or custom roles.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-password">Password</label>
+        <input id="s-password" name="password" type="password" placeholder="At least 12 characters" minlength="12" required autocomplete="new-password">
+        <div class="hint">Minimum 12 characters. Stored bcrypt-hashed.</div>
+      </div>
+      <div class="form-group">
+        <label for="s-company">Company name</label>
+        <input id="s-company" name="company_name" type="text" placeholder="Acme Analytics Ltd">
+        <div class="hint">Appears on your dashboard and report exports.</div>
+      </div>
+
+      <button type="submit" class="btn btn-primary form-submit">Create account</button>
+    </form>
+
+    <div class="alt">
+      Already have an account? <a href="login.html">Log in</a>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

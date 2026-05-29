@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in — OrcheStack</title>
+  <meta name="description" content="Log in to your OrcheStack control plane.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+
+<!--
+  Nav links to the public marketing site go to the externally-hosted OrcheStack
+  website (not baked into this image). Default host: https://OrcheStack.africa.
+-->
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="https://OrcheStack.africa" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <ul>
+        <li><a class="nav-link" href="https://OrcheStack.africa">Home</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/services">Services</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/docs/">Docs</a></li>
+        <li><a class="nav-link" href="https://OrcheStack.africa/contact">Contact</a></li>
+      </ul>
+      <div class="cta">
+        <a class="btn btn-primary btn-sm" href="signup.html">Get started</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="auth-wrap">
+  <div class="auth-card">
+    <a href="https://OrcheStack.africa" class="brand">
+      <div class="brand-mark">O</div>
+      <span>OrcheStack</span>
+    </a>
+    <h1>Welcome back</h1>
+    <p class="sub">Log in to manage your data platform.</p>
+
+    <form id="login-form" action="/app/api/login" method="POST">
+      <div class="form-group">
+        <label for="l-identifier">Username or email</label>
+        <input id="l-identifier" name="identifier" type="text" placeholder="you@company.ng" required autocomplete="username" autofocus>
+      </div>
+      <div class="form-group">
+        <label for="l-password" style="display:flex;justify-content:space-between;align-items:baseline">
+          <span>Password</span>
+          <a href="#" style="font-size:12px;font-weight:500">Forgot?</a>
+        </label>
+        <input id="l-password" name="password" type="password" placeholder="••••••••••••" required autocomplete="current-password">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
+        <input id="l-remember" name="remember" type="checkbox" style="width:auto">
+        <label for="l-remember" style="margin:0;font-weight:500;color:var(--text-2)">Keep me signed in for 12 hours</label>
+      </div>
+
+      <button type="submit" class="btn btn-primary form-submit">Log in</button>
+    </form>
+
+    <div class="alt">
+      Don't have an account yet? <a href="signup.html">Sign up</a>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

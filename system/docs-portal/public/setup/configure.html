@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configure credentials — OrcheStack setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="https://OrcheStack.africa" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div class="cta">
+        <span class="muted" style="font-size:13.5px">Signed in as <strong style="color:var(--navy)">ayoade@acme.ng</strong></span>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="setup-wrap">
+  <div class="setup-card" style="max-width:820px">
+    <div class="eyebrow">Step 3 of 4</div>
+    <div class="step-indicator">
+      <span>Progress</span>
+      <span class="dots">
+        <span class="dot done"></span>
+        <span class="dot done"></span>
+        <span class="dot active"></span>
+        <span class="dot"></span>
+      </span>
+    </div>
+
+    <h1>Configure your services</h1>
+    <p class="sub" id="intro-sub">
+      We'll collect admin credentials for each tool you picked. Values are saved to
+      <code>./config/.env</code> on the host — not stored in plain text anywhere else. You can edit
+      these later from the Streamlit dashboard.
+    </p>
+
+    <!-- Warnings panel for None selections (rendered by JS when applicable) -->
+    <div id="none-warnings-container"></div>
+
+    <!-- Empty-state shown if user navigated here without selections -->
+    <div id="empty-state" style="display:none; background:var(--accent-100); border:1px solid var(--accent); border-radius:10px; padding:24px; text-align:center;">
+      <h3 style="margin:0 0 8px; color:var(--accent);">No services selected yet</h3>
+      <p style="margin:0 0 16px; color:var(--text-2);">Pick your tools before configuring credentials.</p>
+      <a class="btn btn-primary" href="select.html">← Back to service selection</a>
+    </div>
+
+    <!-- Tabs + panels rendered dynamically by JS below -->
+    <div id="svc-tabs" class="svc-tabs" style="display:none"></div>
+    <!--
+      novalidate on purpose: HTML5 validation would block submit if any required
+      input inside a non-visible tab is empty (the browser can't focus hidden
+      fields). We rely on the production backend to validate; the demo accepts
+      whatever the user enters and proceeds to deploying.html.
+    -->
+    <form id="config-form" action="deploying.html" method="GET" novalidate style="display:none">
+      <div id="svc-panels"></div>
+
+      <div class="setup-nav">
+        <a class="btn btn-ghost" href="select.html">← Back to services</a>
+        <div class="spacer"></div>
+        <button type="button" class="btn btn-ghost" id="prev-btn">Previous</button>
+        <button type="button" class="btn btn-primary" id="next-btn">Next →</button>
+        <button type="submit" class="btn btn-cta" id="create-btn" style="display:none">Create services →</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<script>
+  // ============================================================
+  // Storage key (shared with select.html)
+  // ============================================================
+  const STORAGE_KEY = 'OrcheStack.setup';
+
+  // ============================================================
+  // Consequences of picking "None" for a layer
+  // Shown as a single warning panel above the tabs. Each consequence is
+  // phrased so the user gives informed consent: "here's exactly what you're
+  // giving up by skipping this".
+  // ============================================================
+  const NONE_CONSEQUENCES = {
+    ingestion: {
+      layer: "Ingestion",
+      consequence: "OrcheStack won't pull data from external sources for you. You'll need to load data manually — CSV imports via pgAdmin, direct SQL inserts, or custom Python scripts in Airflow.",
+    },
+    lake: {
+      layer: "Data lake",
+      consequence: "Raw data won't be preserved as files for downstream AI / ML / DS workflows. If you add ML consumers later, you'll need to enable MinIO. The warehouse still stores tabular data either way.",
+    },
+    quality: {
+      layer: "Data quality",
+      consequence: "Your marts won't be validated before dashboards see them. Bad data (null keys, broken joins, wrong totals) can silently reach stakeholders. Even small pipelines benefit from Great Expectations.",
+    },
+    governance: {
+      layer: "Governance",
+      consequence: "You won't have column-level lineage or a data catalogue. Understanding which dashboards depend on which models becomes manual work — painful during schema changes.",
+    },
+    bi: {
+      layer: "BI / Visualisation",
+      consequence: "Stakeholders won't have dashboards inside OrcheStack. You can still connect an external tool like Tableau or Power BI to the PostgreSQL warehouse, but embedded BI falls on engineers instead of self-service.",
+    },
+    admin_ui: {
+      layer: "Database admin UI",
+      consequence: "Engineers will need to use psql or connect externally (SSH tunnel, VPN) to run ad-hoc queries. Fine if your team is comfortable with the CLI.",
+    },
+  };
+
+  // ============================================================
+  // Service catalogue
+  // Each entry is indexed by the CLEAN tool name as it appears in select.html's
+  // dropdowns. Every field now carries a `hint` — shown as a tooltip next to
+  // the label — so users don't have to open the docs to understand what to type.
+  // ============================================================
+  const TOOL_FORMS = {
+
+    // ------- Ingestion -------
+    "Airbyte": {
+      desc: "Connector-based ingestion. Needs credentials for Airbyte's own internal PostgreSQL — it tracks sync state there.",
+      fields: [
+        { name: "AIRBYTE_DB_HOST", label: "Internal DB host", type: "text", default: "postgres",
+          hint: "Hostname Airbyte uses to reach its state database. In OrcheStack this is the service name 'postgres' (the shared instance). Leave as default." },
+        { name: "AIRBYTE_DB_USER", label: "DB user", type: "text", placeholder: "airbyte", required: true,
+          hint: "PostgreSQL username Airbyte connects as. OrcheStack creates this role automatically with scoped permissions." },
+        { name: "AIRBYTE_DB_PASSWORD", label: "DB password", type: "password", placeholder: "••••••••", required: true,
+          hint: "Password for the Airbyte user. Stored in .env (chmod 600) and never in plain text anywhere else." },
+        { name: "AIRBYTE_DB_NAME", label: "DB name", type: "text", default: "airbyte",
+          hint: "Internal database name where Airbyte tracks sync state. Keep as 'airbyte' unless you're running multiple Airbyte instances." },
+      ],
+    },
+    "Custom Python (Airflow DAGs)": {
+      desc: "No credentials collected at setup — you'll configure sources inside your Airflow DAGs later.",
+      fields: [],
+      note: "Nothing to configure here. OrcheStack will prepare a DAGs folder you can write Python scripts into.",
+    },
+
+    // ------- Orchestration -------
+    "Apache Airflow": {
+      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata — you've already entered those credentials.",
+      fields: [
+        { name: "AIRFLOW_FERNET_KEY", label: "Fernet key (auto-generated)", type: "text", default: "auto-generated on save", disabled: true,
+          hint: "Encryption key for connection passwords inside Airflow. OrcheStack generates a fresh one on save. Don't change unless restoring from a backup with a known key." },
+      ],
+      note: "The Fernet key encrypts stored connection passwords inside Airflow. OrcheStack generates one automatically — leave as is unless you're restoring from a backup.",
+    },
+
+    // ------- Warehouse -------
+    "PostgreSQL": {
+      desc: "Primary warehouse. Hosts raw, marts, Airflow metadata, and OrcheStack's <code>platform</code> schema in one instance.",
+      fields: [
+        { name: "POSTGRES_USER", label: "Superuser name", type: "text", default: "postgres", required: true,
+          hint: "PostgreSQL superuser who can create databases and manage roles. Usually left as 'postgres'." },
+        { name: "POSTGRES_PASSWORD", label: "Superuser password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Superuser password. Min 12 characters recommended. You can rotate it later from the admin dashboard without losing data." },
+        { name: "POSTGRES_DB", label: "Default database", type: "text", default: "OrcheStack", required: true,
+          hint: "Default database created on first boot. OrcheStack's schemas (platform, raw, marts, airflow) live inside it." },
+      ],
+    },
+    "ClickHouse": {
+      desc: "Column-store warehouse for analytical workloads above ~1 TB. Heavier than PostgreSQL.",
+      fields: [
+        { name: "CLICKHOUSE_USER", label: "Admin user", type: "text", default: "default", required: true,
+          hint: "ClickHouse admin user. Has permission to create databases and grant access to other users." },
+        { name: "CLICKHOUSE_PASSWORD", label: "Admin password", type: "password", required: true,
+          hint: "Password for the ClickHouse admin user. Stored encrypted in .env." },
+        { name: "CLICKHOUSE_DB", label: "Default database", type: "text", default: "OrcheStack", required: true,
+          hint: "Default ClickHouse database. Your marts tables will live here." },
+      ],
+    },
+    "DuckDB": {
+      desc: "In-process analytical engine. No separate server — just a file path.",
+      fields: [
+        { name: "DUCKDB_PATH", label: "Database file path", type: "text", default: "./config/duckdb/OrcheStack.duckdb", required: true,
+          hint: "Path to the DuckDB file on the host. OrcheStack creates the file on first run. Single-file databases don't need a server." },
+      ],
+    },
+
+    // ------- Data lake -------
+    "MinIO": {
+      desc: "S3-compatible object store. Root credentials protect every bucket in the instance.",
+      fields: [
+        { name: "MINIO_ROOT_USER", label: "Root user (access key)", type: "text", placeholder: "OrcheStack-admin", required: true,
+          hint: "Access key — works like an AWS access key ID. Used by Airbyte and any external S3 clients connecting to MinIO." },
+        { name: "MINIO_ROOT_PASSWORD", label: "Root password (secret key)", type: "password", placeholder: "At least 16 characters", required: true,
+          hint: "Secret key — treat like a password. Rotate from the admin dashboard when necessary. Required to be 8+ chars; 16+ recommended." },
+        { name: "MINIO_BUCKET", label: "Default bucket", type: "text", default: "OrcheStack",
+          hint: "Default bucket created on first boot. Raw data from Airbyte lands here at /raw/<source>/<date>/." },
+      ],
+    },
+
+    // ------- Transformation -------
+    "dbt Core": {
+      desc: "SQL transformations. We'll generate <code>profiles.yml</code> that points at your PostgreSQL warehouse. You can connect a GitHub repo now or later.",
+      fields: [
+        { name: "DBT_PROJECT_NAME", label: "dbt project name", type: "text", placeholder: "acme_analytics", required: true,
+          hint: "The name you passed to 'dbt init' — appears as both 'name:' and 'profile:' at the top of your dbt_project.yml. OrcheStack uses this value as the top-level key in profiles.yml, so it MUST match the 'profile:' field in your repo. Starting fresh? Something like 'acme_analytics' or 'company_dbt' works well." },
+        { name: "DBT_REPO_URL", label: "dbt project Git repository (optional)", type: "text", placeholder: "Leave blank if your dbt project isn't on GitHub yet",
+          hint: "If your dbt project is already on GitHub, paste the HTTPS or SSH URL — OrcheStack will clone it into the dbt container on first deploy and refresh it on every run. If not, skip this now and add it later from Streamlit → Services → dbt Core → Edit config." },
+        { name: "DBT_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
+          hint: "Which branch OrcheStack pulls on each run. 'main' for most production setups. Only matters once you've connected a repo." },
+        { name: "DBT_TARGET", label: "Production target name", type: "text", default: "prod", required: true,
+          hint: "The dbt target to run in production. 'prod' writes to your shared marts schema — what Metabase and analysts read from. See the note below for dev/prod separation." },
+        { name: "DBT_SCHEMA", label: "Production schema", type: "text", default: "marts", required: true,
+          hint: "Schema where the prod target writes dbt outputs — typically 'marts'. This is what stakeholders see via Metabase." },
+        { name: "DBT_USER", label: "dbt PG user", type: "text", placeholder: "dbt_user", required: true,
+          hint: "PostgreSQL user dbt authenticates as. OrcheStack creates this with READ on 'raw' and WRITE on 'marts'. Keep credentials scoped per the principle of least privilege." },
+        { name: "DBT_PASSWORD", label: "dbt PG password", type: "password", placeholder: "••••••••", required: true,
+          hint: "Password for the dbt PG user. OrcheStack writes it to profiles.yml at ./config/dbt/profiles.yml. Make sure ./config is in your .gitignore." },
+      ],
+      note: "Two things to do AFTER setup finishes — both covered in the docs: (1) Push your dbt project to GitHub if it isn't there yet (see /docs/guides/dbt-to-github.html) and paste the repo URL into Streamlit so OrcheStack can pull changes automatically. Make sure the 'profile:' line in your dbt_project.yml matches the project name you entered above — OrcheStack uses it as the profiles.yml key, and dbt fails to start if they don't match. (2) Before developers start writing models, the admin should create separate dev schemas (e.g. dev_ayoade, dev_alice) so local work doesn't overwrite the shared marts schema that stakeholders read from (see /docs/guides/dbt-dev-schemas.html). The 'prod' target configured here writes to the shared schema — running dev against prod will break dashboards.",
+    },
+    "SQLMesh": {
+      desc: "Modern dbt alternative with virtual data environments and better incremental semantics.",
+      fields: [
+        { name: "SQLMESH_CONNECTION_TYPE", label: "Connection type", type: "text", default: "postgres",
+          hint: "Database backend SQLMesh connects to. 'postgres' for OrcheStack's default warehouse." },
+        { name: "SQLMESH_HOST", label: "Host", type: "text", default: "postgres", required: true,
+          hint: "PostgreSQL hostname. The internal service name 'postgres' works inside OrcheStack's Docker network." },
+        { name: "SQLMESH_USER", label: "User", type: "text", placeholder: "sqlmesh_user", required: true,
+          hint: "PostgreSQL user SQLMesh authenticates as. Needs CREATE on the target schema." },
+        { name: "SQLMESH_PASSWORD", label: "Password", type: "password", required: true,
+          hint: "Password for the SQLMesh user." },
+      ],
+    },
+
+    // ------- Data quality -------
+    "Great Expectations": {
+      desc: "Declarative data quality checks. Runs after every dbt build — failed expectations block downstream tasks.",
+      fields: [
+        { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text", default: "postgresql://dbt_user:***@postgres:5432/OrcheStack",
+          hint: "SQLAlchemy-style connection URL for the database GE validates. Defaults to the same PostgreSQL warehouse dbt writes to. The '***' gets replaced by the dbt password at runtime." },
+        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text", default: "./config/great_expectations/checkpoints",
+          hint: "Where GE looks for expectation suites and checkpoint configs. Mounted from the host so you can version-control them." },
+      ],
+    },
+    "Soda Core": {
+      desc: "YAML-first data quality. Simpler setup; less powerful than Great Expectations.",
+      fields: [
+        { name: "SODA_CONFIG_PATH", label: "soda.yml path", type: "text", default: "./config/soda/soda.yml",
+          hint: "Path to your soda.yml file on the host. Contains connection info + checks." },
+      ],
+    },
+
+    // ------- Governance -------
+    "OpenMetadata": {
+      desc: "Governance and column-level lineage. Admin credentials plus a long JWT secret for internal auth.",
+      fields: [
+        { name: "OPENMETADATA_ADMIN_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
+          hint: "Email to log into OpenMetadata's UI. Can differ from your OrcheStack platform login — OpenMetadata has its own user system." },
+        { name: "OPENMETADATA_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
+          hint: "OpenMetadata admin password. Min 12 characters recommended." },
+        { name: "OPENMETADATA_JWT_SECRET", label: "JWT secret", type: "password", placeholder: "32+ characters (openssl rand -hex 32)", required: true,
+          hint: "Secret used to sign JWT tokens for OpenMetadata's internal API. Generate with 'openssl rand -hex 32' or any 32+ character random string." },
+      ],
+    },
+    "DataHub": {
+      desc: "LinkedIn-origin metadata platform. Broader connector library; heavier operational burden.",
+      fields: [
+        { name: "DATAHUB_GMS_HOST", label: "GMS host", type: "text", default: "datahub-gms", required: true,
+          hint: "Hostname for DataHub's Generalized Metadata Service. The internal service name 'datahub-gms' works inside the Docker network." },
+        { name: "DATAHUB_TOKEN", label: "Access token", type: "password", required: true,
+          hint: "Personal access token for DataHub's API. Generate one from DataHub's UI after first login." },
+      ],
+    },
+
+    // ------- BI -------
+    "Metabase": {
+      desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself.",
+      fields: [
+        { name: "METABASE_ADMIN_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
+          hint: "Email for the first Metabase admin account. This is what you'll use to log into Metabase and create dashboards." },
+        { name: "METABASE_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
+          hint: "Metabase admin password. Can differ from your OrcheStack platform login." },
+      ],
+    },
+    "Apache Superset": {
+      desc: "Advanced BI with SQL Lab and richer chart types. Heavier and steeper learning curve.",
+      fields: [
+        { name: "SUPERSET_SECRET_KEY", label: "Secret key", type: "password", placeholder: "32+ random chars", required: true,
+          hint: "Secret used for session signing and password encryption in Superset. Generate with 'openssl rand -hex 32'. Changing it later invalidates all sessions." },
+        { name: "SUPERSET_ADMIN_USER", label: "Admin username", type: "text", default: "admin", required: true,
+          hint: "Username for the first Superset admin. Used to log into the Superset UI." },
+        { name: "SUPERSET_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
+          hint: "Admin password." },
+      ],
+    },
+    "Lightdash": {
+      desc: "BI-as-code driven by dbt models. Metrics live in your dbt project; dashboards sync automatically.",
+      fields: [
+        { name: "LIGHTDASH_SECRET", label: "Secret", type: "password", required: true,
+          hint: "Session signing secret for Lightdash. Random 32+ character string." },
+        { name: "PGHOST", label: "PG host", type: "text", default: "postgres",
+          hint: "PostgreSQL hostname Lightdash connects to for warehouse queries." },
+        { name: "PGUSER", label: "PG user", type: "text", required: true,
+          hint: "PostgreSQL user Lightdash reads with. Needs SELECT on 'marts' schema." },
+        { name: "DBT_PROJECT_DIR", label: "dbt project dir", type: "text", default: "./dbt",
+          hint: "Path to your dbt project, mounted into Lightdash so it can parse models and metrics." },
+      ],
+    },
+
+    // ------- Admin UI -------
+    "pgAdmin": {
+      desc: "PostgreSQL web UI. Runs on demand, stops when idle. Credentials are only for the pgAdmin login itself.",
+      fields: [
+        { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
+          hint: "Email to log into pgAdmin's own UI — not your PostgreSQL user. pgAdmin connects to PostgreSQL separately using the warehouse credentials." },
+        { name: "PGADMIN_DEFAULT_PASSWORD", label: "Admin password", type: "password", required: true,
+          hint: "pgAdmin login password." },
+      ],
+    },
+    "Adminer": {
+      desc: "Lightweight single-file DB UI (~50 MB). Fewer features than pgAdmin but much smaller footprint.",
+      fields: [
+        { name: "ADMINER_DESIGN", label: "Theme (optional)", type: "text", default: "pepa-linha",
+          hint: "Visual theme for Adminer. Leave as default unless you have specific preferences. Options: pepa-linha, nette, hydra, etc." },
+      ],
+      note: "Adminer authenticates against whatever DB you connect to at runtime — no separate admin account.",
+    },
+    "pgweb": {
+      desc: "Minimal Go-based PostgreSQL client. Fastest spin-up time. Read-only query runner.",
+      fields: [
+        { name: "PGWEB_DATABASE_URL", label: "Database URL", type: "text", default: "postgres://dbt_user:***@postgres:5432/OrcheStack?sslmode=disable", required: true,
+          hint: "Connection string pgweb opens by default. The '***' gets replaced by the user's password at runtime." },
+      ],
+    },
+  };
+
+  // Which layers of the selection appear as configurable tabs (in order).
+  const LAYER_ORDER = [
+    "ingestion",
+    "orchestration",
+    "warehouse",
+    "lake",
+    "transformation",
+    "quality",
+    "governance",
+    "bi",
+    "admin_ui",
+  ];
+
+  // ============================================================
+  // Load state
+  // ============================================================
+  const rawState = localStorage.getItem(STORAGE_KEY);
+  if (!rawState) {
+    document.getElementById('empty-state').style.display = 'block';
+    document.getElementById('intro-sub').style.display = 'none';
+  } else {
+    try {
+      const state = JSON.parse(rawState);
+      const selections = state.selections || {};
+      const credentials = state.credentials || {};
+      renderNoneWarnings(selections);
+      renderWizard(selections, credentials);
+    } catch (e) {
+      document.getElementById('empty-state').style.display = 'block';
+      document.getElementById('intro-sub').style.display = 'none';
+    }
+  }
+
+  // ============================================================
+  // Rendering
+  // ============================================================
+
+  function renderNoneWarnings(selections) {
+    const container = document.getElementById('none-warnings-container');
+    const warnings = [];
+    for (const [layer, tool] of Object.entries(selections)) {
+      if (tool === 'None' && NONE_CONSEQUENCES[layer]) {
+        warnings.push(NONE_CONSEQUENCES[layer]);
+      }
+    }
+    if (warnings.length === 0) return;
+
+    const items = warnings.map(w =>
+      `<li><strong>${escapeHtml(w.layer)}:</strong> ${escapeHtml(w.consequence)}</li>`
+    ).join('');
+
+    container.innerHTML = `
+      <div class="none-warnings" role="alert">
+        <h3>⚠ You've skipped ${warnings.length} service${warnings.length > 1 ? 's' : ''} — here's what that means</h3>
+        <ul>${items}</ul>
+        <p class="footnote">You can add any of these later from the Streamlit dashboard via <strong>Add services</strong>.</p>
+      </div>
+    `;
+  }
+
+  function renderWizard(selections, credentials) {
+    const servicesToConfigure = [];
+    for (const layer of LAYER_ORDER) {
+      const tool = selections[layer];
+      if (!tool || tool === 'None') continue;
+      const form = TOOL_FORMS[tool] || {
+        desc: `<strong>${escapeHtml(tool)}</strong> is on our roadmap but isn't wired up in this release.`,
+        fields: [],
+        note: `This service would normally collect credentials here. For now, please go back and pick the recommended option for the ${layer} layer.`,
+        unsupported: true,
+      };
+      servicesToConfigure.push({ layer, tool, form });
+    }
+
+    if (servicesToConfigure.length === 0) {
+      document.getElementById('empty-state').style.display = 'block';
+      document.getElementById('intro-sub').style.display = 'none';
+      return;
+    }
+
+    const tabsEl   = document.getElementById('svc-tabs');
+    const panelsEl = document.getElementById('svc-panels');
+
+    servicesToConfigure.forEach((svc, i) => {
+      const tab = document.createElement('div');
+      tab.className = 'svc-tab' + (i === 0 ? ' active' : '');
+      tab.textContent = svc.tool;
+      if (svc.form.unsupported) {
+        const chip = document.createElement('span');
+        chip.textContent = ' coming soon';
+        chip.style.cssText = 'margin-left:6px;padding:2px 6px;border-radius:999px;background:var(--accent-100);color:var(--accent);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;';
+        tab.appendChild(chip);
+      }
+      tab.dataset.idx = i;
+      tab.addEventListener('click', () => show(i));
+      tabsEl.appendChild(tab);
+
+      const panel = document.createElement('section');
+      panel.className = 'svc-panel' + (i === 0 ? ' active' : '');
+      panel.dataset.idx = i;
+      panel.innerHTML = renderPanelHTML(svc, credentials);
+      panelsEl.appendChild(panel);
+    });
+
+    document.getElementById('empty-state').style.display = 'none';
+    tabsEl.style.display = 'flex';
+    document.getElementById('config-form').style.display = 'block';
+
+    const prevBtn   = document.getElementById('prev-btn');
+    const nextBtn   = document.getElementById('next-btn');
+    const createBtn = document.getElementById('create-btn');
+    const total     = servicesToConfigure.length;
+    let current     = 0;
+
+    function show(i) {
+      current = Math.max(0, Math.min(total - 1, i));
+      tabsEl.querySelectorAll('.svc-tab').forEach((t, idx) => {
+        t.classList.toggle('active', idx === current);
+        t.classList.toggle('done', idx < current);
+      });
+      panelsEl.querySelectorAll('.svc-panel').forEach((p, idx) => {
+        p.classList.toggle('active', idx === current);
+      });
+      prevBtn.disabled = (current === 0);
+      prevBtn.style.opacity = current === 0 ? 0.4 : 1;
+      const onLast = current === total - 1;
+      nextBtn.style.display   = onLast ? 'none' : 'inline-flex';
+      createBtn.style.display = onLast ? 'inline-flex' : 'none';
+    }
+    window.__setupShow = show;
+    prevBtn.addEventListener('click', () => show(current - 1));
+    nextBtn.addEventListener('click', () => show(current + 1));
+
+    const form = document.getElementById('config-form');
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const creds = {};
+      form.querySelectorAll('input').forEach(inp => {
+        if (inp.name) creds[inp.name] = inp.value;
+      });
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      state.credentials = creds;
+      state.onboardingCompleted = false;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.location.href = 'deploying.html';
+    });
+  }
+
+  function renderPanelHTML(svc, credentials) {
+    const parts = [];
+    parts.push(`<h2>${escapeHtml(svc.tool)}</h2>`);
+    parts.push(`<p class="svc-desc">${svc.form.desc}</p>`);
+
+    // Unsupported/coming-soon fallback
+    if (svc.form.unsupported) {
+      parts.push(`
+        <div class="callout warn">
+          <p><strong>${escapeHtml(svc.tool)} isn't available yet.</strong> ${escapeHtml(svc.form.note)}</p>
+        </div>
+        <p style="margin-top:20px">
+          <a class="btn btn-secondary btn-sm" href="select.html">← Back and change this</a>
+        </p>
+      `);
+      return parts.join('');
+    }
+
+    // No fields, just an informational note (e.g. Custom Python for ingestion)
+    if (svc.form.fields.length === 0 && svc.form.note) {
+      parts.push(`<div class="callout"><p>${escapeHtml(svc.form.note)}</p></div>`);
+      return parts.join('');
+    }
+
+    // Render each field with label + optional info icon + input
+    svc.form.fields.forEach(field => {
+      const savedValue = credentials[field.name] ?? field.default ?? '';
+      const attrs = [
+        `id="${field.name}"`,
+        `name="${field.name}"`,
+        `type="${field.type}"`,
+      ];
+      if (field.placeholder) attrs.push(`placeholder="${escapeAttr(field.placeholder)}"`);
+      if (field.required)    attrs.push(`required`);
+      if (field.disabled)    attrs.push(`disabled`);
+      if (savedValue)        attrs.push(`value="${escapeAttr(savedValue)}"`);
+
+      const infoIcon = field.hint
+        ? ` <span class="info-icon" tabindex="0" aria-label="More info">?<span class="info-tip">${escapeHtml(field.hint)}</span></span>`
+        : '';
+
+      parts.push(`
+        <div class="form-group">
+          <label for="${field.name}">${escapeHtml(field.label)}${infoIcon}</label>
+          <input ${attrs.join(' ')}>
+        </div>
+      `);
+    });
+
+    if (svc.form.note) {
+      parts.push(`<div class="callout"><p>${escapeHtml(svc.form.note)}</p></div>`);
+    }
+
+    return parts.join('');
+  }
+
+  // ============================================================
+  // Utilities
+  // ============================================================
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+</script>
+
+</body>
+</html>

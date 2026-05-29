@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome — OrcheStack setup</title>
+  <meta name="description" content="Let's set up your OrcheStack data platform.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="https://OrcheStack.africa" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div class="cta">
+        <span class="muted" style="font-size:13.5px">Signed in as <strong style="color:var(--navy)">ayoade@acme.ng</strong></span>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main class="setup-wrap">
+  <div class="setup-card">
+    <div class="eyebrow">Step 1 of 4</div>
+    <div class="step-indicator">
+      <span>Progress</span>
+      <span class="dots">
+        <span class="dot active"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </span>
+    </div>
+
+    <h1>Welcome to OrcheStack, Ayoade 👋</h1>
+    <p class="sub">Your account is created — let's turn it into a working data platform. The next few steps will take about <strong>5–10 minutes</strong>, plus a few minutes for OrcheStack to pull and start the Docker images you pick.</p>
+
+    <div class="preview-steps">
+      <div class="preview-step">
+        <div class="num">1</div>
+        <div>
+          <h4>Pick your tools</h4>
+          <p>Choose one tool per pipeline layer — ingestion, transformation, BI, and so on.</p>
+        </div>
+      </div>
+      <div class="preview-step">
+        <div class="num">2</div>
+        <div>
+          <h4>Provide credentials</h4>
+          <p>We'll ask for each service's admin creds. They're saved to <code>./config/.env</code> on the host.</p>
+        </div>
+      </div>
+      <div class="preview-step">
+        <div class="num">3</div>
+        <div>
+          <h4>Create services</h4>
+          <p>OrcheStack pulls the Docker images for the tools you chose — only those, nothing extra.</p>
+        </div>
+      </div>
+      <div class="preview-step">
+        <div class="num">4</div>
+        <div>
+          <h4>Launch the dashboard</h4>
+          <p>You land in your Streamlit admin panel, ready to run your first pipeline.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-nav">
+      <a class="btn btn-ghost" href="/app/">Skip for now</a>
+      <div class="spacer"></div>
+      <a class="btn btn-primary" href="select.html">Get started →</a>
+    </div>
+  </div>
+
+  <p class="muted" style="text-align:center; font-size:13px; margin-top:24px;">
+    Need help? <a href="https://OrcheStack.africa/contact">Contact support</a> or call <a href="tel:+2348120210872">+234 812 021 0872</a>.
+  </p>
+</main>
+
+</body>
+</html>
