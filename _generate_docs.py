@@ -23,8 +23,11 @@ from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).parent
-PUBLIC = ROOT / "public"
-DOCS = PUBLIC / "docs"
+# Output structure changed 2026-05-31:
+#   - Marketing pages (index.html, services.html, contact.html) live at ROOT.
+#   - Docs site lives at ROOT/docs/.
+#   - The earlier `public/` wrapper is gone; Cloudflare Pages now publishes from ROOT.
+DOCS = ROOT / "docs"
 
 
 # =============================================================================
@@ -165,48 +168,48 @@ PAGES: list[Page] = [
   <li><strong>Ports 80 and 443</strong> available on the host (OrcheStack's reverse proxy binds here)</li>
 </ul>
 <div class="callout">
-  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">OrcheStack.africa</code> (installer + compose file). Everything else is internal.</p>
+  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">orchestack.africa</code> (installer + compose file). Everything else is internal.</p>
 </div>
 
 <h2 id="distribution">Where OrcheStack lives</h2>
 <p>OrcheStack is three artifacts in three places — understanding the split makes the install paths below obvious:</p>
 <ul>
-  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/OrcheStack/*</code>) — our prebuilt images: <code class="inline">OrcheStack/auth</code>, <code class="inline">OrcheStack/setup</code>, <code class="inline">OrcheStack/streamlit</code>, <code class="inline">OrcheStack/orchestrator</code>. These are what <code class="inline">docker compose</code> pulls.</li>
-  <li><strong>GitHub</strong> (<code class="inline">github.com/OrcheStack/OrcheStack</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
-  <li><strong>OrcheStack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
+  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-streamlit</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
+  <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
+  <li><strong>orchestack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
 </ul>
 <p>Pick an install option below based on how much you want to see under the hood.</p>
 
 <h2 id="install-script">Option 1 — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
 <p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running.</p>
-<pre>curl -fsSL https://OrcheStack.africa/install | sh</pre>
-<p>The installer creates an <code class="inline">OrcheStack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d OrcheStack</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
+<pre>curl -fsSL https://orchestack.africa/install | sh</pre>
+<p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
 <div class="callout">
-  <p><strong>Pin to a specific version</strong> by passing <code class="inline">OrcheStack_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
+  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
 </div>
 
 <h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>
 <p>For operators who want to read every file before running it, or who plan to fork and customise.</p>
-<pre>git clone https://github.com/OrcheStack/OrcheStack
-cd OrcheStack
-docker compose up -d OrcheStack</pre>
+<pre>git clone https://github.com/tripleaceme/orchestack
+cd orchestack
+docker compose up -d</pre>
 <p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose pull</code>.</p>
 
 <h2 id="install-manual">Option 3 — Manual compose</h2>
 <p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts.</p>
-<pre>mkdir OrcheStack && cd OrcheStack
-curl -fsSL https://raw.githubusercontent.com/OrcheStack/OrcheStack/main/docker-compose.yml -o docker-compose.yml
+<pre>mkdir orchestack && cd orchestack
+curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack/main/docker-compose.yml -o docker-compose.yml
 # inspect / edit as needed
-docker compose up -d OrcheStack</pre>
+docker compose up -d</pre>
 <p>This is what options 1 and 2 do under the hood. Use it when you need to change the compose file (e.g. change exposed ports, add a volume mount) before the first boot.</p>
 
 <h2 id="verify">Verify the install</h2>
 <p>All three options end at the same place. You should see:</p>
 <pre>[+] Running 4/4
- ✔ Container OrcheStack-proxy        Started
- ✔ Container OrcheStack-auth         Started
- ✔ Container OrcheStack-postgres     Started
- ✔ Container OrcheStack-streamlit    Started</pre>
+ ✔ Container orchestack-proxy        Started
+ ✔ Container orchestack-auth         Started
+ ✔ Container orchestack-postgres     Started
+ ✔ Container orchestack-streamlit    Started</pre>
 <p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
 <p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
 <div class="callout warn">
@@ -1462,9 +1465,9 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <h2 id="cant-reach-ui">Can't reach the UI</h2>
 <p>If <code class="inline">http://localhost</code> doesn't respond:</p>
 <ul>
-  <li>Check the proxy container: <code class="inline">docker compose ps OrcheStack-proxy</code>.</li>
+  <li>Check the proxy container: <code class="inline">docker compose ps orchestack-proxy</code>.</li>
   <li>Check port 80 isn't bound by another process: <code class="inline">sudo lsof -i :80</code>.</li>
-  <li>Check proxy logs: <code class="inline">docker compose logs OrcheStack-proxy</code>.</li>
+  <li>Check proxy logs: <code class="inline">docker compose logs orchestack-proxy</code>.</li>
 </ul>
 
 <h2 id="pipeline-failed">Pipeline failed</h2>
@@ -1500,7 +1503,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
         ],
         body="""\
 <h2 id="install-cli">Install the CLI</h2>
-<pre>curl -fsSL https://OrcheStack.africa/cli | sh</pre>
+<pre>curl -fsSL https://orchestack.africa/cli | sh</pre>
 <p>The CLI is a thin wrapper around the OrcheStack REST API and <code class="inline">docker compose</code>. It runs on the host and needs access to the Docker socket.</p>
 
 <h2 id="commands">Commands</h2>
@@ -1557,11 +1560,11 @@ GET  /app/api/audit             # query the audit log</pre>
 <h2 id="base-services">Base services</h2>
 <p>The generated compose always includes:</p>
 <ul>
-  <li><code class="inline">OrcheStack-proxy</code> — reverse proxy (Traefik or Nginx)</li>
-  <li><code class="inline">OrcheStack-front</code> — front-facing static site (this site)</li>
-  <li><code class="inline">OrcheStack-streamlit</code> — admin dashboard</li>
-  <li><code class="inline">OrcheStack-postgres</code> — PostgreSQL warehouse + platform DB</li>
-  <li><code class="inline">OrcheStack-orchestrator</code> — Python service lifecycle manager</li>
+  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
+  <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
+  <li><code class="inline">orchestack-streamlit</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
+  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
 </ul>
 
 <h2 id="profiles">Profiles</h2>
@@ -1570,12 +1573,12 @@ GET  /app/api/audit             # query the audit log</pre>
 <h2 id="overrides">Common overrides</h2>
 <p>Put custom overrides in <code class="inline">docker-compose.override.yml</code> (not edited by OrcheStack):</p>
 <pre>services:
-  OrcheStack-postgres:
+  orchestack-postgres:
     deploy:
       resources:
         limits:
           memory: 2g
-  OrcheStack-streamlit:
+  orchestack-streamlit:
     environment:
       - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500</pre>
 """,
@@ -1599,8 +1602,12 @@ def relpath(from_docs_root: str, to_docs_root: str) -> str:
 
 
 def up_prefix(depth: int) -> str:
-    """Prefix to escape DOCS back to PUBLIC root."""
-    return "../" * (depth + 1)  # +1 because docs/ itself is one level deep under public/
+    """Prefix to escape from a docs page back to ROOT (where index.html and assets/ live).
+
+    docs/install.html (depth=0) needs `../` to reach ROOT.
+    docs/services/airbyte.html (depth=1) needs `../../` to reach ROOT.
+    """
+    return "../" * (depth + 1)  # +1 because every docs page is at least one level under ROOT (inside docs/)
 
 
 def page_depth(path: str) -> int:

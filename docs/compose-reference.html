@@ -115,11 +115,11 @@
 <h2 id="base-services">Base services</h2>
 <p>The generated compose always includes:</p>
 <ul>
-  <li><code class="inline">OrcheStack-proxy</code> — reverse proxy (Traefik or Nginx)</li>
-  <li><code class="inline">OrcheStack-front</code> — front-facing static site (this site)</li>
-  <li><code class="inline">OrcheStack-streamlit</code> — admin dashboard</li>
-  <li><code class="inline">OrcheStack-postgres</code> — PostgreSQL warehouse + platform DB</li>
-  <li><code class="inline">OrcheStack-orchestrator</code> — Python service lifecycle manager</li>
+  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
+  <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
+  <li><code class="inline">orchestack-streamlit</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
+  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
 </ul>
 
 <h2 id="profiles">Profiles</h2>
@@ -128,12 +128,12 @@
 <h2 id="overrides">Common overrides</h2>
 <p>Put custom overrides in <code class="inline">docker-compose.override.yml</code> (not edited by OrcheStack):</p>
 <pre>services:
-  OrcheStack-postgres:
+  orchestack-postgres:
     deploy:
       resources:
         limits:
           memory: 2g
-  OrcheStack-streamlit:
+  orchestack-streamlit:
     environment:
       - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500</pre>
 

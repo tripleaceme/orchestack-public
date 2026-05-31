@@ -67,7 +67,7 @@
     <div class="hero-grid">
       <div>
         <h1>Deploy a complete open-source data stack in minutes.</h1>
-        <p class="sub">OrcheStack is a cost-effective, containerised data platform built for Nigerian organisations. Pick one tool per pipeline layer, sign up, and your modern data infrastructure is ready — no cloud bills, no vendor lock-in.</p>
+        <p class="sub">OrcheStack is a cost-effective, containerised data platform built for Nigerian organisations. Sign up, pick one tool per pipeline layer and your modern data infrastructure is ready. No cloud bills, no vendor lock-in.</p>
         <div class="ctas">
           <a class="btn btn-primary" href="docs/install.html">Get started →</a>
           <a class="btn btn-secondary" href="docs/index.html">View documentation</a>
@@ -76,11 +76,11 @@
       </div>
       <div class="terminal" aria-hidden="true">
         <div class="row"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span></div>
-        <div><span class="prompt">$</span> docker compose up -d OrcheStack
+        <div><span class="prompt">$</span> docker compose up -d
           <span class="out">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
-          <span class="out" style="color:#b6c2cc">Ready at http://localhost. Sign up to configure your stack.</span>
+          <span class="out" style="color:#b6c2cc">Ready at http://localhost:1993. Sign up to configure your stack.</span>
         </div>
-        <div style="margin-top:10px"><span class="prompt">$</span> # open http://localhost — sign up, pick services,
+        <div style="margin-top:10px"><span class="prompt">$</span> # open http://localhost:1993 — sign up, pick services,
           <span class="out">#   OrcheStack pulls and starts only what you enabled.</span>
         </div>
       </div>
@@ -206,7 +206,8 @@
     </div>
 
     <p class="pipeline-footer muted">
-      Swap any layer at install — Superset or Lightdash for BI, ClickHouse or DuckDB for warehouse, SQLMesh for transforms, Soda Core for quality. <a href="services.html">See all supported tools →</a>
+      Swap any layer at install, either Superset or Lightdash for BI, ClickHouse or DuckDB for warehouse, SQLMesh for transforms, Soda Core for quality. 
+      <strong><br><a href="services.html">See all supported tools →</a></br></strong>
     </p>
   </div>
 </section>
@@ -221,7 +222,7 @@
       <div class="tier">
         <div class="tier-head">
           <span class="chip chip-base">Base install</span>
-          <span class="tier-desc">Ships with every OrcheStack container — runs from day zero</span>
+          <span class="tier-desc">Ships with every OrcheStack container, runs from day zero</span>
         </div>
         <div class="chips-row">
           <span class="svc-chip">Reverse Proxy</span>
@@ -234,7 +235,7 @@
       <div class="tier">
         <div class="tier-head">
           <span class="chip chip-hot">Hot tier</span>
-          <span class="tier-desc">Pulled on configure — stays running while enabled</span>
+          <span class="tier-desc">Pulled on configure and stays running while enabled</span>
         </div>
         <div class="chips-row">
           <span class="svc-chip">MinIO</span>
@@ -245,7 +246,7 @@
       <div class="tier">
         <div class="tier-head">
           <span class="chip chip-cold">Cold tier</span>
-          <span class="tier-desc">Pulled on configure — starts on demand, stops when idle</span>
+          <span class="tier-desc">Pulled on configure but starts on demand, stops when idle</span>
         </div>
         <div class="chips-row">
           <span class="svc-chip">Airbyte</span>
@@ -276,7 +277,7 @@
           <div class="step4-num">1</div>
           <div class="step4-copy">
             <h3>Install OrcheStack</h3>
-            <p>OrcheStack ships as a single Docker Compose file. Install Docker for your OS, then pull our compose file — one command each.</p>
+            <p>OrcheStack ships as a single Docker Compose file. Install Docker for your OS, then pull our compose file in one command each.</p>
           </div>
         </div>
         <div class="step4-right">
@@ -300,7 +301,7 @@
 <span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -311,7 +312,7 @@
 <span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -322,7 +323,7 @@
 <span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -333,7 +334,7 @@
 <span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -344,7 +345,7 @@
 <span class="prompt-line">&gt;</span> wsl --install
 
 <span class="comment"># 2. Inside WSL Ubuntu, pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://OrcheStack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -357,14 +358,14 @@
           <div class="step4-num">2</div>
           <div class="step4-copy">
             <h3>Start the control plane</h3>
-            <p>Only the base control plane starts — about 2 GB of RAM. Other services wait until you enable them in the next step.</p>
+            <p>Only the base control plane starts. It requires about 2 GB of RAM. Other services wait until you enable them in the next step.</p>
           </div>
         </div>
         <div class="step4-right">
           <div class="term-block">
-<pre><span class="prompt-line">$</span> docker compose up -d OrcheStack
+<pre><span class="prompt-line">$</span> docker compose up -d
 <span class="comment">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
-<span class="comment">Ready at http://localhost</span></pre>
+<span class="comment">Ready at http://localhost:1993</span></pre>
             <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
         </div>
@@ -376,7 +377,7 @@
           <div class="step4-num">3</div>
           <div class="step4-copy">
             <h3>Sign up &amp; pick your stack</h3>
-            <p>Open <code class="inline">http://localhost</code>. The first user becomes Admin. Then pick one tool per pipeline layer — OrcheStack pulls only the Docker images you chose.</p>
+            <p>Open <code class="inline">http://localhost:1993</code>. The first user becomes Admin. Then pick one tool per pipeline layer and OrcheStack pulls only the Docker images you chose.</p>
           </div>
         </div>
         <div class="step4-right">
@@ -400,7 +401,7 @@
           <div class="step4-num">4</div>
           <div class="step4-copy">
             <h3>See it in action</h3>
-            <p>All services are now wired together. Run the default DAG on demand or leave it on the nightly schedule — your dashboards update automatically.</p>
+            <p>All services are now wired together. Run the default DAG on demand or leave it on the nightly schedule and your dashboards update automatically.</p>
           </div>
         </div>
         <div class="step4-right">

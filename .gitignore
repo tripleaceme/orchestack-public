@@ -1,0 +1,56 @@
+# OrcheStack repository .gitignore
+# Tracks only source. Generated artefacts, secrets, and OS clutter stay out.
+
+# ============================================================================
+# Secrets — resolved environment files (the .example template IS tracked).
+# Never commit real credentials.
+# ============================================================================
+.env
+**/.env
+!**/.env.example
+system/docker/.env
+system/**/.env
+system/config/
+
+# ============================================================================
+# Runtime state — data volumes, logs, generated runtime configs.
+# These belong on the host filesystem, not in source control.
+# ============================================================================
+system/docker/postgres-data/
+system/docker/*-data/
+system/docker/logs/
+
+# ============================================================================
+# Python — cache, bytecode, virtual environments.
+# ============================================================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ============================================================================
+# Node / JavaScript — if any tooling here ever needs npm modules.
+# (None today, but the marketing site might add one for build automation.)
+# ============================================================================
+node_modules/
+.next/
+.nuxt/
+
+# ============================================================================
+# Editor + OS clutter.
+# ============================================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.claude/

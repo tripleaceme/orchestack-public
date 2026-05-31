@@ -120,48 +120,48 @@
   <li><strong>Ports 80 and 443</strong> available on the host (OrcheStack's reverse proxy binds here)</li>
 </ul>
 <div class="callout">
-  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">OrcheStack.africa</code> (installer + compose file). Everything else is internal.</p>
+  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">orchestack.africa</code> (installer + compose file). Everything else is internal.</p>
 </div>
 
-<h2 id="distribution">How to Install OrcheStack</h2>
-<!-- <p>OrcheStack is three artifacts in three places — understanding the split makes the install paths below obvious:</p>
+<h2 id="distribution">Where OrcheStack lives</h2>
+<p>OrcheStack is three artifacts in three places — understanding the split makes the install paths below obvious:</p>
 <ul>
-  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/OrcheStack/*</code>) — our prebuilt images: <code class="inline">OrcheStack/auth</code>, <code class="inline">OrcheStack/setup</code>, <code class="inline">OrcheStack/streamlit</code>, <code class="inline">OrcheStack/orchestrator</code>. These are what <code class="inline">docker compose</code> pulls.</li>
-  <li><strong>GitHub</strong> (<code class="inline">github.com/OrcheStack/OrcheStack</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
-  <li><strong>OrcheStack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
-</ul> -->
+  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-streamlit</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
+  <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
+  <li><strong>orchestack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
+</ul>
 <p>Pick an install option below based on how much you want to see under the hood.</p>
 
 <h2 id="install-script">Option 1 — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
 <p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running.</p>
-<pre>curl -fsSL https://OrcheStack.africa/install | sh</pre>
-<p>The installer creates an <code class="inline">OrcheStack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d OrcheStack</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
+<pre>curl -fsSL https://orchestack.africa/install | sh</pre>
+<p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
 <div class="callout">
-  <p><strong>Pin to a specific version</strong> by passing <code class="inline">OrcheStack_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
+  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
 </div>
 
 <h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>
 <p>For operators who want to read every file before running it, or who plan to fork and customise.</p>
-<pre>git clone https://github.com/OrcheStack/OrcheStack
-cd OrcheStack
-docker compose up -d OrcheStack</pre>
+<pre>git clone https://github.com/tripleaceme/orchestack
+cd orchestack
+docker compose up -d</pre>
 <p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose pull</code>.</p>
 
 <h2 id="install-manual">Option 3 — Manual compose</h2>
 <p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts.</p>
-<pre>mkdir OrcheStack && cd OrcheStack
-curl -fsSL https://raw.githubusercontent.com/OrcheStack/OrcheStack/main/docker-compose.yml -o docker-compose.yml
+<pre>mkdir orchestack && cd orchestack
+curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack/main/docker-compose.yml -o docker-compose.yml
 # inspect / edit as needed
-docker compose up -d OrcheStack</pre>
+docker compose up -d</pre>
 <p>This is what options 1 and 2 do under the hood. Use it when you need to change the compose file (e.g. change exposed ports, add a volume mount) before the first boot.</p>
 
 <h2 id="verify">Verify the install</h2>
 <p>All three options end at the same place. You should see:</p>
 <pre>[+] Running 4/4
- ✔ Container OrcheStack-proxy        Started
- ✔ Container OrcheStack-auth         Started
- ✔ Container OrcheStack-postgres     Started
- ✔ Container OrcheStack-streamlit    Started</pre>
+ ✔ Container orchestack-proxy        Started
+ ✔ Container orchestack-auth         Started
+ ✔ Container orchestack-postgres     Started
+ ✔ Container orchestack-streamlit    Started</pre>
 <p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
 <p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
 <div class="callout warn">

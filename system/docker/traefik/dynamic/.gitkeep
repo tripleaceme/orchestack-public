@@ -1,0 +1,9 @@
+# This directory is the Traefik "file" provider's mount point. It is read by
+# the proxy container at /etc/traefik/dynamic and watched for changes at
+# runtime (no restart needed when files are added or modified).
+#
+# Add .yml or .toml files here for routing rules that aren't container-scoped
+# — for example: routing to an external upstream, global middlewares, or
+# TLS certificate definitions before Let's Encrypt is wired in.
+#
+# Empty at M1. Populated at M4 if needed for the integrated data services.
