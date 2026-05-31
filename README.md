@@ -76,10 +76,11 @@ PROXY_HTTP_PORT=1993
 ├── docs/                                 28-page documentation site (generated)
 │
 └── system/                               Runtime code for the platform
-    ├── docs-portal/                      Auth + setup wizard nginx container
-    │   ├── Dockerfile                    →  tripleaceme/orchestack-auth
+    ├── auth/                             Auth + setup wizard nginx container
+    │   ├── Dockerfile                    →  tripleaceme/orchestack-auth (build context: repo root)
     │   ├── nginx.conf                    Routes scoped to /signup, /login, /setup/*, /assets/*
     │   └── public/                       signup.html, login.html, setup/*.html
+    │                                     (no assets/css — pulled from root /assets at build time)
     ├── docker/                           Base Docker Compose specification (M1)
     │   ├── docker-compose.yml            5-service control plane
     │   ├── .env.example                  Template (copy to .env, set POSTGRES_PASSWORD)
@@ -97,7 +98,7 @@ PROXY_HTTP_PORT=1993
 ## How OrcheStack is published
 
 - **Container images** → Docker Hub under [`tripleaceme/orchestack-*`](https://hub.docker.com/u/tripleaceme):
-  - [`tripleaceme/orchestack-auth`](https://hub.docker.com/r/tripleaceme/orchestack-auth) (built from `system/docs-portal/`)
+  - [`tripleaceme/orchestack-auth`](https://hub.docker.com/r/tripleaceme/orchestack-auth) (built from `system/auth/` + shared `assets/css/`)
   - [`tripleaceme/orchestack-orchestrator`](https://hub.docker.com/r/tripleaceme/orchestack-orchestrator) (M2)
   - [`tripleaceme/orchestack-streamlit`](https://hub.docker.com/r/tripleaceme/orchestack-streamlit) (M3)
   - [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) (M4)

@@ -95,17 +95,23 @@ services:
 
   # ==========================================================================
   # 3. auth — Signup + login + setup wizard (nginx serving static HTML).
-  # Image is built from OrcheStack/system/docs-portal/ and pushed to Docker
-  # Hub as tripleaceme/orchestack-auth. During development, you can swap the
-  # `image:` line for `build: ../docs-portal` to test local changes without
-  # pushing.
+  # Image is built from OrcheStack/system/auth/ (with the repo root as build
+  # context so the Dockerfile can pull in the shared assets/css/) and pushed
+  # to Docker Hub as tripleaceme/orchestack-auth. During development, you can
+  # uncomment the `build:` block below to rebuild from local sources instead
+  # of pulling from Docker Hub.
   # ==========================================================================
   auth:
     image: tripleaceme/orchestack-auth:${AUTH_TAG:-latest}
     # Uncomment during development to rebuild the auth image from the local
-    # Dockerfile instead of pulling from Docker Hub:
+    # Dockerfile instead of pulling from Docker Hub. The context is the
+    # OrcheStack repo root (../.. from here, since this file lives in
+    # system/docker/) so the Dockerfile can COPY both system/auth/ AND
+    # assets/css/ — the latter is the single canonical CSS source shared with
+    # the marketing site.
     # build:
-    #   context: ../docs-portal
+    #   context: ../..
+    #   dockerfile: system/auth/Dockerfile
     container_name: orchestack-auth
     restart: unless-stopped
     networks:
@@ -114,7 +120,7 @@ services:
       - traefik.enable=true
       # One router catches all the auth/setup paths. Traefik passes them through
       # to nginx unchanged (no path stripping) because the nginx config in
-      # ../docs-portal/nginx.conf expects them as-is.
+      # ../auth/nginx.conf expects them as-is.
       - traefik.http.routers.auth.rule=Path(`/signup`) || Path(`/login`) || PathPrefix(`/setup`) || PathPrefix(`/assets`)
       - traefik.http.routers.auth.entrypoints=web
       - traefik.http.services.auth.loadbalancer.server.port=80

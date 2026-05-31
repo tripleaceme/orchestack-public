@@ -1,7 +1,8 @@
 # Build and push the orchestack-auth image to Docker Hub.
 #
-# Triggered by pushes to main that change anything under system/docs-portal/
-# (the source folder for this image), or by manual workflow_dispatch.
+# Triggered by pushes to main that change anything under system/auth/ (the
+# source folder for this image) or assets/css/ (the shared CSS the image
+# ships from the repo root), or by manual workflow_dispatch.
 #
 # Required GitHub Secrets (Settings → Secrets and variables → Actions):
 #   - DOCKERHUB_USERNAME  — your Docker Hub account name (tripleaceme)
@@ -18,7 +19,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'system/docs-portal/**'
+      - 'system/auth/**'
+      - 'assets/css/**'
       - '.github/workflows/build-orchestack-auth.yml'
   workflow_dispatch:  # also allow manual triggering from the Actions tab
 
@@ -61,8 +63,11 @@ jobs:
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v5
         with:
-          context: ./system/docs-portal
-          file: ./system/docs-portal/Dockerfile
+          # Build context is the OrcheStack repo root, NOT system/auth/ — the
+          # Dockerfile pulls in the shared assets/css/ which lives at the
+          # root. See system/auth/Dockerfile for the explanation.
+          context: .
+          file: ./system/auth/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

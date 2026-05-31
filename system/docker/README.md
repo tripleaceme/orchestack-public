@@ -82,13 +82,16 @@ and controls containers via the Docker socket, but exposes no HTTP surface).
 **The auth container fails to pull.** The `tripleaceme/orchestack-auth:latest`
 image has not been pushed yet (that's M1 step 1.7). For now, uncomment the
 `build:` block in the `auth` service definition to build from the local
-Dockerfile at `OrcheStack/system/docs-portal/`:
+Dockerfile at `OrcheStack/system/auth/`. The build context is the OrcheStack
+repo root because the Dockerfile pulls in the shared `assets/css/` from there
+(single canonical CSS source, shared with the marketing site):
 
 ```yaml
 auth:
   # image: tripleaceme/orchestack-auth:${AUTH_TAG:-latest}
   build:
-    context: ../docs-portal
+    context: ../..
+    dockerfile: system/auth/Dockerfile
   ...
 ```
 

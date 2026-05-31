@@ -41,8 +41,9 @@
     <h1>Configure your services</h1>
     <p class="sub" id="intro-sub">
       We'll collect admin credentials for each tool you picked. Values are saved to
-      <code>./config/.env</code> on the host — not stored in plain text anywhere else. You can edit
-      these later from the Streamlit dashboard.
+      <code>./config/.env</code> on the host. Fields tagged
+      <span class="derived-tag">auto-derived</span> are computed from the other credentials you
+      enter. You can edit any of these values later from the Streamlit dashboard.
     </p>
 
     <!-- Warnings panel for None selections (rendered by JS when applicable) -->
@@ -84,6 +85,25 @@
   const STORAGE_KEY = 'OrcheStack.setup';
 
   // ============================================================
+  // Legacy-label migration
+  // Rename old dropdown labels to their current TOOL_FORMS keys. Users who
+  // ran the wizard before a label was renamed have the old string in
+  // localStorage; without this they'd see the "coming soon" fallback even
+  // though the tool is fully supported. Must be defined before the load-state
+  // block below uses it (const has no hoisting — TDZ would throw).
+  // ============================================================
+  const SELECTION_ALIASES = {
+    ingestion: { "Python": "Custom Python" },
+  };
+  function migrateSelections(selections) {
+    const out = { ...selections };
+    for (const [layer, map] of Object.entries(SELECTION_ALIASES)) {
+      if (out[layer] && map[out[layer]]) out[layer] = map[out[layer]];
+    }
+    return out;
+  }
+
+  // ============================================================
   // Consequences of picking "None" for a layer
   // Shown as a single warning panel above the tabs. Each consequence is
   // phrased so the user gives informed consent: "here's exactly what you're
@@ -104,7 +124,7 @@
     },
     governance: {
       layer: "Governance",
-      consequence: "You won't have column-level lineage or a data catalogue. Understanding which dashboards depend on which models becomes manual work — painful during schema changes.",
+      consequence: "You won't have column-level lineage or a data catalogue. Understanding which dashboards depend on which models becomes manual work, painful during schema changes.",
     },
     bi: {
       layer: "BI / Visualisation",
@@ -126,7 +146,7 @@
 
     // ------- Ingestion -------
     "Airbyte": {
-      desc: "Connector-based ingestion. Needs credentials for Airbyte's own internal PostgreSQL — it tracks sync state there.",
+      desc: "Connector-based ingestion. Needs credentials for Airbyte's own internal PostgreSQL to track sync state.",
       fields: [
         { name: "AIRBYTE_DB_HOST", label: "Internal DB host", type: "text", default: "postgres",
           hint: "Hostname Airbyte uses to reach its state database. In OrcheStack this is the service name 'postgres' (the shared instance). Leave as default." },
@@ -138,32 +158,37 @@
           hint: "Internal database name where Airbyte tracks sync state. Keep as 'airbyte' unless you're running multiple Airbyte instances." },
       ],
     },
-    "Custom Python (Airflow DAGs)": {
-      desc: "No credentials collected at setup — you'll configure sources inside your Airflow DAGs later.",
+    // Key matches what cleanName() produces from the select.html option text
+    // "Custom Python (Airflow DAGs)" — the "(Airflow DAGs)" suffix is stripped
+    // (cleanName treats trailing parentheticals as tag chrome). Keep the key
+    // in sync if you change either side.
+    "Custom Python": {
+      desc: "No credentials needed.",
       fields: [],
       note: "Nothing to configure here. OrcheStack will prepare a DAGs folder you can write Python scripts into.",
     },
 
     // ------- Orchestration -------
     "Apache Airflow": {
-      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata — you've already entered those credentials.",
+      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata.",
       fields: [
-        { name: "AIRFLOW_FERNET_KEY", label: "Fernet key (auto-generated)", type: "text", default: "auto-generated on save", disabled: true,
-          hint: "Encryption key for connection passwords inside Airflow. OrcheStack generates a fresh one on save. Don't change unless restoring from a backup with a known key." },
+        { name: "AIRFLOW_FERNET_KEY", label: "Fernet key", type: "text", placeholder: "Click Generate to create a Fernet key", required: true,
+          readonly: true, generate: "fernet-key",
+          hint: "Encryption key for connection passwords inside Airflow. Click Generate — the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
       ],
-      note: "The Fernet key encrypts stored connection passwords inside Airflow. OrcheStack generates one automatically — leave as is unless you're restoring from a backup.",
+      note: "The Fernet key encrypts stored connection passwords inside Airflow.",
     },
 
     // ------- Warehouse -------
     "PostgreSQL": {
       desc: "Primary warehouse. Hosts raw, marts, Airflow metadata, and OrcheStack's <code>platform</code> schema in one instance.",
       fields: [
-        { name: "POSTGRES_USER", label: "Superuser name", type: "text", default: "postgres", required: true,
-          hint: "PostgreSQL superuser who can create databases and manage roles. Usually left as 'postgres'." },
+        { name: "POSTGRES_USER", label: "Superuser name", type: "text", default: "orchestack", required: true,
+          hint: "PostgreSQL superuser who can create databases and manage roles. Default 'orchestack' matches OrcheStack's expected platform user — change only if you have a reason (e.g. an existing convention you want to keep)." },
         { name: "POSTGRES_PASSWORD", label: "Superuser password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
           hint: "Superuser password. Min 12 characters recommended. You can rotate it later from the admin dashboard without losing data." },
-        { name: "POSTGRES_DB", label: "Default database", type: "text", default: "OrcheStack", required: true,
-          hint: "Default database created on first boot. OrcheStack's schemas (platform, raw, marts, airflow) live inside it." },
+        { name: "POSTGRES_DB", label: "Default database", type: "text", default: "orchestack", required: true,
+          hint: "Default database created on first boot. OrcheStack's schemas (platform, raw, marts, airflow) live inside it. Lowercase recommended — Postgres folds unquoted identifiers to lowercase, so 'OrcheStack' would become 'orchestack' anyway." },
       ],
     },
     "ClickHouse": {
@@ -217,7 +242,13 @@
         { name: "DBT_PASSWORD", label: "dbt PG password", type: "password", placeholder: "••••••••", required: true,
           hint: "Password for the dbt PG user. OrcheStack writes it to profiles.yml at ./config/dbt/profiles.yml. Make sure ./config is in your .gitignore." },
       ],
-      note: "Two things to do AFTER setup finishes — both covered in the docs: (1) Push your dbt project to GitHub if it isn't there yet (see /docs/guides/dbt-to-github.html) and paste the repo URL into Streamlit so OrcheStack can pull changes automatically. Make sure the 'profile:' line in your dbt_project.yml matches the project name you entered above — OrcheStack uses it as the profiles.yml key, and dbt fails to start if they don't match. (2) Before developers start writing models, the admin should create separate dev schemas (e.g. dev_ayoade, dev_alice) so local work doesn't overwrite the shared marts schema that stakeholders read from (see /docs/guides/dbt-dev-schemas.html). The 'prod' target configured here writes to the shared schema — running dev against prod will break dashboards.",
+      note: "Two things to do AFTER setup finishes:",
+      noteHtml: `
+        <ul>
+          <li>Push your dbt project to GitHub if it isn't there yet (<a href="/docs/guides/dbt-to-github.html"><strong>see dbt to GitHub</strong></a>) and paste the repo URL into Streamlit so OrcheStack can pull changes automatically. Make sure the <code>profile:</code> line in your <code>dbt_project.yml</code> matches the project name you entered above, OrcheStack uses it as the <code>profiles.yml</code> key, and dbt fails to start if they don't match.</li>
+          <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared marts schema that stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>). The <code>prod</code> target configured here writes to the shared schema, so running dev against prod will break dashboards.</li>
+        </ul>
+      `,
     },
     "SQLMesh": {
       desc: "Modern dbt alternative with virtual data environments and better incremental semantics.",
@@ -235,19 +266,25 @@
 
     // ------- Data quality -------
     "Great Expectations": {
-      desc: "Declarative data quality checks. Runs after every dbt build — failed expectations block downstream tasks.",
+      desc: "Declarative data quality checks. Runs after every dbt build. Great Expectations reuses your PostgreSQL warehouse credentials (it validates the same database dbt writes to), and stores its checkpoints in a standard project-relative directory.",
       fields: [
-        { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text", default: "postgresql://dbt_user:***@postgres:5432/OrcheStack",
-          hint: "SQLAlchemy-style connection URL for the database GE validates. Defaults to the same PostgreSQL warehouse dbt writes to. The '***' gets replaced by the dbt password at runtime." },
-        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text", default: "./config/great_expectations/checkpoints",
-          hint: "Where GE looks for expectation suites and checkpoint configs. Mounted from the host so you can version-control them." },
+        { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text",
+          default: "postgresql://dbt_user:***@postgres:5432/orchestack",
+          readonly: true,
+          hint: "Auto-derived from your PostgreSQL warehouse credentials. The '***' placeholder is substituted at deploy time with the actual dbt user password from .env. Great Expectations runs as the same user dbt writes as, so it sees the modelled marts. To validate a different database, edit GE_DATASOURCE_URL in the generated .env after install." },
+        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text",
+          default: "./config/great_expectations/checkpoints",
+          readonly: true,
+          hint: "Standard project-relative path — resolves to <OrcheStack-install-dir>/config/great_expectations/checkpoints/ on the host. Mounted into the GE container so checkpoint definitions persist between runs and can be version-controlled alongside your dbt project." },
       ],
     },
     "Soda Core": {
-      desc: "YAML-first data quality. Simpler setup; less powerful than Great Expectations.",
+      desc: "YAML-first data quality. Simpler setup; less powerful than Great Expectations. Configuration file lives at a standard project-relative path; no manual input needed.",
       fields: [
-        { name: "SODA_CONFIG_PATH", label: "soda.yml path", type: "text", default: "./config/soda/soda.yml",
-          hint: "Path to your soda.yml file on the host. Contains connection info + checks." },
+        { name: "SODA_CONFIG_PATH", label: "soda.yml path", type: "text",
+          default: "./config/soda/soda.yml",
+          readonly: true,
+          hint: "Standard project-relative path — resolves to <OrcheStack-install-dir>/config/soda/soda.yml on the host. Edit this file after install to add your connection info and check definitions." },
       ],
     },
 
@@ -259,8 +296,9 @@
           hint: "Email to log into OpenMetadata's UI. Can differ from your OrcheStack platform login — OpenMetadata has its own user system." },
         { name: "OPENMETADATA_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "OpenMetadata admin password. Min 12 characters recommended." },
-        { name: "OPENMETADATA_JWT_SECRET", label: "JWT secret", type: "password", placeholder: "32+ characters (openssl rand -hex 32)", required: true,
-          hint: "Secret used to sign JWT tokens for OpenMetadata's internal API. Generate with 'openssl rand -hex 32' or any 32+ character random string." },
+        { name: "OPENMETADATA_JWT_SECRET", label: "JWT secret", type: "password", placeholder: "Click Generate to create a 64-char hex secret", required: true,
+          readonly: true, generate: "hex",
+          hint: "Secret used to sign JWT tokens for OpenMetadata's internal API. Click Generate to create a cryptographically random 64-character hex string (equivalent to 'openssl rand -hex 32'). The value is created in your browser and never leaves your machine until you submit this form." },
       ],
     },
     "DataHub": {
@@ -310,10 +348,10 @@
 
     // ------- Admin UI -------
     "pgAdmin": {
-      desc: "PostgreSQL web UI. Runs on demand, stops when idle. Credentials are only for the pgAdmin login itself.",
+      desc: "Credentials are only for the pgAdmin UI login itself.",
       fields: [
         { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
-          hint: "Email to log into pgAdmin's own UI — not your PostgreSQL user. pgAdmin connects to PostgreSQL separately using the warehouse credentials." },
+          hint: "Email to log into pgAdmin's own UI, not your PostgreSQL user. pgAdmin connects to PostgreSQL separately using the warehouse credentials." },
         { name: "PGADMIN_DEFAULT_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "pgAdmin login password." },
       ],
@@ -358,7 +396,7 @@
   } else {
     try {
       const state = JSON.parse(rawState);
-      const selections = state.selections || {};
+      const selections = migrateSelections(state.selections || {});
       const credentials = state.credentials || {};
       renderNoneWarnings(selections);
       renderWizard(selections, credentials);
@@ -388,7 +426,7 @@
 
     container.innerHTML = `
       <div class="none-warnings" role="alert">
-        <h3>⚠ You've skipped ${warnings.length} service${warnings.length > 1 ? 's' : ''} — here's what that means</h3>
+        <h3>⚠ You've skipped ${warnings.length} service${warnings.length > 1 ? 's' : ''}, here's what that means</h3>
         <ul>${items}</ul>
         <p class="footnote">You can add any of these later from the Streamlit dashboard via <strong>Add services</strong>.</p>
       </div>
@@ -469,6 +507,29 @@
     nextBtn.addEventListener('click', () => show(current + 1));
 
     const form = document.getElementById('config-form');
+
+    // Delegated handler for in-browser secret generation. Buttons rendered
+    // via renderField carry data-generate (the flavour) + data-target (the
+    // field name). We listen on the form so newly rendered tabs just work.
+    form.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-generate]');
+      if (!btn) return;
+      const flavour = btn.dataset.generate;
+      const target  = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const value = flavour === 'fernet-key' ? generateFernetKey() : generateHexSecret();
+      target.value = value;
+      // Briefly flash success on the button so the user knows it worked,
+      // since password-type inputs hide the generated content.
+      const originalText = btn.textContent;
+      btn.textContent = 'Generated ✓';
+      btn.classList.add('btn-generated');
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.classList.remove('btn-generated');
+      }, 1500);
+    });
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const creds = {};
@@ -490,9 +551,11 @@
 
     // Unsupported/coming-soon fallback
     if (svc.form.unsupported) {
+      const noteHtml = svc.form.noteHtml || `<p>${escapeHtml(svc.form.note)}</p>`;
       parts.push(`
         <div class="callout warn">
-          <p><strong>${escapeHtml(svc.tool)} isn't available yet.</strong> ${escapeHtml(svc.form.note)}</p>
+          <p><strong>${escapeHtml(svc.tool)} isn't available yet.</strong></p>
+          ${noteHtml}
         </div>
         <p style="margin-top:20px">
           <a class="btn btn-secondary btn-sm" href="select.html">← Back and change this</a>
@@ -503,13 +566,47 @@
 
     // No fields, just an informational note (e.g. Custom Python for ingestion)
     if (svc.form.fields.length === 0 && svc.form.note) {
-      parts.push(`<div class="callout"><p>${escapeHtml(svc.form.note)}</p></div>`);
+      const noteHtml = svc.form.noteHtml || `<p>${escapeHtml(svc.form.note)}</p>`;
+      parts.push(`<div class="callout">${noteHtml}</div>`);
       return parts.join('');
     }
 
-    // Render each field with label + optional info icon + input
+    // Render each field with label + optional info icon + input.
+    //
+    // Field-control flavours, all share the same <input> markup but differ in
+    // user-affordance:
+    //
+    //   default       — editable input. Submits its value.
+    //   readonly:true — non-editable input, but still SUBMITS its value.
+    //                   Used for derived values (e.g. GE_DATASOURCE_URL is
+    //                   computed from the warehouse credentials) and for
+    //                   standard project-relative paths (e.g. checkpoint
+    //                   directories) that we want in .env but don't want the
+    //                   operator typing manually. Rendered with a small
+    //                   "auto-derived" badge next to the label so it's clear
+    //                   why the field can't be edited.
+    //   disabled:true — non-editable input that does NOT submit its value.
+    //
+    // Modifier (composes with readonly:true):
+    //   generate: 'hex'         — adds a Generate button that fills the field
+    //                             with a 64-char hex string from
+    //                             crypto.getRandomValues (== openssl rand
+    //                             -hex 32). Used for JWT secrets.
+    //   generate: 'fernet-key'  — adds a Generate button that fills the field
+    //                             with a urlsafe-base64-encoded 32-byte key
+    //                             (== Python's Fernet.generate_key()). The
+    //                             key is in the exact format Airflow expects.
     svc.form.fields.forEach(field => {
-      const savedValue = credentials[field.name] ?? field.default ?? '';
+      // For generatable fields (JWT secret, Fernet key), auto-fill on first
+      // render so the user can just submit. The Generate button stays as a
+      // "regenerate" affordance. Without this the user would have to click
+      // Generate manually, which adds an avoidable step to the happy path.
+      let savedValue = credentials[field.name] ?? field.default ?? '';
+      if (!savedValue && field.generate) {
+        savedValue = field.generate === 'fernet-key'
+          ? generateFernetKey()
+          : generateHexSecret();
+      }
       const attrs = [
         `id="${field.name}"`,
         `name="${field.name}"`,
@@ -518,22 +615,41 @@
       if (field.placeholder) attrs.push(`placeholder="${escapeAttr(field.placeholder)}"`);
       if (field.required)    attrs.push(`required`);
       if (field.disabled)    attrs.push(`disabled`);
+      if (field.readonly)    attrs.push(`readonly`);
       if (savedValue)        attrs.push(`value="${escapeAttr(savedValue)}"`);
 
       const infoIcon = field.hint
         ? ` <span class="info-icon" tabindex="0" aria-label="More info">?<span class="info-tip">${escapeHtml(field.hint)}</span></span>`
         : '';
 
+      const derivedBadge = field.readonly && !field.generate
+        ? ` <span class="derived-tag" aria-label="Value is derived automatically; not editable">auto-derived</span>`
+        : '';
+
+      const groupClass = field.readonly ? 'form-group form-group-derived' : 'form-group';
+
+      const inputHtml = `<input ${attrs.join(' ')}>`;
+      const controlHtml = field.generate
+        ? `<div class="input-with-action">
+             ${inputHtml}
+             <button type="button" class="btn btn-secondary btn-sm btn-generate"
+                     data-generate="${escapeAttr(field.generate)}"
+                     data-target="${field.name}"
+                     aria-label="Generate a secure random value for ${escapeAttr(field.label)}">Generate</button>
+           </div>`
+        : inputHtml;
+
       parts.push(`
-        <div class="form-group">
-          <label for="${field.name}">${escapeHtml(field.label)}${infoIcon}</label>
-          <input ${attrs.join(' ')}>
+        <div class="${groupClass}">
+          <label for="${field.name}">${escapeHtml(field.label)}${derivedBadge}${infoIcon}</label>
+          ${controlHtml}
         </div>
       `);
     });
 
     if (svc.form.note) {
-      parts.push(`<div class="callout"><p>${escapeHtml(svc.form.note)}</p></div>`);
+      const noteHtml = svc.form.noteHtml || `<p>${escapeHtml(svc.form.note)}</p>`;
+      parts.push(`<div class="callout">${noteHtml}</div>`);
     }
 
     return parts.join('');
@@ -548,6 +664,28 @@
     }[c]));
   }
   function escapeAttr(s) { return escapeHtml(s); }
+
+  // 64-character hex string from 32 cryptographically random bytes.
+  // Equivalent to `openssl rand -hex 32`. Used for JWT secrets and any other
+  // generic high-entropy token. crypto.getRandomValues is a CSPRNG; do not
+  // replace with Math.random.
+  function generateHexSecret() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // URL-safe base64 of 32 random bytes — the exact format Fernet expects.
+  // Equivalent to Python's `cryptography.fernet.Fernet.generate_key()`.
+  // Produces a 44-char string (43 chars + '=' padding) using '-' and '_'
+  // instead of '+' and '/'. Airflow will refuse hex or standard base64.
+  function generateFernetKey() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_');
+  }
 </script>
 
 </body>

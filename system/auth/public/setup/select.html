@@ -40,8 +40,8 @@
 
     <h1>Pick your tools</h1>
     <p class="sub">
-      Choose one tool per pipeline layer. Defaults are battle-tested — pick them if you're unsure.
-      Options marked <strong style="color:var(--accent)">(coming soon)</strong> are on our roadmap but
+      Choose one tool per pipeline layer. Defaults are battle-tested. Options marked 
+      <strong style="color:var(--accent)">(coming soon)</strong> are on our roadmap but
       not supported in this release.
     </p>
 
@@ -52,12 +52,12 @@
           <div class="label">Ingestion<small>Pulls data from sources</small></div>
           <select name="ingestion">
             <option selected>Airbyte  (recommended)</option>
-            <option>None</option>
+            <option>Custom Python (Airflow DAGs)</option>
           </select>
         </div>
 
         <div class="picker-row">
-          <div class="label">Orchestration<small>Required — schedules every run</small></div>
+          <div class="label">Orchestration<small>Required for schedules run</small></div>
           <select name="orchestration" disabled>
             <option selected>Apache Airflow  (core)</option>
           </select>

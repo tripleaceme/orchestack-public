@@ -198,6 +198,58 @@ section { padding: 80px 0; }
 }
 .form-group textarea { min-height: 120px; resize: vertical; }
 .form-group .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* Derived (read-only) fields — values OrcheStack computes from other inputs
+   (e.g. a Postgres connection URL built from warehouse credentials) or
+   standard project-relative paths the operator should not edit manually.
+   The input is non-editable but still submits its value to the backend. */
+.form-group-derived input[readonly] {
+  background: var(--bg-alt, #f7f8fa);
+  color: var(--text-2);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.form-group-derived input[readonly]:focus {
+  border-color: var(--border);
+  box-shadow: none;
+}
+.derived-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--accent, #b45309);
+  background: var(--accent-100, #fef3e2);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+/* Inputs paired with an action button (e.g. "Generate" for secrets).
+   Flex layout so the input flexes to fill width and the button hugs its
+   own content. align-items: stretch keeps the button the same height as
+   the input across browsers. */
+.input-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.input-with-action input { flex: 1 1 auto; min-width: 0; }
+.input-with-action .btn-generate { flex: 0 0 auto; white-space: nowrap; }
+
+/* Brief success state after the user clicks Generate. The button text is
+   swapped to "Generated ✓" by JS and this class adds the colour cue —
+   useful because password inputs hide the generated value. */
+.btn-generate.btn-generated {
+  background: var(--green-100, #e6f7ec);
+  color: var(--green, #1f8a4d);
+  border-color: var(--green, #1f8a4d);
+}
+
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-submit { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
 .auth-card .alt { text-align: center; margin-top: 20px; font-size: 14px; color: var(--muted); }
