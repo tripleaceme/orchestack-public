@@ -42,7 +42,7 @@ and Streamlit dashboard:
 
 ```sh
 cd system/docker
-cp .env.example .env       # set POSTGRES_PASSWORD before running
+cp .env.example .env       # set ORCHESTACK_DB_PASSWORD before running
 docker compose up -d
 ```
 
@@ -83,7 +83,7 @@ PROXY_HTTP_PORT=1993
     │                                     (no assets/css — pulled from root /assets at build time)
     ├── docker/                           Base Docker Compose specification (M1)
     │   ├── docker-compose.yml            5-service control plane
-    │   ├── .env.example                  Template (copy to .env, set POSTGRES_PASSWORD)
+    │   ├── .env.example                  Template (copy to .env, set ORCHESTACK_DB_PASSWORD)
     │   ├── traefik/                      Traefik static config + dynamic dir
     │   ├── postgres-init/                00-init.sql + 10-platform-schema.sql
     │   ├── stubs/                        M1 placeholder HTML for streamlit stub

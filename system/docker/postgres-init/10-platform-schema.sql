@@ -14,7 +14,11 @@
 --   - Seed data for built-in Admin / Engineer / Analyst roles, idempotent via
 --     ON CONFLICT DO NOTHING (so re-running the init is safe).
 
-\connect orchestack
+-- The docker-entrypoint runs init scripts against $ORCHESTACK_DB_NAME. 
+-- This schema is designed around the assumption that $ORCHESTACK_DB_NAME
+-- is a dedicated database for OrcheStack's internal use, and that customer pipelines connect
+-- to separate databases. If you change this assumption, you'll need to adjust the schema and
+-- queries accordingly (e.g. by namespacing every table with "orchestrator_" or similar).
 
 SET search_path = platform, public;
 

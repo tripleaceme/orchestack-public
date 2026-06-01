@@ -95,8 +95,8 @@
       <div class="services">
         <div class="svc">
           <div class="head"><h3>PostgreSQL</h3><div class="badges"><span class="badge badge-default">Default warehouse</span><span class="badge badge-alt">Hot</span></div></div>
-          <p>Primary warehouse. Hosts raw, marts, Airflow metadata and platform user schemas in one instance.</p>
-          <div class="cfg"><strong>Config:</strong> POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_PORT</div>
+          <p>Primary warehouse. One Postgres instance hosts two logical databases: OrcheStack's own (platform schema) and your pipeline data (raw, marts, Airflow metadata) — kept separate for clean backups and permission scoping.</p>
+          <div class="cfg"><strong>Config:</strong> ORCHESTACK_DB_* (in <code>.env</code>) + PIPELINE_DB_* (in setup wizard)</div>
         </div>
         <div class="svc">
           <div class="head"><h3>ClickHouse</h3><div class="badges"><span class="badge badge-alt">Alternative</span><span class="badge badge-alt">Hot</span></div></div>

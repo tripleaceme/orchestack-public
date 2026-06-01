@@ -116,30 +116,53 @@
 <p><strong>Hot.</strong> PostgreSQL is part of the base install and stays running at all times. Expected memory: ~800 MB–1.2 GB depending on warehouse size.</p>
 
 <h2 id="role">Role</h2>
-<p>Everything writable lands here. The same PostgreSQL instance holds:</p>
+<p>OrcheStack runs <strong>two logical databases on one Postgres instance</strong>. Same container, same volume, same backup story — but cleanly separated permissions, names, and lifecycles.</p>
+
+<h3>1. The OrcheStack database (internal)</h3>
 <ul>
-  <li><strong>Platform state</strong> — user accounts, roles, permissions, sessions, audit log.</li>
-  <li><strong>Warehouse raw</strong> — landed data from Airbyte, awaiting dbt.</li>
-  <li><strong>Warehouse marts</strong> — dbt outputs served to Metabase.</li>
-  <li><strong>Service metadata</strong> — Airflow's DAG state, OpenMetadata's catalogue (when enabled).</li>
+  <li>Holds <strong>OrcheStack's own state</strong> — user accounts, roles, sessions, audit log, service-pinning, installed-service registry.</li>
+  <li>Schema: <code class="inline">platform</code>.</li>
+  <li>Bounded in size — does not grow with the volume of your data.</li>
+  <li>Bootstrap credentials live in <code class="inline">.env</code> (the <code class="inline">ORCHESTACK_DB_*</code> variables). Set once before first boot.</li>
 </ul>
-<p>Each concern gets its own schema. Separation makes permissions cleaner without adding operational complexity.</p>
+
+<h3>2. The pipeline database (your data)</h3>
+<ul>
+  <li>Holds <strong>your data</strong> — raw landing tables (Airbyte), dbt marts, Airflow metadata, optionally OpenMetadata's catalogue.</li>
+  <li>Schemas: <code class="inline">raw</code>, <code class="inline">marts</code>, <code class="inline">airflow</code>, <code class="inline">openmetadata</code>.</li>
+  <li>Grows with your business.</li>
+  <li>Credentials and name collected during the in-browser setup wizard (the <code class="inline">PIPELINE_DB_*</code> values). Created by the orchestrator after wizard submission.</li>
+</ul>
 
 <h2 id="schemas">Schema layout</h2>
-<pre>platform       -- users, roles, sessions, audit
-raw            -- Airbyte-landed tables, one per source
-marts          -- dbt outputs: fct_*, dim_*, stg_*
-airflow        -- Airflow's internal metadata tables
-openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
+<pre>OrcheStack DB (e.g. 'orchestack')
+  platform     -- users, roles, sessions, audit, service pinning
+
+Pipeline DB   (e.g. 'acme_warehouse')
+  raw          -- Airbyte-landed tables, one per source
+  marts        -- dbt outputs: fct_*, dim_*, stg_*
+  airflow      -- Airflow's internal metadata tables
+  openmetadata -- OpenMetadata's internal tables (if enabled)</pre>
 
 <h2 id="configuration">Configuration</h2>
-<p>Credentials are collected at install time:</p>
+<p>Credentials are split across two surfaces, matching the two databases:</p>
 <ul>
-  <li><code class="inline">POSTGRES_USER</code> — superuser for platform management</li>
-  <li><code class="inline">POSTGRES_PASSWORD</code> — bcrypt-stored as platform password; stored plain in <code class="inline">.env</code> for Postgres</li>
-  <li><code class="inline">POSTGRES_DB</code> — default database name (typically <code class="inline">OrcheStack</code>)</li>
+  <li><strong>In <code class="inline">.env</code> (bootstrap, before <code class="inline">docker compose up</code>):</strong>
+    <ul>
+      <li><code class="inline">ORCHESTACK_DB_USER</code> — superuser for OrcheStack's internal DB (default <code class="inline">orchestack</code>)</li>
+      <li><code class="inline">ORCHESTACK_DB_PASSWORD</code> — strong password, never committed</li>
+      <li><code class="inline">ORCHESTACK_DB_NAME</code> — name of the internal DB (default <code class="inline">orchestack</code>)</li>
+    </ul>
+  </li>
+  <li><strong>In the setup wizard (in browser, after first boot):</strong>
+    <ul>
+      <li><code class="inline">PIPELINE_DB_USER</code> — owner of your pipeline DB; isolated from OrcheStack's internal user</li>
+      <li><code class="inline">PIPELINE_DB_PASSWORD</code> — separate password, used by dbt / Airflow / Airbyte to connect</li>
+      <li><code class="inline">PIPELINE_DB_NAME</code> — your chosen name (e.g. <code class="inline">acme_warehouse</code>)</li>
+    </ul>
+  </li>
 </ul>
-<p>OrcheStack creates per-service PostgreSQL roles with scoped privileges so each downstream tool (dbt, Airflow, Metabase) authenticates as its own user with only the permissions it needs.</p>
+<p>OrcheStack also creates per-service PostgreSQL roles with scoped privileges inside the pipeline DB so each downstream tool (dbt, Airflow, Metabase) authenticates as its own user with only the permissions it needs.</p>
 
     <div class="next-prev">
       <a href="dbt.html">

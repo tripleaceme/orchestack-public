@@ -12,9 +12,12 @@ that get replaced with real implementations at M2 and M3 respectively.
 ## Quick start
 
 ```sh
-# One-time: copy the env template and set a real PostgreSQL password.
+# One-time: copy the env template and set a real password for OrcheStack's
+# internal database. These credentials bootstrap OrcheStack's own state
+# (users, sessions, roles) — NOT your pipeline data. Your pipeline DB is
+# configured later via the in-browser setup wizard.
 cp .env.example .env
-$EDITOR .env                  # change POSTGRES_PASSWORD
+$EDITOR .env                  # change ORCHESTACK_DB_PASSWORD
 
 # Bring up the five base services.
 docker compose up -d
@@ -41,7 +44,7 @@ docker compose down --volumes
 | Path | Purpose |
 |---|---|
 | `docker-compose.yml` | The base compose specification — 5 services, 1 network, 1 volume |
-| `.env.example` | Template for environment variables (POSTGRES_PASSWORD, image tags) |
+| `.env.example` | Template for environment variables (ORCHESTACK_DB_*, image tags). OrcheStack's bootstrap credentials only — pipeline DB credentials are collected in the wizard |
 | `.env` | Your actual secrets (gitignored — never commit) |
 | `traefik/traefik.yml` | Traefik static configuration (entry points, providers, dashboard) |
 | `traefik/dynamic/` | Dynamic Traefik config files (empty at M1, populated at M4 if needed) |
@@ -97,8 +100,10 @@ auth:
 
 Then run `docker compose up -d --build auth`.
 
-**PostgreSQL fails to start with "POSTGRES_PASSWORD must be set".** You
-haven't created `.env` yet. Copy from `.env.example` and set the password.
+**PostgreSQL fails to start with "ORCHESTACK_DB_PASSWORD must be set".** You
+haven't created `.env` yet. Copy from `.env.example` and set
+`ORCHESTACK_DB_PASSWORD` to a strong value. This bootstraps OrcheStack's
+internal database — not your pipeline DB (which the wizard handles).
 
 **Port 80 is already in use.** Another service is binding port 80 on your host.
 Either stop it (`lsof -i :80` to find the culprit) or temporarily change the

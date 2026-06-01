@@ -1,4 +1,4 @@
--- OrcheStack — Base PostgreSQL initialization.
+-- OrcheStack — Internal database initialisation.
 --
 -- Runs ONCE on first container creation. PostgreSQL's docker-entrypoint script
 -- sources every .sql / .sh file in /docker-entrypoint-initdb.d/ in lexical
@@ -6,22 +6,27 @@
 -- (00-, 10-, 20-, ...) gives us deterministic ordering and the ability to
 -- insert new init steps without renaming existing ones.
 --
--- This file (00-init.sql) creates the three top-level schemas.
--- The full platform.* table set is created in 10-platform-schema.sql at M1 step 1.3.
-
-\connect orchestack
+-- This file (00-init.sql) creates the `platform` schema inside the OrcheStack
+-- internal database (named by POSTGRES_DB, which compose maps from
+-- ORCHESTACK_DB_NAME in .env — default 'orchestack'). It runs WITHOUT an
+-- explicit \connect so the script targets whatever the operator named it.
+--
+-- The full platform.* table set is created in 10-platform-schema.sql.
+--
+-- NOTE: The customer PIPELINE database (with schemas raw, marts, airflow,
+-- openmetadata) is NOT created here. That's a wizard-driven step the
+-- orchestrator (M2) performs after the operator submits the setup wizard.
+-- Keeping pipeline schemas out of this file maintains the two-database split:
+-- OrcheStack metadata stays small and bootstrap-controlled; customer data
+-- lives in a separately-named DB with its own user.
 
 -- ============================================================================
--- Schemas
+-- OrcheStack platform schema
 -- ============================================================================
 
 CREATE SCHEMA IF NOT EXISTS platform;
-CREATE SCHEMA IF NOT EXISTS raw;
-CREATE SCHEMA IF NOT EXISTS marts;
 
-COMMENT ON SCHEMA platform IS 'OrcheStack platform metadata: users, roles, sessions, audit, service lifecycle.';
-COMMENT ON SCHEMA raw      IS 'Raw landed data from Airbyte ingestion (populated at M4).';
-COMMENT ON SCHEMA marts    IS 'dbt-modelled analytical marts consumed by Metabase (populated at M4).';
+COMMENT ON SCHEMA platform IS 'OrcheStack internal metadata: users, roles, sessions, audit, service lifecycle.';
 
 -- ============================================================================
 -- Bootstrap log — proves the init scripts ran. Useful smoke test before the
@@ -40,4 +45,4 @@ COMMENT ON TABLE platform.bootstrap_log IS
   'Append-only log of PostgreSQL init steps. Each row records one init script firing on first boot.';
 
 INSERT INTO platform.bootstrap_log (step, message)
-VALUES ('00-init', 'Created schemas platform, raw, marts.');
+VALUES ('00-init', 'Created OrcheStack internal schema: platform.');

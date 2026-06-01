@@ -181,14 +181,14 @@
 
     // ------- Warehouse -------
     "PostgreSQL": {
-      desc: "Primary warehouse. Hosts raw, marts, Airflow metadata, and OrcheStack's <code>platform</code> schema in one instance.",
+      desc: "Your <strong>pipeline warehouse</strong> — separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata. Created on the same Postgres instance OrcheStack uses for its own state, but with its own user, password, and DB name so they stay cleanly separated. <em>OrcheStack's own credentials are in <code>.env</code> and not touched here.</em>",
       fields: [
-        { name: "POSTGRES_USER", label: "Superuser name", type: "text", default: "orchestack", required: true,
-          hint: "PostgreSQL superuser who can create databases and manage roles. Default 'orchestack' matches OrcheStack's expected platform user — change only if you have a reason (e.g. an existing convention you want to keep)." },
-        { name: "POSTGRES_PASSWORD", label: "Superuser password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
-          hint: "Superuser password. Min 12 characters recommended. You can rotate it later from the admin dashboard without losing data." },
-        { name: "POSTGRES_DB", label: "Default database", type: "text", default: "orchestack", required: true,
-          hint: "Default database created on first boot. OrcheStack's schemas (platform, raw, marts, airflow) live inside it. Lowercase recommended — Postgres folds unquoted identifiers to lowercase, so 'OrcheStack' would become 'orchestack' anyway." },
+        { name: "PIPELINE_DB_USER", label: "Pipeline DB user", type: "text", placeholder: "e.g. acme_warehouse", required: true,
+          hint: "PostgreSQL user that owns your pipeline database. Distinct from OrcheStack's internal user (which lives in .env). Created during deploy by the orchestrator with privileges scoped to the pipeline DB only — it cannot read or modify OrcheStack's platform tables." },
+        { name: "PIPELINE_DB_PASSWORD", label: "Pipeline DB password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Password for the pipeline DB user. Min 12 characters recommended. Used by dbt, Airflow, and Airbyte to connect. You can rotate it later from the admin dashboard." },
+        { name: "PIPELINE_DB_NAME", label: "Pipeline DB name", type: "text", placeholder: "e.g. acme_warehouse", required: true,
+          hint: "Name of the database created for your pipeline data. Lowercase recommended — Postgres folds unquoted identifiers to lowercase. Pick a name that reflects your organisation or environment (e.g. 'acme_warehouse', 'acme_prod')." },
       ],
     },
     "ClickHouse": {
@@ -269,9 +269,9 @@
       desc: "Declarative data quality checks. Runs after every dbt build. Great Expectations reuses your PostgreSQL warehouse credentials (it validates the same database dbt writes to), and stores its checkpoints in a standard project-relative directory.",
       fields: [
         { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text",
-          default: "postgresql://dbt_user:***@postgres:5432/orchestack",
+          default: "postgresql://${PIPELINE_DB_USER}:***@postgres:5432/${PIPELINE_DB_NAME}",
           readonly: true,
-          hint: "Auto-derived from your PostgreSQL warehouse credentials. The '***' placeholder is substituted at deploy time with the actual dbt user password from .env. Great Expectations runs as the same user dbt writes as, so it sees the modelled marts. To validate a different database, edit GE_DATASOURCE_URL in the generated .env after install." },
+          hint: "Auto-derived from the pipeline DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with PIPELINE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts) — it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
         { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text",
           default: "./config/great_expectations/checkpoints",
           readonly: true,
