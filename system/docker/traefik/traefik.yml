@@ -30,10 +30,16 @@ entryPoints:
 # ============================================================================
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Traefik talks to the socket-proxy container over the internal Docker
+    # network instead of mounting /var/run/docker.sock directly. The proxy
+    # is the only container holding the host socket and exposes a
+    # read-only HTTP API on port 2375. See the socket-proxy service in
+    # docker-compose.yml for the rationale.
+    endpoint: "tcp://socket-proxy:2375"
     # Only route to containers explicitly opted-in via `traefik.enable=true`.
-    # This means the postgres and orchestrator services (which have no labels)
-    # are invisible to Traefik — exactly what we want for non-HTTP services.
+    # This means the postgres, orchestrator, and socket-proxy services
+    # (which have no labels) are invisible to Traefik — exactly what we
+    # want for non-HTTP services.
     exposedByDefault: false
     network: orchestack-net
   file:

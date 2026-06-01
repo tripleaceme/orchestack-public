@@ -39,6 +39,55 @@ volumes:
 services:
 
   # ==========================================================================
+  # 0. socket-proxy — Mediates Docker socket access for Traefik.
+  #
+  # Why this exists instead of mounting /var/run/docker.sock directly on the
+  # Traefik container:
+  #
+  #   1. Docker Desktop on macOS (and increasingly other rootless setups)
+  #      returns "Error response from daemon:" with an empty body when a
+  #      container holding /var/run/docker.sock tries to call the API —
+  #      a permission boundary that's not solvable by tweaking mount flags.
+  #      A proxy container that exposes the API over an internal HTTP port
+  #      sidesteps this entirely.
+  #
+  #   2. Principle of least privilege. Traefik only needs to LIST containers
+  #      and WATCH events. Mounting the full socket on Traefik would give
+  #      it the ability to `docker exec`, start/stop containers, pull
+  #      images, etc. — privileges it should never have. The proxy
+  #      exposes only the read-only endpoints Traefik actually uses.
+  #
+  # Reference: https://github.com/Tecnativa/docker-socket-proxy
+  # ==========================================================================
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    container_name: orchestack-socket-proxy
+    restart: unless-stopped
+    environment:
+      # Endpoints Traefik needs to discover containers + watch label changes.
+      # Everything not listed defaults to 0 (denied).
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      TASKS: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      INFO: 1
+      # Explicit denials — already 0 by default, but spelled out for the
+      # next person reading this file.
+      POST: 0
+      EXEC: 0
+      BUILD: 0
+      VOLUMES: 0
+      IMAGES: 0
+    volumes:
+      # The proxy is the ONE container that touches the host socket.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - orchestack-net
+
+  # ==========================================================================
   # 1. proxy — Traefik reverse proxy.
   # Routes incoming traffic to internal services based on URL path. See
   # ./traefik/traefik.yml for the static config and the per-service `labels:`
@@ -60,10 +109,13 @@ services:
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
-      # Read-only Docker socket so Traefik can discover containers via labels.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # NB: Traefik does NOT mount /var/run/docker.sock directly. It talks to
+      # the socket-proxy container over the internal network instead — see
+      # the providers.docker.endpoint in traefik.yml.
     networks:
       - orchestack-net
+    depends_on:
+      - socket-proxy
 
   # ==========================================================================
   # 2. postgres — PostgreSQL instance (hosts two logical databases).
@@ -133,10 +185,15 @@ services:
       - orchestack-net
     labels:
       - traefik.enable=true
-      # One router catches all the auth/setup paths. Traefik passes them through
-      # to nginx unchanged (no path stripping) because the nginx config in
-      # ../auth/nginx.conf expects them as-is.
-      - traefik.http.routers.auth.rule=Path(`/signup`) || Path(`/login`) || PathPrefix(`/setup`) || PathPrefix(`/assets`)
+      # One router catches all the auth/setup paths PLUS the bare '/'.
+      # The bare '/' is here because on first install there's no Streamlit
+      # serving the dashboard yet — auth's nginx redirects '/' to '/signup'
+      # so a new operator hitting http://localhost lands somewhere useful.
+      # At M3 when Streamlit becomes real, '/' moves to the streamlit
+      # router and auth's redirect becomes a fallback.
+      # Traefik passes paths through to nginx unchanged (no path stripping)
+      # because the nginx config in ../auth/nginx.conf expects them as-is.
+      - traefik.http.routers.auth.rule=Path(`/`) || Path(`/signup`) || Path(`/login`) || PathPrefix(`/setup`) || PathPrefix(`/assets`)
       - traefik.http.routers.auth.entrypoints=web
       - traefik.http.services.auth.loadbalancer.server.port=80
 

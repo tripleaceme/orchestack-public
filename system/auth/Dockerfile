@@ -62,9 +62,11 @@ RUN rm -rf /usr/share/nginx/html/assets
 COPY assets/css/ /usr/share/nginx/html/assets/css/
 
 # Container health check — nginx must respond on :80.
-# We probe /login because / is intentionally a 404 on this container.
+# Probes a dedicated /health endpoint instead of a real page so the check
+# (a) doesn't depend on any HTML file being present, (b) doesn't generate
+# access-log noise, (c) returns instantly with no template work.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --spider http://localhost/login || exit 1
+  CMD wget --quiet --spider http://localhost/health || exit 1
 
 EXPOSE 80
 
