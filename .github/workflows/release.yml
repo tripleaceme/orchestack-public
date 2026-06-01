@@ -143,10 +143,22 @@ jobs:
           # Checksum for operators who want to verify integrity offline.
           sha256sum "${BUNDLE}.tar.gz" > "${BUNDLE}.tar.gz.sha256"
 
+          # Unversioned aliases — same bytes, stable filenames. Required for
+          # the /releases/latest/download/<name> redirect to work: GitHub
+          # matches by exact filename, so we need an asset literally called
+          # `orchestack-runtime.tar.gz` (no version embedded) for installers
+          # to use the "latest" URL. The versioned name above stays as the
+          # permanent archive entry for anyone pinning to a specific release.
+          cp "${BUNDLE}.tar.gz"        "orchestack-runtime.tar.gz"
+          cp "${BUNDLE}.tar.gz.sha256" "orchestack-runtime.tar.gz.sha256"
+          # Rewrite the checksum line so it references the unversioned name
+          # — otherwise `sha256sum -c` would look for the versioned file.
+          sed -i "s| ${BUNDLE}.tar.gz| orchestack-runtime.tar.gz|" "orchestack-runtime.tar.gz.sha256"
+
           echo "=== Bundle contents ==="
           tar -tzf "${BUNDLE}.tar.gz"
-          echo "=== Bundle size ==="
-          ls -lh "${BUNDLE}.tar.gz" "${BUNDLE}.tar.gz.sha256"
+          echo "=== Files to upload ==="
+          ls -lh *.tar.gz *.sha256
 
       - name: Upload bundle to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -169,6 +181,8 @@ jobs:
           gh release upload "${TAG}" \
             "${BUNDLE}.tar.gz" \
             "${BUNDLE}.tar.gz.sha256" \
+            "orchestack-runtime.tar.gz" \
+            "orchestack-runtime.tar.gz.sha256" \
             --clobber
 
       - name: Upload as workflow artifact (for workflow_dispatch testing)
