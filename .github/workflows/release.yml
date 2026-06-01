@@ -1,0 +1,182 @@
+# Bundle the OrcheStack runtime artefacts into a tarball and attach it to a
+# GitHub Release whenever a `v*.*.*` tag is pushed.
+#
+# What this produces
+# ------------------
+# A single file: orchestack-runtime-${VERSION}.tar.gz (~30 KB)
+# Plus its SHA256 checksum: orchestack-runtime-${VERSION}.tar.gz.sha256
+#
+# What's inside the tarball
+# -------------------------
+# Only the files an OPERATOR needs to run OrcheStack. Source code, Dockerfiles,
+# website HTML, docs, generators — none of that goes in. Those are build
+# inputs, not runtime inputs.
+#
+#   orchestack-runtime-${VERSION}/
+#     docker-compose.yml         (5-service control plane)
+#     .env.example               (operator copies to .env, sets ORCHESTACK_DB_PASSWORD)
+#     traefik/traefik.yml        (mounted into the proxy container)
+#     traefik/dynamic/.gitkeep   (placeholder for future dynamic config)
+#     postgres-init/00-init.sql       (creates the platform schema)
+#     postgres-init/10-platform-schema.sql (creates the 10 platform tables)
+#     stubs/streamlit-stub.html  (M1 placeholder served at /app)
+#     INSTALL.md                 (one-page install instructions)
+#     VERSION                    (the tag this bundle was built from)
+#
+# Tagging convention
+# ------------------
+# Push a tag matching v[0-9]+.[0-9]+.[0-9]+ from main:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# The workflow runs, the release appears at
+# https://github.com/tripleaceme/orchestack/releases/tag/v0.1.0 with the
+# tarball attached. The `latest` redirect at
+# https://github.com/.../releases/latest/download/orchestack-runtime.tar.gz
+# always points to the most recent published release — which is what
+# install.sh downloads.
+
+name: Release runtime bundle
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # v0.1.0, v1.2.3 — but NOT v0.1.0-rc1 or arbitrary tags
+  workflow_dispatch:               # also allow manual triggering for testing
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to create the GitHub Release + upload assets
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          # For tag pushes: github.ref is "refs/tags/v0.1.0" → strip prefix.
+          # For workflow_dispatch: no tag, use "dev-${SHA}" so the build still
+          # produces a tarball but doesn't collide with a real release.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="dev-${GITHUB_SHA:0:7}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building bundle for version: ${VERSION}"
+
+      - name: Assemble the bundle
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUNDLE="orchestack-runtime-${VERSION}"
+          mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" "${BUNDLE}/stubs"
+
+          # Copy the runtime files. Source: system/docker/ in this repo.
+          cp system/docker/docker-compose.yml          "${BUNDLE}/docker-compose.yml"
+          cp system/docker/.env.example                "${BUNDLE}/.env.example"
+          cp system/docker/traefik/traefik.yml         "${BUNDLE}/traefik/traefik.yml"
+          # The dynamic/ folder needs a placeholder so it survives tar+extract.
+          touch                                        "${BUNDLE}/traefik/dynamic/.gitkeep"
+          cp system/docker/postgres-init/*.sql         "${BUNDLE}/postgres-init/"
+          cp system/docker/stubs/streamlit-stub.html   "${BUNDLE}/stubs/streamlit-stub.html"
+
+          # Embed the version so the operator can run `cat VERSION` to know
+          # what they extracted.
+          echo "${VERSION}" > "${BUNDLE}/VERSION"
+
+          # Inline install instructions (no network round-trip needed).
+          cat > "${BUNDLE}/INSTALL.md" <<EOF
+          # Install OrcheStack ${VERSION}
+
+          You have the runtime bundle. To bring up the control plane:
+
+          \`\`\`sh
+          cp .env.example .env
+          \$EDITOR .env                  # set ORCHESTACK_DB_PASSWORD
+          docker compose up -d
+          \`\`\`
+
+          Then visit http://localhost — you should land on the signup page.
+
+          ## What this bundle contains
+
+          Just the runtime files. \`docker compose up\` pulls the actual
+          service images (auth, postgres, traefik, etc.) from Docker Hub
+          on first run.
+
+          - \`docker-compose.yml\` — 5-service control plane
+          - \`.env.example\` — template; you'll fill in the OrcheStack DB password
+          - \`traefik/\` — reverse-proxy configuration
+          - \`postgres-init/\` — SQL run on first PostgreSQL boot
+          - \`stubs/\` — M1 placeholder for the Streamlit dashboard
+
+          ## What's NOT in this bundle
+
+          Source code, Dockerfiles, HTML for the auth UI, documentation site.
+          Those are build inputs that live in the GitHub repository at
+          https://github.com/tripleaceme/orchestack — clone the repo only if
+          you want to contribute, fork, or rebuild the images yourself.
+
+          ## Updating
+
+          Download the next release tarball and overwrite the files —
+          \`docker compose pull && docker compose up -d\` picks up new images.
+          Keep your \`.env\` file; never overwrite it during an update.
+
+          ## Documentation
+
+          Full docs at https://orchestack.africa/docs/
+          EOF
+
+          # Make the tarball. Reproducibility hardening: --sort=name + fixed
+          # mtime so two builds of the same source produce identical bytes.
+          tar --sort=name \
+              --mtime="2026-01-01 00:00:00 UTC" \
+              --owner=0 --group=0 --numeric-owner \
+              -czf "${BUNDLE}.tar.gz" "${BUNDLE}"
+
+          # Checksum for operators who want to verify integrity offline.
+          sha256sum "${BUNDLE}.tar.gz" > "${BUNDLE}.tar.gz.sha256"
+
+          echo "=== Bundle contents ==="
+          tar -tzf "${BUNDLE}.tar.gz"
+          echo "=== Bundle size ==="
+          ls -lh "${BUNDLE}.tar.gz" "${BUNDLE}.tar.gz.sha256"
+
+      - name: Upload bundle to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          BUNDLE="orchestack-runtime-${VERSION}"
+
+          # Create the release if it doesn't exist (e.g. tag pushed without
+          # using `gh release create` first), then upload the bundle + checksum.
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --title "OrcheStack ${TAG}" \
+              --notes "Runtime bundle for OrcheStack ${TAG}. Install with the [installer script](https://orchestack.africa/install.sh) or by downloading and extracting the tarball below."
+          fi
+
+          gh release upload "${TAG}" \
+            "${BUNDLE}.tar.gz" \
+            "${BUNDLE}.tar.gz.sha256" \
+            --clobber
+
+      - name: Upload as workflow artifact (for workflow_dispatch testing)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestack-runtime-${{ steps.ver.outputs.version }}
+          path: |
+            orchestack-runtime-*.tar.gz
+            orchestack-runtime-*.tar.gz.sha256
+          retention-days: 7

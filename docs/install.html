@@ -132,40 +132,76 @@
 </ul>
 <p>Pick an install option below based on how much you want to see under the hood.</p>
 
-<h2 id="install-script">Option 1 — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
-<p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running.</p>
-<pre>curl -fsSL https://orchestack.africa/install | sh</pre>
-<p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
+<h2 id="install-script">Option A — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
+<p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running. The script downloads the latest release tarball, prompts you for the OrcheStack DB password, writes <code class="inline">.env</code>, and runs <code class="inline">docker compose up -d</code> for you.</p>
+<pre>curl -sSL https://orchestack.africa/install.sh | bash</pre>
+<p>What happens, step by step (you can read the script first with <code class="inline">curl ... -o install.sh; less install.sh</code>):</p>
+<ol>
+  <li>Checks that <code class="inline">docker</code> and <code class="inline">docker compose</code> are installed and the daemon is running.</li>
+  <li>Downloads the latest tarball from <a href="https://github.com/tripleaceme/orchestack/releases/latest">GitHub releases</a> + verifies its SHA256 checksum.</li>
+  <li>Extracts to <code class="inline">./orchestack/</code> (override with <code class="inline">ORCHESTACK_DIR</code>).</li>
+  <li>Prompts you twice for <code class="inline">ORCHESTACK_DB_PASSWORD</code> (or skips this if you pre-set the env var).</li>
+  <li>Writes <code class="inline">.env</code> from the template, <code class="inline">chmod 600</code>.</li>
+  <li>Runs <code class="inline">docker compose up -d</code> — Compose pulls all 5 images from Docker Hub in parallel (~30s).</li>
+  <li>Waits for the auth container to respond, prints the URL.</li>
+</ol>
 <div class="callout">
-  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
+  <p><strong>Useful environment overrides:</strong></p>
+  <ul>
+    <li><code class="inline">ORCHESTACK_VERSION=v0.1.0</code> — pin a specific release instead of latest.</li>
+    <li><code class="inline">ORCHESTACK_DIR=/opt/orchestack</code> — install somewhere other than the current directory.</li>
+    <li><code class="inline">ORCHESTACK_DB_PASSWORD=...</code> — non-interactive install (CI / automation).</li>
+    <li><code class="inline">ORCHESTACK_NO_START=1</code> — download + write <code class="inline">.env</code> but don't start containers yet.</li>
+  </ul>
 </div>
 
-<h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>
-<p>For operators who want to read every file before running it, or who plan to fork and customise.</p>
-<pre>git clone https://github.com/tripleaceme/orchestack
-cd orchestack
-docker compose up -d</pre>
-<p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose pull</code>.</p>
+<h2 id="install-tarball">Option B — Manual install from the release tarball</h2>
+<p>For operators who want to inspect every file before <code class="inline">docker compose up</code>, or who are deploying to an airgapped host. The installer script does this for you; this option is the same thing by hand.</p>
+<pre><span class="comment"># 1. Download the latest runtime bundle (or pick a specific version from</span>
+<span class="comment">#    https://github.com/tripleaceme/orchestack/releases)</span>
+$ curl -fsSL -o orchestack.tar.gz \
+    https://github.com/tripleaceme/orchestack/releases/latest/download/orchestack-runtime.tar.gz
 
-<h2 id="install-manual">Option 3 — Manual compose</h2>
-<p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts.</p>
-<pre>mkdir orchestack && cd orchestack
-curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack/main/docker-compose.yml -o docker-compose.yml
-# inspect / edit as needed
+<span class="comment"># 2. Verify the checksum (optional but recommended)</span>
+$ curl -fsSL -o orchestack.tar.gz.sha256 \
+    https://github.com/tripleaceme/orchestack/releases/latest/download/orchestack-runtime.tar.gz.sha256
+$ sha256sum -c orchestack.tar.gz.sha256
+
+<span class="comment"># 3. Extract — you'll get an orchestack-runtime-${VERSION}/ folder</span>
+$ tar xzf orchestack.tar.gz
+$ cd orchestack-runtime-*
+
+<span class="comment"># 4. Set the bootstrap password (the only thing you need to type)</span>
+$ cp .env.example .env
+$ $EDITOR .env                  # set ORCHESTACK_DB_PASSWORD
+
+<span class="comment"># 5. Start the control plane — Compose pulls all 5 images in parallel</span>
+$ docker compose up -d</pre>
+<p>You end up at the same place as Option A. The tarball is ~30 KB — only the files you need to actually <em>run</em> OrcheStack. The Dockerfile, HTML source, docs, and so on stay on GitHub and don't clutter your install.</p>
+<div class="callout">
+  <p><strong>Note:</strong> You do <em>not</em> need to run <code class="inline">docker pull</code> manually. <code class="inline">docker compose up</code> pulls all 5 service images from Docker Hub automatically (in parallel) the first time it runs. Subsequent boots are local cache hits.</p>
+</div>
+
+<h2 id="install-clone">Building from source <span class="muted" style="font-weight:500">(contributors only)</span></h2>
+<p>If you want to modify the auth image, rebuild containers locally, or contribute to OrcheStack, clone the full repository instead. This is not an install path — it's a development path.</p>
+<pre>git clone https://github.com/tripleaceme/orchestack
+cd orchestack/system/docker
+cp .env.example .env            # set ORCHESTACK_DB_PASSWORD
 docker compose up -d</pre>
-<p>This is what options 1 and 2 do under the hood. Use it when you need to change the compose file (e.g. change exposed ports, add a volume mount) before the first boot.</p>
+<p>You get the full source tree (Dockerfiles, HTML, docs, generators), which is overkill if you just want OrcheStack running. Use Option A or B for that.</p>
 
 <h2 id="verify">Verify the install</h2>
-<p>All three options end at the same place. You should see:</p>
-<pre>[+] Running 4/4
- ✔ Container orchestack-proxy        Started
- ✔ Container orchestack-auth         Started
- ✔ Container orchestack-postgres     Started
- ✔ Container orchestack-streamlit    Started</pre>
-<p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
-<p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
+<p>All three paths end at the same state. Run <code class="inline">docker compose ps</code> in your install directory; you should see:</p>
+<pre>[+] Running 5/5
+ ✔ Container orchestack-proxy         Started   (Traefik reverse proxy)
+ ✔ Container orchestack-postgres      Started   (database, internal DB initialised)
+ ✔ Container orchestack-auth          Started   (signup + login + setup wizard)
+ ✔ Container orchestack-streamlit     Started   (M1 placeholder for the admin dashboard)
+ ✔ Container orchestack-orchestrator  Started   (M1 stub for the lifecycle daemon)</pre>
+<p>Only these 5 containers run at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come <strong>after</strong> you configure the platform via the browser wizard.</p>
+<p>Open <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (no users exist yet).</p>
 <div class="callout warn">
-  <p><strong>Port conflict?</strong> If something else is using port 80 on the host, edit the <code class="inline">PROXY_HTTP_PORT</code> variable in your <code class="inline">.env</code> file and restart.</p>
+  <p><strong>Port conflict?</strong> If something else is using port 80 on the host, edit the <code class="inline">PROXY_HTTP_PORT</code> variable in your <code class="inline">.env</code> file and re-run <code class="inline">docker compose up -d</code>.</p>
 </div>
 
     <div class="next-prev">
@@ -185,9 +221,9 @@ docker compose up -d</pre>
     <ul>
       <li><a class="active" href="#prerequisites">Prerequisites</a></li>
       <li><a href="#distribution">Where OrcheStack lives</a></li>
-      <li><a href="#install-script">Option 1 — Installer script (recommended)</a></li>
-      <li><a href="#install-clone">Option 2 — Clone the GitHub repo</a></li>
-      <li><a href="#install-manual">Option 3 — Manual compose</a></li>
+      <li><a href="#install-script">Option A — Installer script (recommended)</a></li>
+      <li><a href="#install-tarball">Option B — Manual install from tarball</a></li>
+      <li><a href="#install-clone">Building from source (contributors)</a></li>
       <li><a href="#verify">Verify the install</a></li>
     </ul>
   </aside>

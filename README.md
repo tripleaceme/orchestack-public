@@ -38,11 +38,43 @@ implementations in their respective milestones.
 
 The base control plane brings up five containers — a reverse proxy, a
 PostgreSQL instance, the auth/setup nginx, and stubs for the orchestrator
-and Streamlit dashboard:
+and Streamlit dashboard. Two install paths, **neither requires cloning this
+repository**:
+
+**Option A — one-line installer (recommended)**
 
 ```sh
-cd system/docker
-cp .env.example .env       # set ORCHESTACK_DB_PASSWORD before running
+curl -sSL https://orchestack.africa/install.sh | bash
+```
+
+Downloads the latest release tarball, prompts for the OrcheStack DB
+password, writes `.env`, runs `docker compose up -d`. ~30s end-to-end on
+a decent connection.
+
+**Option B — manual install from the release tarball**
+
+```sh
+curl -fsSL -o orchestack.tar.gz \
+  https://github.com/tripleaceme/orchestack/releases/latest/download/orchestack-runtime.tar.gz
+tar xzf orchestack.tar.gz
+cd orchestack-runtime-*
+cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
+docker compose up -d
+```
+
+Both options pull the same images from Docker Hub. You never need to run
+`docker pull` manually — Compose handles that in parallel on first boot.
+
+Full install guide: <https://orchestack.africa/docs/install.html>
+
+**Building from source (contributors only)**
+
+If you're modifying OrcheStack itself, clone this repo:
+
+```sh
+git clone https://github.com/tripleaceme/orchestack
+cd orchestack/system/docker
+cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
 docker compose up -d
 ```
 

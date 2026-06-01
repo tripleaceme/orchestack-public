@@ -76,12 +76,17 @@
       </div>
       <div class="terminal" aria-hidden="true">
         <div class="row"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span></div>
-        <div><span class="prompt">$</span> docker compose up -d
-          <span class="out">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
-          <span class="out" style="color:#b6c2cc">Ready at http://localhost:1993. Sign up to configure your stack.</span>
+        <div><span class="prompt">$</span> curl -sSL https://orchestack.africa/install.sh | bash
+          <span class="out">▸ OrcheStack installer (latest)</span>
+          <span class="out">✓ Docker found • Compose found • Daemon up</span>
+          <span class="out">▸ Downloading runtime bundle...</span>
+          <span class="out">✓ Extracted to ./orchestack/</span>
+          <span class="out">▸ Pulling images and starting containers...</span>
+          <span class="out">[+] Running 5/5  ✓ proxy  ✓ postgres  ✓ auth  ✓ streamlit  ✓ orchestrator</span>
+          <span class="out" style="color:#b6c2cc">✓ OrcheStack is up. Open http://localhost to sign up.</span>
         </div>
-        <div style="margin-top:10px"><span class="prompt">$</span> # open http://localhost:1993 — sign up, pick services,
-          <span class="out">#   OrcheStack pulls and starts only what you enabled.</span>
+        <div style="margin-top:10px"><span class="prompt">$</span> # one command — no git clone, no manual docker pull.
+          <span class="out">#   sign up, pick your tools, OrcheStack pulls only what you enabled.</span>
         </div>
       </div>
     </div>
@@ -301,7 +306,7 @@
 <span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install.sh | bash</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -312,7 +317,7 @@
 <span class="comment">#    https://docs.docker.com/desktop/install/mac-install/</span>
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install.sh | bash</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -323,7 +328,7 @@
 <span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install.sh | bash</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -334,7 +339,7 @@
 <span class="prompt-line">$</span> curl -fsSL https://get.docker.com | sh
 
 <span class="comment"># 2. Pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install.sh | bash</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
@@ -345,7 +350,7 @@
 <span class="prompt-line">&gt;</span> wsl --install
 
 <span class="comment"># 2. Inside WSL Ubuntu, pull OrcheStack</span>
-<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install | sh</pre>
+<span class="prompt-line">$</span> curl -fsSL https://orchestack.africa/install.sh | bash</pre>
               <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
             </div>
           </div>
