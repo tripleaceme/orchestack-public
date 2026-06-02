@@ -57,7 +57,14 @@
       and redirects to /setup/welcome.html. For this static demo we short-circuit
       and navigate directly to the setup flow.
     -->
-    <form id="signup-form" action="setup/welcome.html" method="GET">
+    <!--
+      method="POST" prevents the browser's fallback submission from putting
+      the password in the URL if JS is disabled. The JS handler below
+      intercepts before any navigation, saves the profile (minus password)
+      to localStorage, then routes the user to the wizard. At M3 this form
+      will POST to /app/api/signup against the real backend.
+    -->
+    <form id="signup-form" action="setup/welcome.html" method="POST">
       <div class="form-group">
         <label for="s-fullname">Full name</label>
         <input id="s-fullname" name="full_name" type="text" placeholder="Ayoade Adegbite" required autocomplete="name">
@@ -97,6 +104,32 @@
     </div>
   </div>
 </main>
+
+<script>
+  // ============================================================
+  // M1 stub — save profile to localStorage, then route to the wizard.
+  // The wizard pages read OrcheStack.setup.profile to display
+  // "Signed in as <email>" etc. The password is NEVER stored client-side;
+  // it would normally be POSTed to /app/api/signup, bcrypted, and the
+  // backend would set a session cookie. We deliberately do not even
+  // capture password into a variable that survives the function scope.
+  // ============================================================
+  document.getElementById('signup-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const profile = {
+      full_name:    data.get('full_name'),
+      email:        data.get('email'),
+      username:     data.get('username'),
+      company_name: data.get('company_name') || '',
+      signed_up_at: new Date().toISOString(),
+    };
+    const state = JSON.parse(localStorage.getItem('OrcheStack.setup') || '{}');
+    state.profile = profile;
+    localStorage.setItem('OrcheStack.setup', JSON.stringify(state));
+    window.location.href = 'setup/welcome.html';
+  });
+</script>
 
 </body>
 </html>

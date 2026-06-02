@@ -20,7 +20,7 @@
         <span>OrcheStack</span>
       </a>
       <div class="cta">
-        <span class="muted" style="font-size:13.5px">Signed in as <strong style="color:var(--navy)">ayoade@acme.ng</strong></span>
+        <span class="muted" style="font-size:13.5px" id="signed-in-banner" hidden>Signed in as <strong style="color:var(--navy)" id="signed-in-email"></strong></span>
       </div>
     </nav>
   </div>
@@ -84,6 +84,27 @@
     Need help? <a href="https://orchestack.africa/contact">Contact support</a> or call <a href="tel:+2348120210872">+234 812 021 0872</a>.
   </p>
 </main>
+
+<script>
+  // ============================================================
+  // Populate the "Signed in as <email>" header from the profile that
+  // signup.html saved. Hidden by default in the HTML so the static
+  // markup doesn't flash a placeholder; revealed once we have real data.
+  // If no profile (operator navigated here directly), the banner stays
+  // hidden — better than showing a fake email forever.
+  // ============================================================
+  (function populateSignedInBanner() {
+    try {
+      const state = JSON.parse(localStorage.getItem('OrcheStack.setup') || '{}');
+      const email = state.profile && state.profile.email;
+      if (!email) return;
+      const banner = document.getElementById('signed-in-banner');
+      const target = document.getElementById('signed-in-email');
+      if (target) target.textContent = email;
+      if (banner) banner.hidden = false;
+    } catch (e) { /* fall through; banner stays hidden */ }
+  })();
+</script>
 
 </body>
 </html>
