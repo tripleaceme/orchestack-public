@@ -106,6 +106,14 @@ services:
       - "${PROXY_HTTP_PORT:-80}:80"        # public HTTP
       - "${PROXY_HTTPS_PORT:-443}:443"     # public HTTPS (TLS via Let's Encrypt at M5)
       - "${PROXY_DASHBOARD_PORT:-8080}:8080"  # Traefik dashboard — DEV ONLY; close before production
+    environment:
+      # Force the Docker API version Traefik's embedded Go client uses. Without
+      # this, the client falls back to its built-in default (v1.24, from 2016)
+      # when version negotiation can't complete — and modern Docker daemons
+      # require API >= 1.40, so they reject the call with HTTP 400 and an empty
+      # error body. The result is silent provider failure with no routers
+      # discovered. 1.43 is from Docker 24.0 (2023); broadly compatible.
+      DOCKER_API_VERSION: "1.43"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
