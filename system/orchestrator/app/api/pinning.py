@@ -85,12 +85,17 @@ async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
     }
 
 
-@router.delete("/{name}/pin", status_code=204, response_class=Response)
-async def unpin_service(name: str) -> None:
+@router.delete("/{name}/pin")
+async def unpin_service(name: str) -> Response:
     """Remove the pin from a service. Reconciler can stop it again at next idle.
 
-    response_class=Response so FastAPI sends the 204 with no body (HTTP 204
-    forbids a response body by RFC 7230).
+    Note on the 204 dance: FastAPI 0.115's APIRoute assertion fires for
+    `status_code=204` on the decorator regardless of `response_class`. The
+    only working pattern is to set NO `status_code` on the decorator and
+    return a `Response(status_code=204)` object explicitly — FastAPI passes
+    it through as-is, the client sees the 204 with no body, RFC 7230 is
+    honoured, and the assertion is sidestepped because the decorator's
+    status_code stays at its default (allowed by is_body_allowed_for_status_code).
     """
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
@@ -107,3 +112,4 @@ async def unpin_service(name: str) -> None:
         "service_unpinned", service_name=name,
         details={"was_pinned": row is not None},
     )
+    return Response(status_code=204)

@@ -36,6 +36,23 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # Smoke test BEFORE the multi-arch build. Catches import-time errors
+      # (FastAPI route-registration assertions, syntax issues, missing
+      # imports) in ~30s of CI time instead of waiting for the test PC to
+      # discover them via a restart loop. We learned this lesson the hard
+      # way during M2.5/2.6 — the orchestrator restart-looped twice on
+      # AssertionError before this step existed.
+      - name: Smoke test — import the FastAPI app
+        run: |
+          python3 -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install -q -r system/orchestrator/requirements.txt
+          /tmp/smoke/bin/python -c "
+          import sys; sys.path.insert(0, 'system/orchestrator')
+          from app.main import app
+          assert len(app.routes) >= 10, f'Expected at least 10 routes, found {len(app.routes)}'
+          print(f'SMOKE TEST OK: {len(app.routes)} routes registered')
+          "
+
       - name: Set up QEMU (multi-arch build support)
         uses: docker/setup-qemu-action@v3
 

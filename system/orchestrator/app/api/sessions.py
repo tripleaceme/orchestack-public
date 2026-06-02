@@ -115,11 +115,16 @@ async def checkin(token: UUID) -> dict[str, object]:
     return {"ok": True, "matched": row is not None}
 
 
-@router.delete("/{token}", status_code=204, response_class=Response)
-async def close_session(token: UUID) -> None:
+@router.delete("/{token}")
+async def close_session(token: UUID) -> Response:
     """Close a session. We don't physically delete the row — setting closed_at
     leaves history visible to the M3 dashboard's audit view AND to M5's
-    evaluation queries (which count session durations to estimate usage)."""
+    evaluation queries (which count session durations to estimate usage).
+
+    Returns HTTP 204 via an explicit Response object. See the same comment
+    in pinning.py — the decorator's status_code=204 can't be used directly
+    in FastAPI 0.115 because of a route-registration assertion.
+    """
     row = await db.fetchrow(
         """
         UPDATE platform.service_sessions
@@ -135,3 +140,4 @@ async def close_session(token: UUID) -> None:
             service_name=row["service_name"], user_id=row["user_id"],
             details={"token": str(token)},
         )
+    return Response(status_code=204)
