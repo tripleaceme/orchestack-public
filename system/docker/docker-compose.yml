@@ -204,28 +204,50 @@ services:
       - traefik.http.services.auth.loadbalancer.server.port=80
 
   # ==========================================================================
-  # 4. streamlit — Administrator dashboard.
-  # M1: nginx serving a static placeholder page. M3 replaces this with the
-  # real Streamlit app from tripleaceme/orchestack-streamlit.
+  # 4. dashboard — Administrator UI (HTMX + FastAPI + Tailwind).
+  #
+  # Phase 3.1 (current): skeleton — renders one page that proxies the
+  # orchestrator's /api/health and displays the result. Service grid,
+  # sessions, audit log, and keep-warm controls land in later M3 phases.
+  #
+  # The compose service name stays `streamlit` during M3 so the existing
+  # Traefik PathPrefix(`/app`) route + stripprefix middleware keeps
+  # working without coordination. A folder + service-name rename to
+  # `dashboard` ships in a separate cleanup commit after M3.5 stabilises.
+  # Image name flipped to `orchestack-dashboard` now because we're never
+  # going to populate `orchestack-streamlit` on Docker Hub — no point
+  # deprecating a name we never used.
   # ==========================================================================
   streamlit:
-    image: nginx:alpine
-    container_name: orchestack-streamlit
+    image: tripleaceme/orchestack-dashboard:${DASHBOARD_TAG:-latest}
+    container_name: orchestack-dashboard
     restart: unless-stopped
-    volumes:
-      - ./stubs/streamlit-stub.html:/usr/share/nginx/html/index.html:ro
+    environment:
+      # The dashboard talks to the orchestrator over the internal Docker
+      # network. Service-name resolution does the work; no Docker socket
+      # mount needed.
+      ORCHESTRATOR_URL: http://orchestack-orchestrator:8000
+      # `root_path=/app` tells FastAPI that Traefik strips this prefix
+      # before forwarding. Jinja2's url_for() reconstructs the full
+      # external URL when generating links in HTML templates.
+      DASHBOARD_ROOT_PATH: /app
+      DASHBOARD_LOG_LEVEL: ${DASHBOARD_LOG_LEVEL:-info}
     networks:
       - orchestack-net
+    depends_on:
+      - orchestrator
     labels:
       - traefik.enable=true
       - traefik.http.routers.streamlit.rule=PathPrefix(`/app`)
       - traefik.http.routers.streamlit.entrypoints=web
-      # Strip /app prefix before forwarding so nginx serves index.html at /.
-      # The real Streamlit (M3) will use STREAMLIT_SERVER_BASE_URL_PATH=/app
-      # instead and NOT need stripping — that's a deliberate M3 swap.
+      # Strip /app prefix before forwarding — dashboard's internal routes
+      # are at `/`, `/api/dashboard/*`. FastAPI's root_path setting handles
+      # URL generation back the other way.
       - traefik.http.middlewares.streamlit-strip.stripprefix.prefixes=/app
       - traefik.http.routers.streamlit.middlewares=streamlit-strip@docker
-      - traefik.http.services.streamlit.loadbalancer.server.port=80
+      # Dashboard listens on 8000 (FastAPI/uvicorn default), not the
+      # nginx-default 80 the M1 stub used.
+      - traefik.http.services.streamlit.loadbalancer.server.port=8000
 
   # ==========================================================================
   # 5. orchestrator — Service-lifecycle daemon.

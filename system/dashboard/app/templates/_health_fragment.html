@@ -1,0 +1,72 @@
+{#
+  HTMX fragment returned by /api/dashboard/health.
+  Swapped into the home page's #orchestrator-health div every 10 seconds.
+  Underscore-prefix on the filename signals "partial template" — never
+  rendered standalone, only via include or as a fragment response.
+#}
+
+{% if not reachable %}
+  <div class="flex items-start gap-3 p-3 rounded border border-amber-200 bg-amber-50 text-sm">
+    <span class="text-amber-700 font-semibold mt-0.5">!</span>
+    <div>
+      <div class="text-amber-900 font-medium">Orchestrator unreachable</div>
+      <div class="text-amber-700 mt-0.5 font-mono text-xs">{{ health.error or "no response" }}</div>
+    </div>
+  </div>
+{% elif health.ok %}
+  <div class="flex items-center gap-3">
+    <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100">
+      <span class="text-emerald-700 text-lg">✓</span>
+    </span>
+    <div>
+      <div class="text-sm font-medium text-[var(--text)]">All systems operational</div>
+      <div class="text-xs text-[var(--text-2)] mt-0.5">
+        {{ health.service }} v{{ health.version }} · phase {{ health.phase }}
+      </div>
+    </div>
+  </div>
+
+  {% if health.checks %}
+    <div class="mt-4 pt-4 border-t border-[var(--border)] grid grid-cols-2 gap-3 text-sm">
+      {% for name, ok in health.checks.items() %}
+        <div class="flex items-center gap-2">
+          {% if ok %}
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          {% else %}
+            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+          {% endif %}
+          <span class="font-mono text-xs text-[var(--text-2)]">{{ name }}</span>
+          <span class="text-xs {{ 'text-emerald-700' if ok else 'text-red-700' }}">
+            {{ "ok" if ok else "degraded" }}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="flex items-center gap-3">
+    <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-100">
+      <span class="text-red-700 text-lg">✗</span>
+    </span>
+    <div>
+      <div class="text-sm font-medium text-[var(--text)]">Orchestrator reports degraded</div>
+      <div class="text-xs text-[var(--text-2)] mt-0.5">
+        One or more subsystems are not responding
+      </div>
+    </div>
+  </div>
+
+  {% if health.checks %}
+    <div class="mt-4 pt-4 border-t border-[var(--border)] grid grid-cols-2 gap-3 text-sm">
+      {% for name, ok in health.checks.items() %}
+        <div class="flex items-center gap-2">
+          <span class="w-1.5 h-1.5 rounded-full {{ 'bg-emerald-500' if ok else 'bg-red-500' }}"></span>
+          <span class="font-mono text-xs text-[var(--text-2)]">{{ name }}</span>
+          <span class="text-xs {{ 'text-emerald-700' if ok else 'text-red-700' }}">
+            {{ "ok" if ok else "degraded" }}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endif %}

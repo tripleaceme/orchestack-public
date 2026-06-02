@@ -20,6 +20,7 @@
 DOCKER_NS         := tripleaceme
 AUTH_IMAGE        := $(DOCKER_NS)/orchestack-auth
 ORCHESTRATOR_IMAGE := $(DOCKER_NS)/orchestack-orchestrator
+DASHBOARD_IMAGE   := $(DOCKER_NS)/orchestack-dashboard
 
 # The compose file the dev-* targets operate on. Override on the command line
 # (`make dev-up COMPOSE_FILE=path/to/other.yml`) for non-default setups.
@@ -72,6 +73,10 @@ image-auth: ## Build the orchestack-auth image locally from system/auth/
 .PHONY: image-orchestrator
 image-orchestrator: ## Build the orchestack-orchestrator image locally (M2)
 	docker build -t $(ORCHESTRATOR_IMAGE):dev -f system/orchestrator/Dockerfile system/orchestrator
+
+.PHONY: image-dashboard
+image-dashboard: ## Build the orchestack-dashboard image locally (M3)
+	docker build -t $(DASHBOARD_IMAGE):dev -f system/dashboard/Dockerfile system/dashboard
 
 # ---------- Runtime bundles -------------------------------------------------
 

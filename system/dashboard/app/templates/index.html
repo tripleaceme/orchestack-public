@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+  <div class="mb-8">
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">Welcome to OrcheStack</h1>
+    <p class="text-sm text-[var(--text-2)] mt-1">
+      Phase 3.1 — dashboard skeleton. Service grid, sessions, audit log, and
+      keep-warm controls land in later phases.
+    </p>
+  </div>
+
+  {#
+    Health card — proves the dashboard can call the orchestrator and
+    render the result. HTMX polls the fragment endpoint every 10s and
+    swaps the result into this div. `load delay:50ms` fires the first
+    request right after page load so the operator isn't staring at a
+    blank card for 10 seconds.
+  #}
+  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 max-w-2xl">
+    <div class="flex items-baseline justify-between mb-4">
+      <h2 class="text-base font-semibold text-[var(--text)]">Orchestrator status</h2>
+      <span class="text-xs text-[var(--text-2)]">Refreshes every 10s</span>
+    </div>
+
+    <div id="orchestrator-health"
+         hx-get="{{ url_for('health_fragment') }}"
+         hx-trigger="load delay:50ms, every 10s"
+         hx-swap="innerHTML"
+         class="min-h-[80px]">
+      <div class="text-sm text-[var(--text-2)] italic">Loading orchestrator status…</div>
+    </div>
+  </section>
+
+{% endblock %}

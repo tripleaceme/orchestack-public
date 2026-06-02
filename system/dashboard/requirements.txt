@@ -1,0 +1,17 @@
+# OrcheStack dashboard — runtime dependencies.
+#
+# Pinned versions for reproducibility. Bump deliberately, not opportunistically.
+
+# Web framework + ASGI server. Same versions as the orchestrator so we share
+# the python wheels cache in CI when both images build off the same base.
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Server-side templates. The dashboard renders HTML server-side and returns
+# HTMX fragments for partial-page updates — Jinja2 is the cornerstone.
+jinja2==3.1.4
+
+# Async HTTP client for calling the orchestrator's API. We pass through
+# session cookies (M3.5+) so requests need cookie-jar support — httpx
+# has this built in via httpx.Client.
+httpx==0.28.1
