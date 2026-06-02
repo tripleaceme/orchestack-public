@@ -94,7 +94,15 @@ services:
   # below for the routing rules.
   # ==========================================================================
   proxy:
-    image: traefik:v3.2
+    # Pinned to the floating v3 tag (latest stable v3.x) rather than v3.2
+    # specifically. Traefik v3.2 hardcoded Docker API version v1.24 in its
+    # provider initialisation — that's below the MinAPIVersion=1.40 modern
+    # Docker daemons enforce, so the provider silently fails to discover any
+    # containers. The hardcode was removed in a later v3.x patch; using the
+    # floating tag picks up the fix without pinning to a specific patch.
+    # Re-pin to a specific minor (e.g. traefik:v3.4) before a v1.0 production
+    # release for reproducibility.
+    image: traefik:v3
     container_name: orchestack-proxy
     restart: unless-stopped
     command:
@@ -106,14 +114,6 @@ services:
       - "${PROXY_HTTP_PORT:-80}:80"        # public HTTP
       - "${PROXY_HTTPS_PORT:-443}:443"     # public HTTPS (TLS via Let's Encrypt at M5)
       - "${PROXY_DASHBOARD_PORT:-8080}:8080"  # Traefik dashboard — DEV ONLY; close before production
-    environment:
-      # Force the Docker API version Traefik's embedded Go client uses. Without
-      # this, the client falls back to its built-in default (v1.24, from 2016)
-      # when version negotiation can't complete — and modern Docker daemons
-      # require API >= 1.40, so they reject the call with HTTP 400 and an empty
-      # error body. The result is silent provider failure with no routers
-      # discovered. 1.43 is from Docker 24.0 (2023); broadly compatible.
-      DOCKER_API_VERSION: "1.43"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
