@@ -135,7 +135,7 @@
 </table>
 
 <h2 id="custom-roles">Creating custom roles</h2>
-<p>From the Streamlit admin dashboard, go to <strong>Users → Roles → New role</strong>. For each service, tick the permissions you want. Save.</p>
+<p>From the OrcheStack admin dashboard, go to <strong>Users → Roles → New role</strong>. For each service, tick the permissions you want. Save.</p>
 <p>Example — an "Analytics Engineer" role that can operate dbt and pgAdmin but has read-only access to Metabase:</p>
 <pre>service     | can_start | can_use | can_force_stop | can_edit_config
 dbt         | ✓         | ✓       |                | ✓
@@ -145,8 +145,8 @@ metabase    |           | ✓       |                |
 airbyte     | ✓         | ✓       |                | ✓</pre>
 
 <h2 id="enforcement">How enforcement works</h2>
-<p>Every protected Streamlit page has a guard at the top that checks the current user's role permission against the service they are trying to interact with. Unauthorised attempts redirect to the dashboard with a friendly error message.</p>
-<p>Below the application layer, PostgreSQL role-level privileges provide defence-in-depth: an Analyst role in PostgreSQL lacks <code class="inline">CREATE</code> and <code class="inline">DROP</code> privileges on the <code class="inline">marts</code> schema, so even a compromised Streamlit process cannot elevate their access.</p>
+<p>Every protected dashboard page has a guard at the top that checks the current user's role permission against the service they are trying to interact with. Unauthorised attempts redirect to the dashboard with a friendly error message.</p>
+<p>Below the application layer, PostgreSQL role-level privileges provide defence-in-depth: an Analyst role in PostgreSQL lacks <code class="inline">CREATE</code> and <code class="inline">DROP</code> privileges on the <code class="inline">marts</code> schema, so even a compromised dashboard process cannot elevate their access.</p>
 <div class="callout">
   <p><strong>Audit trail.</strong> Every permission-sensitive action (role creation, force-stop, credential edit) writes a row to <code class="inline">platform.audit_log</code> with actor, timestamp, and target. Admins can review these from the <strong>Audit</strong> tab.</p>
 </div>

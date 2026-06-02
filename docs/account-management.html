@@ -110,7 +110,7 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Concepts</a> › Account management</div>
     <h1>Managing your account</h1>
-    <p class="lede">Change your password, email, or username from the Streamlit admin dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.</p>
+    <p class="lede">Change your password, email, or username from the OrcheStack dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.</p>
 
 <h2 id="where-creds-live">Where your credentials live</h2>
 <p>Every OrcheStack user account is a row in the <code class="inline">platform.users</code> table inside the base-install PostgreSQL. The schema looks roughly like:</p>
@@ -133,7 +133,7 @@
 </div>
 
 <h2 id="change-your-own">Change your own password, email, or username</h2>
-<p>From any page in the Streamlit admin dashboard, open the user menu in the top-right and click <strong>Account settings</strong>. The page has three sections:</p>
+<p>From any page in the OrcheStack dashboard, open the user menu in the top-right and click <strong>Account settings</strong>. The page has three sections:</p>
 
 <h3 id="change-password">Change password</h3>
 <p>Enter your current password (for safety) and a new password (minimum 12 characters). OrcheStack:</p>
@@ -156,7 +156,7 @@
 <ol>
   <li>Asks for your email address.</li>
   <li>Generates a one-time reset token, stored in <code class="inline">platform.password_resets</code> with a 30-minute expiry.</li>
-  <li>Sends the token to your email (OrcheStack uses the SMTP credentials configured during install; if none, the token is shown to the Admin in Streamlit for manual delivery).</li>
+  <li>Sends the token to your email (OrcheStack uses the SMTP credentials configured during install; if none, the token is shown to the Admin in the dashboard for manual delivery).</li>
   <li>On click, you land on a form that accepts the new password and consumes the token.</li>
 </ol>
 <div class="callout warn">

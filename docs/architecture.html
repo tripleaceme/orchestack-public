@@ -120,7 +120,7 @@
 <ul>
   <li><strong>Reverse Proxy</strong> — routes HTTP traffic, terminates TLS, serves the landing page</li>
   <li><strong>Front-facing site</strong> — this docs site, plus home, services, and contact pages</li>
-  <li><strong>Streamlit</strong> — admin dashboard (served after auth)</li>
+  <li><strong>Dashboard</strong> — admin UI, HTMX + FastAPI + Tailwind (served after auth)</li>
   <li><strong>PostgreSQL</strong> — stores user accounts, roles, permissions, session ledger</li>
   <li><strong>Service Orchestrator</strong> — Python process managing hot/cold lifecycles</li>
 </ul>
@@ -160,13 +160,13 @@
 <p>Every service with a native web UI is reachable through the same domain via the reverse proxy:</p>
 <pre>/                → Front-facing site (landing, services, contact)
 /docs/*          → This docs site
-/app             → Streamlit (after auth)
+/app             → Dashboard (after auth)
 /app/metabase    → Metabase (hot)
 /app/airflow     → Airflow UI (hot)
 /app/airbyte     → Airbyte (cold — spun up on click)
 /app/openmeta    → OpenMetadata (cold)
 /app/pgadmin     → pgAdmin (cold)</pre>
-<p>Clicking any cold-service URL in the Streamlit dashboard triggers the orchestrator to spin it up, then redirects you to the proxy route once a health check passes.</p>
+<p>Clicking any cold-service URL in the dashboard triggers the orchestrator to spin it up, then redirects you to the proxy route once a health check passes.</p>
 
 <h2 id="storage-layout">Storage layout</h2>
 <p>OrcheStack uses a single PostgreSQL instance with multiple schemas to avoid database sprawl:</p>

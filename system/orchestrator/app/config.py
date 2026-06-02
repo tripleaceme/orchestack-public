@@ -38,7 +38,7 @@ DB_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "")
 DB_NAME: str = os.environ.get("POSTGRES_DB", "orchestack")
 
 # Pool size: 5 is enough for the reconciler tick + a handful of concurrent
-# API requests. Not a high-QPS service. Bump if we add Streamlit features
+# API requests. Not a high-QPS service. Bump if we add dashboard features
 # that fan out many parallel calls.
 DB_POOL_MIN: int = _int("ORCHESTRATOR_DB_POOL_MIN", 1)
 DB_POOL_MAX: int = _int("ORCHESTRATOR_DB_POOL_MAX", 5)

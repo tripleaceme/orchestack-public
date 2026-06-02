@@ -9,7 +9,7 @@ evaluation in `test_ui_framework/`. See §1 for the rationale.
 This document specifies the OrcheStack administrator dashboard: the
 operator-facing UI that consumes the orchestrator's HTTP API and presents
 service state, session activity, audit history, and the keep-warm controls.
-It replaces M1's nginx streamlit-stub container with a real application.
+It replaces M1's nginx-based dashboard stub (M1) container with a real application.
 
 The design-doc-first pattern paid off for M2 (caught scope decisions before
 they became multi-week implementation debt); this doc does the same for M3.
@@ -67,7 +67,7 @@ endpoint. The dashboard also hosts the login form for M3.5's auth flow.
 
 One container. Python + FastAPI + Jinja2 + a static `tailwind.css` baked
 into the image. Same `image:` swap pattern as M2's auth and orchestrator:
-the compose service name `streamlit` (legacy from M1) gets repurposed to
+the compose service name `streamlit` initially (now renamed to `dashboard`) to
 serve this dashboard during M3.1 to avoid breaking the existing Traefik
 PathPrefix(`/app`) route. A folder + service-name rename to `dashboard`
 ships in a separate cleanup commit after M3.5 stabilises.
@@ -256,7 +256,7 @@ Each phase is independently testable + produces something visible. Total
 
 | Phase | What ships | Time |
 |-------|-----------|------|
-| **3.1** Skeleton | `tripleaceme/orchestack-dashboard` image. Replaces `nginx:alpine` streamlit-stub in compose. One page at `/app/` rendering "OrcheStack" header + a placeholder that calls `GET /orchestrator/api/health` via HTMX and shows the result. Proves the image-swap + Traefik routing + orchestrator-call pattern | 2 days |
+| **3.1** Skeleton | `tripleaceme/orchestack-dashboard` image. Replaces `nginx:alpine` nginx stub in compose (removed). One page at `/app/` rendering "OrcheStack" header + a placeholder that calls `GET /orchestrator/api/health` via HTMX and shows the result. Proves the image-swap + Traefik routing + orchestrator-call pattern | 2 days |
 | **3.2** Service grid | Real service status grid. 9 catalogue cards rendered server-side from a single call to `GET /orchestrator/api/services`. Start/stop buttons that POST to the orchestrator and re-render the affected card. Auto-refresh every 10s. The connection indicator | 4-5 days |
 | **3.3** Sessions + tool opens | Click a service card → opens `/app/<service>` (proxied via Traefik to the actual tool container) in a new tab AND opens an orchestrator session. JavaScript heartbeat ticker fires every 30s from the open tab. Tab close → DELETE session. The active-sessions page at `/app/sessions` | 3-4 days |
 | **3.4** Audit log + pin UI | `/app/audit` page with paginated table, filters by event_type + target + date range. Service detail pages get a "Pin (keep warm)" toggle that POSTs/DELETEs the orchestrator's pinning endpoints. Optimistic UI for button clicks (HTMX `before-request` hook) | 3-4 days |

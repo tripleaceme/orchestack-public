@@ -132,7 +132,7 @@
 <ol>
   <li>Inserts a row in <code class="inline">platform.users</code> with your details. The password is bcrypt-hashed (cost factor 12) before storage.</li>
   <li>Creates a session in <code class="inline">platform.sessions</code> and issues you a secure, HTTP-only session cookie (12-hour TTL by default).</li>
-  <li>Redirects you to the Streamlit admin dashboard at <code class="inline">/app</code>.</li>
+  <li>Redirects you to the OrcheStack admin dashboard at <code class="inline">/app</code>.</li>
   <li>You land on the <strong>service selection</strong> page — see <a href="configure.html">Step 3 — Configure services</a>.</li>
 </ol>
 <div class="callout">
@@ -140,7 +140,7 @@
 </div>
 
 <h2 id="adding-more-users">Adding more users</h2>
-<p>After the first user bootstrap, <strong>self-signup is disabled</strong>. New users are added by an Admin from the Streamlit <strong>Users</strong> page. This prevents strangers from registering if your OrcheStack instance is exposed publicly.</p>
+<p>After the first user bootstrap, <strong>self-signup is disabled</strong>. New users are added by an Admin from the dashboard <strong>Users</strong> page. This prevents strangers from registering if your OrcheStack instance is exposed publicly.</p>
 <p>See <a href="roles-permissions.html">Roles &amp; permissions</a> for how to design the permission matrix for each role.</p>
 
     <div class="next-prev">

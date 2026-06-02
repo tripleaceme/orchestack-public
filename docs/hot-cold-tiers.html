@@ -137,7 +137,7 @@
 <p>Cold services transition through four states: <code class="inline">STOPPED</code> → <code class="inline">STARTING</code> → <code class="inline">RUNNING</code> → <code class="inline">STOPPING</code>. Transitions are driven by three triggers:</p>
 <ol>
   <li><strong>Airflow DAG schedule</strong> — e.g. the nightly ETL at 02:00 starts Airbyte + workers + dbt + Elementary in sequence.</li>
-  <li><strong>Streamlit manual button</strong> — e.g. "Run dbt now" or "Open pgAdmin".</li>
+  <li><strong>Dashboard manual button</strong> — e.g. "Run dbt now" or "Open pgAdmin".</li>
   <li><strong>Upstream dependency</strong> — e.g. when dbt finishes, Elementary auto-starts to record test results.</li>
 </ol>
 <p>A cold service only stops when its <em>reference-counted session count</em> hits zero AND the idle timeout has elapsed. See <a href="sessions.html">Service sessions</a> for the multi-user safety this provides.</p>
@@ -146,7 +146,7 @@
 <table>
   <thead><tr><th>State</th><th>Services running</th><th>Est. RAM</th></tr></thead>
   <tbody>
-    <tr><td>Base install</td><td>Proxy, Front, Streamlit, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
+    <tr><td>Base install</td><td>Proxy, Front, Dashboard, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
     <tr><td>Configured (idle)</td><td>Base + hot tier (MinIO, Metabase, Airflow scheduler)</td><td>~4–5 GB</td></tr>
     <tr><td>Active pipeline</td><td>Configured + cold tier during a run</td><td>~7–10 GB peak</td></tr>
   </tbody>

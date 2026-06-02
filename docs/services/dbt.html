@@ -149,7 +149,7 @@
 <p>The default Airflow DAG (<code class="inline">OrcheStack_nightly</code>) runs dbt every day at 02:00. OrcheStack creates it automatically when dbt is selected during setup.</p>
 
 <h3 id="manual">Manual</h3>
-<p>From the Streamlit admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
+<p>From the OrcheStack admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
 
 <h2 id="observability">Observability</h2>
 <p>If you enabled <strong>Elementary</strong> during setup, its container runs immediately after each dbt invocation to record test results and detect anomalies. Elementary dashboards are accessible from <code class="inline">/app/elementary</code> via the reverse proxy.</p>
@@ -161,8 +161,8 @@
 <p>dbt run failed? Three common causes:</p>
 <ul>
   <li><strong>Missing raw data.</strong> Airbyte didn't land anything. Check Airflow logs for the preceding <code class="inline">airbyte_sync</code> task.</li>
-  <li><strong>Permission denied on marts schema.</strong> Your dbt user lacks <code class="inline">CREATE</code> privilege on the marts schema. Fix via pgAdmin or Streamlit's credential editor.</li>
-  <li><strong>SQL error in a model.</strong> Streamlit's <strong>Logs</strong> tab shows the full dbt output with the failing model highlighted.</li>
+  <li><strong>Permission denied on marts schema.</strong> Your dbt user lacks <code class="inline">CREATE</code> privilege on the marts schema. Fix via pgAdmin or the dashboard credential editor.</li>
+  <li><strong>SQL error in a model.</strong> The dashboard's <strong>Logs</strong> tab shows the full dbt output with the failing model highlighted.</li>
 </ul>
 
     <div class="next-prev">

@@ -19,7 +19,7 @@
 #     traefik/dynamic/.gitkeep   (placeholder for future dynamic config)
 #     postgres-init/00-init.sql       (creates the platform schema)
 #     postgres-init/10-platform-schema.sql (creates the 10 platform tables)
-#     stubs/streamlit-stub.html  (M1 placeholder served at /app)
+#     services/*.yml             (per-tool compose snippets for M2.3+ services)
 #     INSTALL.md                 (one-page install instructions)
 #     VERSION                    (the tag this bundle was built from)
 #
@@ -80,7 +80,7 @@ jobs:
           set -euo pipefail
           BUNDLE="orchestack-runtime-${VERSION}"
           mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" \
-                   "${BUNDLE}/stubs" "${BUNDLE}/services"
+                   "${BUNDLE}/services"
 
           # Copy the runtime files. Source: system/docker/ in this repo.
           cp system/docker/docker-compose.yml          "${BUNDLE}/docker-compose.yml"
@@ -89,7 +89,6 @@ jobs:
           # The dynamic/ folder needs a placeholder so it survives tar+extract.
           touch                                        "${BUNDLE}/traefik/dynamic/.gitkeep"
           cp system/docker/postgres-init/*.sql         "${BUNDLE}/postgres-init/"
-          cp system/docker/stubs/streamlit-stub.html   "${BUNDLE}/stubs/streamlit-stub.html"
           # Per-service compose snippets — added in M2.3. One YAML file per
           # managed cold/hot-tier tool. Mounted read-only by the orchestrator.
           cp system/docker/services/*.yml              "${BUNDLE}/services/"
@@ -122,7 +121,7 @@ jobs:
           - \`.env.example\` — template; you'll fill in the OrcheStack DB password
           - \`traefik/\` — reverse-proxy configuration
           - \`postgres-init/\` — SQL run on first PostgreSQL boot
-          - \`stubs/\` — M1 placeholder for the Streamlit dashboard
+          - \`services/\` — per-tool compose snippets (M2.3+)
 
           ## What's NOT in this bundle
 

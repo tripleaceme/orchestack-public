@@ -192,11 +192,11 @@ services:
     labels:
       - traefik.enable=true
       # One router catches all the auth/setup paths PLUS the bare '/'.
-      # The bare '/' is here because on first install there's no Streamlit
-      # serving the dashboard yet — auth's nginx redirects '/' to '/signup'
-      # so a new operator hitting http://localhost lands somewhere useful.
-      # At M3 when Streamlit becomes real, '/' moves to the streamlit
-      # router and auth's redirect becomes a fallback.
+      # The bare '/' is here because on first install there's no dashboard
+      # yet — auth's nginx redirects '/' to '/signup' so a new operator
+      # hitting http://localhost lands somewhere useful. Once the dashboard
+      # is running (M3), '/' moves to the dashboard router and auth's
+      # redirect becomes a fallback.
       # Traefik passes paths through to nginx unchanged (no path stripping)
       # because the nginx config in ../auth/nginx.conf expects them as-is.
       - traefik.http.routers.auth.rule=Path(`/`) || Path(`/signup`) || Path(`/login`) || PathPrefix(`/setup`) || PathPrefix(`/assets`)
@@ -210,15 +210,14 @@ services:
   # orchestrator's /api/health and displays the result. Service grid,
   # sessions, audit log, and keep-warm controls land in later M3 phases.
   #
-  # The compose service name stays `streamlit` during M3 so the existing
-  # Traefik PathPrefix(`/app`) route + stripprefix middleware keeps
-  # working without coordination. A folder + service-name rename to
-  # `dashboard` ships in a separate cleanup commit after M3.5 stabilises.
-  # Image name flipped to `orchestack-dashboard` now because we're never
-  # going to populate `orchestack-streamlit` on Docker Hub — no point
-  # deprecating a name we never used.
+  # Naming: the compose service, container, Traefik router, and image are
+  # ALL `dashboard` now. The M1+M2 era had a `streamlit` placeholder name
+  # (because that was the framework assumed in the original proposal);
+  # M3's evaluation chose HTMX+FastAPI instead, so the naming sweep
+  # landed here. URL routing (Traefik PathPrefix(`/app`)) is unchanged —
+  # only the internal identifiers moved.
   # ==========================================================================
-  streamlit:
+  dashboard:
     image: tripleaceme/orchestack-dashboard:${DASHBOARD_TAG:-latest}
     container_name: orchestack-dashboard
     restart: unless-stopped
@@ -238,16 +237,15 @@ services:
       - orchestrator
     labels:
       - traefik.enable=true
-      - traefik.http.routers.streamlit.rule=PathPrefix(`/app`)
-      - traefik.http.routers.streamlit.entrypoints=web
+      - traefik.http.routers.dashboard.rule=PathPrefix(`/app`)
+      - traefik.http.routers.dashboard.entrypoints=web
       # Strip /app prefix before forwarding — dashboard's internal routes
       # are at `/`, `/api/dashboard/*`. FastAPI's root_path setting handles
       # URL generation back the other way.
-      - traefik.http.middlewares.streamlit-strip.stripprefix.prefixes=/app
-      - traefik.http.routers.streamlit.middlewares=streamlit-strip@docker
-      # Dashboard listens on 8000 (FastAPI/uvicorn default), not the
-      # nginx-default 80 the M1 stub used.
-      - traefik.http.services.streamlit.loadbalancer.server.port=8000
+      - traefik.http.middlewares.dashboard-strip.stripprefix.prefixes=/app
+      - traefik.http.routers.dashboard.middlewares=dashboard-strip@docker
+      # Dashboard listens on 8000 (FastAPI/uvicorn default).
+      - traefik.http.services.dashboard.loadbalancer.server.port=8000
 
   # ==========================================================================
   # 5. orchestrator — Service-lifecycle daemon.
@@ -310,7 +308,7 @@ services:
         condition: service_healthy
     labels:
       - traefik.enable=true
-      # Phase 2.1 mounts the orchestrator at /orchestrator/* so Streamlit
+      # Phase 2.1 mounts the orchestrator at /orchestrator/* so the dashboard
       # (M3) can call it via the same hostname. Path-prefix matched at
       # Traefik; the FastAPI app sees the un-stripped path (matches its
       # /api/* routes natively because the prefix is preserved).

@@ -114,7 +114,7 @@
 
 <h2 id="demo-dataset">Load the demo dataset</h2>
 <p>OrcheStack ships a demo dataset — a smallholder agricultural cooperative with yield records, market prices, and supply-chain events — to let you run the pipeline end-to-end without connecting a real source first.</p>
-<p>From the Streamlit admin dashboard, click <strong>Load demo data</strong>. OrcheStack does three things:</p>
+<p>From the OrcheStack admin dashboard, click <strong>Load demo data</strong>. OrcheStack does three things:</p>
 <ol>
   <li>Drops the demo CSVs into MinIO under <code class="inline">s3://OrcheStack/raw/demo/</code>.</li>
   <li>Configures an Airbyte connector that watches that bucket for new files.</li>
@@ -132,7 +132,7 @@
 </ol>
 
 <h2 id="monitor">Monitor the run</h2>
-<p>While the pipeline runs, Streamlit shows live progress. Each stage streams logs into the dashboard. You can also watch individual task states in the Airflow UI — click <strong>Open Airflow</strong> on the admin dashboard.</p>
+<p>While the pipeline runs, the dashboard shows live progress. Each stage streams logs into the dashboard. You can also watch individual task states in the Airflow UI — click <strong>Open Airflow</strong> in the dashboard.</p>
 <p>A full run of the demo pipeline typically takes 45–90 seconds on a 4-core laptop. Your first run will be slower (~3 minutes) because Airbyte and dbt container images are being pulled.</p>
 
 <h2 id="verify">Verify the output</h2>
@@ -145,7 +145,7 @@
 <p>If you see numbers, your pipeline is live. You've proven the end-to-end path: raw CSV → MinIO → PostgreSQL raw → dbt marts → Metabase dashboard.</p>
 
 <h2 id="schedule">Schedule nightly runs</h2>
-<p>By default, OrcheStack creates an Airflow DAG called <code class="inline">OrcheStack_nightly</code> that runs at 02:00 local time. You can edit its schedule from Streamlit's <strong>Pipelines</strong> page or directly in the Airflow UI. The DAG re-runs the full pipeline and emails a summary if tests fail.</p>
+<p>By default, OrcheStack creates an Airflow DAG called <code class="inline">OrcheStack_nightly</code> that runs at 02:00 local time. You can edit its schedule from the dashboard's <strong>Pipelines</strong> page or directly in the Airflow UI. The DAG re-runs the full pipeline and emails a summary if tests fail.</p>
 <div class="callout">
   <p><strong>Using your own data?</strong> Replace the demo connector with an Airbyte connector for your source (Postgres, Google Sheets, Stripe, etc.), update the dbt models under <code class="inline">./dbt/models/</code>, and run the same pipeline. Everything else stays the same.</p>
 </div>

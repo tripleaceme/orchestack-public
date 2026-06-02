@@ -127,7 +127,7 @@
 <p>If a cold service won't stop (e.g. OpenMetadata stays running for hours):</p>
 <ol>
   <li>Check <code class="inline">platform.service_sessions</code> for stale sessions that aren't being garbage-collected.</li>
-  <li>From Streamlit, <strong>Force stop</strong> the service (requires <code class="inline">can_force_stop</code>).</li>
+  <li>From the dashboard, <strong>Force stop</strong> the service (requires <code class="inline">can_force_stop</code>).</li>
   <li>If that fails, <code class="inline">docker compose stop &lt;service&gt;</code> from the host.</li>
 </ol>
 
@@ -136,7 +136,7 @@
   <li><strong>Service logs</strong>: <code class="inline">docker compose logs -f &lt;service&gt;</code></li>
   <li><strong>Pipeline logs</strong>: Airflow UI, or <code class="inline">./config/airflow/logs/</code></li>
   <li><strong>Platform audit log</strong>: <code class="inline">platform.audit_log</code> table</li>
-  <li><strong>dbt run logs</strong>: Streamlit <strong>Logs</strong> tab</li>
+  <li><strong>dbt run logs</strong>: The dashboard <strong>Logs</strong> tab</li>
 </ul>
 
     <div class="next-prev">

@@ -18,8 +18,8 @@ source material for Chapter 4 of the academic report.
 The orchestrator owns the *configured → active → cold* state transitions for
 every data-pipeline service in the OrcheStack stack. It receives the operator's
 choices from the setup wizard, materialises the pipeline database, and from then
-on runs as a reconciler: it watches a session table written by the Streamlit
-dashboard (M3) and the per-tool services themselves, and brings containers up or
+on runs as a reconciler: it watches a session table written by the dashboard
+(M3) and the per-tool services themselves, and brings containers up or
 down so that the resident-memory footprint of the host matches current activity.
 Idle cold-tier services are stopped after a configurable timeout; pinned
 services stay running regardless. M2 makes the proposal's three-state lifecycle
@@ -69,7 +69,7 @@ platform tables).
 ## 3. API surface
 
 All endpoints are JSON in / JSON out. Authentication is deferred to M3 (the
-Streamlit dashboard is the only client at M2; both run on the same trusted
+dashboard is the only client at M2; both run on the same trusted
 internal network).
 
 ### Wizard handoff
@@ -141,7 +141,7 @@ POST /api/sessions/{token}/checkin
 DELETE /api/sessions/{token}
 ```
 
-Streamlit calls `POST /api/sessions` when a user opens a tool UI, calls
+The dashboard calls `POST /api/sessions` when a user opens a tool UI, calls
 `/checkin` on a 60s timer while they're on the page, calls `DELETE` when they
 navigate away or close the tab. The orchestrator increments / refreshes /
 decrements rows in `platform.service_sessions`. **The reconciler reads only
@@ -154,7 +154,7 @@ GET /api/health  -> { ok: true, postgres: true, docker: true, ... }
 ```
 
 For the container's HEALTHCHECK (replaces the M1 stub's `while true; do echo;
-done` no-op) and for Streamlit's status pane.
+done` no-op) and for the dashboard's status pane.
 
 ---
 
@@ -193,10 +193,10 @@ Notable choices:
   client time to call `/checkin` even if it just lost network for 30 seconds.
 - **The `uptime < idle_threshold` check** prevents the reconciler from
   immediately stopping a service that was just started (e.g., during a
-  reconcile tick that happens to fire right after Streamlit's `/sessions` POST
+  reconcile tick that happens to fire right after the dashboard's `/sessions` POST
   but before the user's request actually opens the page).
 - **No spin-up in the reconciler.** Services start only via explicit
-  `POST /api/services/{name}/start` (called from Streamlit or directly from
+  `POST /api/services/{name}/start` (called from the dashboard or directly from
   the wizard handoff). The reconciler is shutdown-only. This keeps the loop
   simple and one-directional.
 
@@ -204,7 +204,7 @@ Notable choices:
 
 ## 5. Database access patterns
 
-The orchestrator is the only writer of these tables (M3 Streamlit reads them
+The orchestrator is the only writer of these tables (M3 dashboard reads them
 through the orchestrator's API, never directly):
 
 | Table | Read | Write |
@@ -240,7 +240,7 @@ strings.
 
 The recurring pattern: **never crash the orchestrator.** Every failure is
 loggable, observable, and recoverable on the next tick. A degraded orchestrator
-is always better than a dead one because Streamlit's dashboard depends on it.
+is always better than a dead one because the dashboard depends on it.
 
 ---
 
@@ -268,8 +268,8 @@ Drawing the line clearly so this scope doesn't grow:
 
 - **Authentication / authorisation.** All endpoints are open on the internal
   network. M3 layers session-cookie auth on top.
-- **The Streamlit dashboard.** That's M3. The orchestrator returns JSON;
-  Streamlit decides how to render it.
+- **The dashboard.** That's M3. The orchestrator returns JSON;
+  The dashboard decides how to render it.
 - **Default Airflow DAGs, default dbt project.** Those are M4. M2 only provides
   the *containers*; M4 provides what runs *inside* them.
 - **TLS / Let's Encrypt.** M5. M2 runs on plain HTTP behind Traefik.

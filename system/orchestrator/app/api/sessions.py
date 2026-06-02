@@ -1,19 +1,19 @@
 """Session check-in API — the input layer of the hot/cold tier mechanism.
 
-When a user opens a tool's UI, Streamlit POSTs `/api/sessions` with the
+When a user opens a tool's UI, the dashboard POSTs `/api/sessions` with the
 service name + their user_id. The orchestrator inserts a row in
 platform.service_sessions (which auto-generates a UUID token). While the
-user has the tab open, Streamlit sends `POST /api/sessions/{token}/checkin`
+user has the tab open, the dashboard sends `POST /api/sessions/{token}/checkin`
 every ~60s — the orchestrator refreshes `last_heartbeat_at`. When the user
 closes the tab, DELETE sets `closed_at`.
 
 The reconciler reads service_sessions every 30s and stops services with
 no recent heartbeats AND no pin.
 
-User identity: until M3 wires up real session cookies, every session
+User identity: until M3.5 wires up real session cookies, every session
 defaults to the seeded system user (config.DEFAULT_USER_ID = 1) so the
-NOT NULL FK on service_sessions.user_id is satisfied. The Streamlit
-dashboard at M3 will pass the actual authenticated user id.
+NOT NULL FK on service_sessions.user_id is satisfied. The dashboard at
+M3.5 will pass the actual authenticated user id.
 """
 
 from __future__ import annotations

@@ -113,7 +113,7 @@
     <p class="lede">OrcheStack is a containerised, cost-effective open-source data platform for Nigerian organisations. Deploy a complete modern data stack on a single host — pick your tools, configure credentials, and OrcheStack pulls and starts only what you enabled.</p>
 
 <h2 id="what-is-OrcheStack">What is OrcheStack?</h2>
-<p>OrcheStack bundles the modern data stack — ingestion, transformation, storage, quality, governance, and BI — behind a unified <strong>Streamlit control plane</strong>. Instead of learning Kubernetes, wiring ten tools together, or paying for cloud-managed services, you run <code class="inline">docker compose up OrcheStack</code> on any host and configure the platform through a web UI.</p>
+<p>OrcheStack bundles the modern data stack — ingestion, transformation, storage, quality, governance, and BI — behind a unified <strong>dashboard</strong>. Instead of learning Kubernetes, wiring ten tools together, or paying for cloud-managed services, you run <code class="inline">docker compose up OrcheStack</code> on any host and configure the platform through a browser dashboard.</p>
 <p>OrcheStack is built for teams that want the full flexibility of open-source tools without the operational burden of running them separately.</p>
 
 <h2 id="how-install-works">How the install works</h2>
@@ -121,11 +121,11 @@
 <ul>
   <li>Reverse Proxy (routing + TLS termination)</li>
   <li>Front-facing site (this page you're reading)</li>
-  <li>Streamlit (admin dashboard)</li>
+  <li>OrcheStack dashboard (HTMX + FastAPI + Tailwind, admin UI)</li>
   <li>PostgreSQL (for user accounts and later your warehouse)</li>
   <li>Service Orchestrator (manages service lifecycles)</li>
 </ul>
-<p>After you sign up and pick your tools, OrcheStack pulls their Docker images and writes a generated <code class="inline">docker-compose.yml</code>. Services marked <em>hot</em> (like Metabase) stay running; <em>cold</em> services (like Airbyte or dbt) spin up only when triggered by Airflow or by clicking a button in Streamlit.</p>
+<p>After you sign up and pick your tools, OrcheStack pulls their Docker images and writes a generated <code class="inline">docker-compose.yml</code>. Services marked <em>hot</em> (like Metabase) stay running; <em>cold</em> services (like Airbyte or dbt) spin up only when triggered by Airflow or by clicking a button in the dashboard.</p>
 <div class="callout">
   <p><strong>Why lazy-pull?</strong> It keeps your base install under 2 GB RAM and ensures you only use disk for tools you actually chose. A Nigerian SME laptop or a $500 VPS is enough to run the whole platform.</p>
 </div>

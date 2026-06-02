@@ -135,7 +135,7 @@
 
 <h2 id="heartbeats">Heartbeats and stale sessions</h2>
 <p>What if someone closes their laptop mid-session without clicking "End my session"? Their row would stay <code class="inline">active</code> forever, keeping the container alive.</p>
-<p>Fix: <strong>heartbeats</strong>. Streamlit pings the session endpoint every 30 seconds while the user is on the page. A background job marks any session without a heartbeat for 5 minutes as <code class="inline">stale</code>. Stale sessions don't count.</p>
+<p>Fix: <strong>heartbeats</strong>. The dashboard pings the session endpoint every 30 seconds while the user is on the page. A background job marks any session without a heartbeat for 5 minutes as <code class="inline">stale</code>. Stale sessions don't count.</p>
 
 <h2 id="force-stop">Admin force-stop</h2>
 <p>Admins with <code class="inline">can_force_stop=true</code> can kill a container immediately, disconnecting all active sessions. This is intended for stuck or unresponsive services, not routine shutdown.</p>

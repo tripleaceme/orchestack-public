@@ -43,7 +43,7 @@
       We'll collect admin credentials for each tool you picked. Values are saved to
       <code>./config/.env</code> on the host. Fields tagged
       <span class="derived-tag">auto-derived</span> are computed from the other credentials you
-      enter. You can edit any of these values later from the Streamlit dashboard.
+      enter. You can edit any of these values later from the dashboard.
     </p>
 
     <!-- Warnings panel for None selections (rendered by JS when applicable) -->
@@ -194,7 +194,7 @@
           readonly: true, generate: "fernet-key",
           hint: "Encryption key for connection passwords inside Airflow. Click Generate — the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
         { name: "AIRFLOW_DAGS_REPO_URL", label: "DAGs Git repository (optional)", type: "text", placeholder: "Leave blank if your DAGs aren't on GitHub yet",
-          hint: "If your team's Airflow DAGs are already on GitHub, paste the HTTPS or SSH URL — OrcheStack clones it into the Airflow container on first deploy and refreshes it on every scheduler tick. If you haven't set up a repo yet, skip this now and add it later from Streamlit → Services → Airflow → Edit config." },
+          hint: "If your team's Airflow DAGs are already on GitHub, paste the HTTPS or SSH URL — OrcheStack clones it into the Airflow container on first deploy and refreshes it on every scheduler tick. If you haven't set up a repo yet, skip this now and add it later from the dashboard → Services → Airflow → Edit config." },
         { name: "AIRFLOW_DAGS_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
           hint: "Which branch OrcheStack pulls from on each refresh. 'main' for most production setups. Only matters once you've connected a repo." },
         { name: "AIRFLOW_DAGS_REPO_PATH", label: "DAGs subdirectory", type: "text", default: "dags",
@@ -203,7 +203,7 @@
       note: "Two things to do AFTER setup finishes:",
       noteHtml: `
         <ul>
-          <li>If your DAGs aren't in a Git repo yet, create one (private is fine — OrcheStack supports SSH keys for private repos). The repo should contain a top-level <code>dags/</code> folder with your <code>.py</code> DAG files. Once pushed, paste the repo URL into Streamlit → Services → Airflow → Edit config and OrcheStack starts syncing on the next scheduler tick.</li>
+          <li>If your DAGs aren't in a Git repo yet, create one (private is fine — OrcheStack supports SSH keys for private repos). The repo should contain a top-level <code>dags/</code> folder with your <code>.py</code> DAG files. Once pushed, paste the repo URL into dashboard → Services → Airflow → Edit config and OrcheStack starts syncing on the next scheduler tick.</li>
           <li>Back up the Fernet key shown above to a password manager. The key encrypts all stored connection passwords inside Airflow — if you lose it, every Airflow Connection you've configured becomes unrecoverable and you'll have to recreate them.</li>
         </ul>
       `,
@@ -211,7 +211,7 @@
 
     // ------- Warehouse -------
     "PostgreSQL": {
-      desc: "Your <strong>pipeline warehouse</strong> is separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata. Created on the same Postgres instance OrcheStack uses for its own state, but with its own user, password, and DB name so they stay cleanly separated. <em>OrcheStack's own credentials are in <code>.env</code> and not touched here.</em>",
+      desc: "Your <strong>pipeline warehouse</strong> is separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata.",
       fields: [
         { name: "PIPELINE_DB_USER", label: "Pipeline DB user", type: "text", placeholder: "e.g. acme_warehouse", required: true,
           hint: "PostgreSQL user that owns your pipeline database. Distinct from OrcheStack's internal user (which lives in .env). Created during deploy by the orchestrator with privileges scoped to the pipeline DB only — it cannot read or modify OrcheStack's platform tables." },
@@ -260,7 +260,7 @@
         { name: "DBT_PROJECT_NAME", label: "dbt project name", type: "text", placeholder: "acme_analytics", required: true,
           hint: "The name you passed to 'dbt init' — appears as both 'name:' and 'profile:' at the top of your dbt_project.yml. OrcheStack uses this value as the top-level key in profiles.yml, so it MUST match the 'profile:' field in your repo. Starting fresh? Something like 'acme_analytics' or 'company_dbt' works well." },
         { name: "DBT_REPO_URL", label: "dbt project Git repository (optional)", type: "text", placeholder: "Leave blank if your dbt project isn't on GitHub yet",
-          hint: "If your dbt project is already on GitHub, paste the HTTPS or SSH URL — OrcheStack will clone it into the dbt container on first deploy and refresh it on every run. If not, skip this now and add it later from Streamlit → Services → dbt Core → Edit config." },
+          hint: "If your dbt project is already on GitHub, paste the HTTPS or SSH URL — OrcheStack will clone it into the dbt container on first deploy and refresh it on every run. If not, skip this now and add it later from the dashboard → Services → dbt Core → Edit config." },
         { name: "DBT_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
           hint: "Which branch OrcheStack pulls on each run. 'main' for most production setups. Only matters once you've connected a repo." },
         { name: "DBT_TARGET", label: "Production target name", type: "text", default: "prod", required: true,
@@ -275,7 +275,7 @@
       note: "Two things to do AFTER setup finishes:",
       noteHtml: `
         <ul>
-          <li>Push your dbt project to GitHub if it isn't there yet (<a href="/docs/guides/dbt-to-github.html"><strong>see dbt to GitHub</strong></a>) and paste the repo URL into Streamlit so OrcheStack can pull changes automatically. Make sure the <code>profile:</code> line in your <code>dbt_project.yml</code> matches the project name you entered above, OrcheStack uses it as the <code>profiles.yml</code> key, and dbt fails to start if they don't match.</li>
+          <li>Push your dbt project to GitHub if it isn't there yet (<a href="/docs/guides/dbt-to-github.html"><strong>see dbt to GitHub</strong></a>) and paste the repo URL into the OrcheStack dashboard so OrcheStack can pull changes automatically. Make sure the <code>profile:</code> line in your <code>dbt_project.yml</code> matches the project name you entered above, OrcheStack uses it as the <code>profiles.yml</code> key, and dbt fails to start if they don't match.</li>
           <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared marts schema that stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>). The <code>prod</code> target configured here writes to the shared schema, so running dev against prod will break dashboards.</li>
         </ul>
       `,
@@ -458,7 +458,7 @@
       <div class="none-warnings" role="alert">
         <h3>⚠ You've skipped ${warnings.length} service${warnings.length > 1 ? 's' : ''}, here's what that means</h3>
         <ul>${items}</ul>
-        <p class="footnote">You can add any of these later from the Streamlit dashboard via <strong>Add services</strong>.</p>
+        <p class="footnote">You can add any of these later from the dashboard via <strong>Add services</strong>.</p>
       </div>
     `;
   }

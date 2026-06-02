@@ -113,7 +113,7 @@
     <p class="lede">The PostgreSQL web UI for engineers — inspect tables, write ad-hoc SQL, review query plans. Starts on click, stops when idle.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in Streamlit — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
+<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
 
 <h2 id="role">Role</h2>
 <p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection. Alternatives: <strong>Adminer</strong> (~50 MB, single-file PHP) or <strong>pgweb</strong> (~30 MB, read-only Go binary).</p>
@@ -126,7 +126,7 @@
 <p>On first launch, add a server connection pointing at <code class="inline">postgres:5432</code> with your warehouse credentials.</p>
 
 <h2 id="who-has-access">Who has access</h2>
-<p>By default, only users with roles that have <code class="inline">can_start=true</code> and <code class="inline">can_use=true</code> on pgAdmin. That's typically Admin and Engineer. Analysts can be granted access per-role from Streamlit's <strong>Users → Roles</strong> page.</p>
+<p>By default, only users with roles that have <code class="inline">can_start=true</code> and <code class="inline">can_use=true</code> on pgAdmin. That's typically Admin and Engineer. Analysts can be granted access per-role from the dashboard's <strong>Users → Roles</strong> page.</p>
 
     <div class="next-prev">
       <a href="great-expectations.html">

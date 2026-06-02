@@ -38,7 +38,7 @@ system/dbt/
 The orchestrator's wizard handoff (M2.5) writes a copy of this skeleton
 to the customer's `./config/dbt-starter/` directory if they don't supply
 a DBT_REPO_URL. They can then `git init` it and push to their own repo,
-returning to Streamlit to paste the URL in.
+returning to the dashboard to paste the URL in.
 
 ---
 

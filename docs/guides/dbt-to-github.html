@@ -173,7 +173,7 @@ name: 'acme_analytics'
 version: '1.0.0'
 profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 <p>If the two values already match, you're good. If not, update <code class="inline">profile:</code> in <code class="inline">dbt_project.yml</code> OR update the project name field in OrcheStack — either way, make them identical.</p>
-<p>Then, from your OrcheStack Streamlit admin dashboard:</p>
+<p>Then, from your OrcheStack OrcheStack dashboard:</p>
 <ol>
   <li>Click <strong>Services → dbt Core</strong>.</li>
   <li>Click <strong>Edit config</strong>.</li>
@@ -205,7 +205,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
   <li>On GitHub, go to <strong>Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token</strong>.</li>
   <li>Give the token <strong>Contents: read-only</strong> access to just your dbt repo.</li>
   <li>Copy the token.</li>
-  <li>In OrcheStack Streamlit → Services → dbt Core → Edit config, paste the token into <strong>Repo access token</strong>.</li>
+  <li>In the OrcheStack dashboard → Services → dbt Core → Edit config, paste the token into <strong>Repo access token</strong>.</li>
 </ol>
 
 <h3 id="ssh-deploy-key">SSH with a deploy key (more secure)</h3>

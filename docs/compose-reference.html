@@ -117,7 +117,7 @@
 <ul>
   <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
   <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
-  <li><code class="inline">orchestack-streamlit</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
   <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
   <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
 </ul>
@@ -133,9 +133,9 @@
       resources:
         limits:
           memory: 2g
-  orchestack-streamlit:
+  orchestack-dashboard:
     environment:
-      - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500</pre>
+      - DASHBOARD_LOG_LEVEL=info</pre>
 
     <div class="next-prev">
       <a href="api.html">

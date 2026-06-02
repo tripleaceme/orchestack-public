@@ -132,7 +132,7 @@
 <p>Source credentials (for the systems Airbyte pulls FROM) are entered inside Airbyte's own UI after the first sync is configured.</p>
 
 <h2 id="adding-sources">Adding a new source</h2>
-<p>Click <strong>Open Airbyte</strong> from Streamlit. This spins up the container (if cold), then opens Airbyte's web UI at <code class="inline">/app/airbyte</code>.</p>
+<p>Click <strong>Open Airbyte</strong> from the dashboard. This spins up the container (if cold), then opens Airbyte's web UI at <code class="inline">/app/airbyte</code>.</p>
 <ol>
   <li>Click <strong>Sources → + new source</strong>.</li>
   <li>Choose the connector type (PostgreSQL, Google Sheets, Stripe, etc.).</li>
@@ -145,7 +145,7 @@
 <ul>
   <li><strong>Sync fails with "connection refused"</strong> — the source system is unreachable from the Docker network. Check firewall rules and whether the source needs a VPN.</li>
   <li><strong>"Schema change detected"</strong> — the source added or removed a column. Airbyte's behaviour depends on your sync mode; see the Airbyte docs for schema evolution.</li>
-  <li><strong>Airbyte won't start</strong> — its internal PostgreSQL credentials are wrong. Edit the config in Streamlit.</li>
+  <li><strong>Airbyte won't start</strong> — its internal PostgreSQL credentials are wrong. Edit the config in the dashboard.</li>
 </ul>
 
     <div class="next-prev">

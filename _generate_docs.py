@@ -114,7 +114,7 @@ PAGES: list[Page] = [
         ],
         body="""\
 <h2 id="what-is-OrcheStack">What is OrcheStack?</h2>
-<p>OrcheStack bundles the modern data stack — ingestion, transformation, storage, quality, governance, and BI — behind a unified <strong>Streamlit control plane</strong>. Instead of learning Kubernetes, wiring ten tools together, or paying for cloud-managed services, you run <code class="inline">docker compose up OrcheStack</code> on any host and configure the platform through a web UI.</p>
+<p>OrcheStack bundles the modern data stack — ingestion, transformation, storage, quality, governance, and BI — behind a unified <strong>dashboard</strong>. Instead of learning Kubernetes, wiring ten tools together, or paying for cloud-managed services, you run <code class="inline">docker compose up OrcheStack</code> on any host and configure the platform through a browser dashboard.</p>
 <p>OrcheStack is built for teams that want the full flexibility of open-source tools without the operational burden of running them separately.</p>
 
 <h2 id="how-install-works">How the install works</h2>
@@ -122,11 +122,11 @@ PAGES: list[Page] = [
 <ul>
   <li>Reverse Proxy (routing + TLS termination)</li>
   <li>Front-facing site (this page you're reading)</li>
-  <li>Streamlit (admin dashboard)</li>
+  <li>OrcheStack dashboard (HTMX + FastAPI + Tailwind, admin UI)</li>
   <li>PostgreSQL (for user accounts and later your warehouse)</li>
   <li>Service Orchestrator (manages service lifecycles)</li>
 </ul>
-<p>After you sign up and pick your tools, OrcheStack pulls their Docker images and writes a generated <code class="inline">docker-compose.yml</code>. Services marked <em>hot</em> (like Metabase) stay running; <em>cold</em> services (like Airbyte or dbt) spin up only when triggered by Airflow or by clicking a button in Streamlit.</p>
+<p>After you sign up and pick your tools, OrcheStack pulls their Docker images and writes a generated <code class="inline">docker-compose.yml</code>. Services marked <em>hot</em> (like Metabase) stay running; <em>cold</em> services (like Airbyte or dbt) spin up only when triggered by Airflow or by clicking a button in the dashboard.</p>
 <div class="callout">
   <p><strong>Why lazy-pull?</strong> It keeps your base install under 2 GB RAM and ensures you only use disk for tools you actually chose. A Nigerian SME laptop or a $500 VPS is enough to run the whole platform.</p>
 </div>
@@ -174,7 +174,7 @@ PAGES: list[Page] = [
 <h2 id="distribution">Where OrcheStack lives</h2>
 <p>OrcheStack is three artifacts in three places — understanding the split makes the install paths below obvious:</p>
 <ul>
-  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-streamlit</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
+  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-dashboard</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
   <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
   <li><strong>orchestack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
 </ul>
@@ -209,7 +209,7 @@ docker compose up -d</pre>
  ✔ Container orchestack-proxy        Started
  ✔ Container orchestack-auth         Started
  ✔ Container orchestack-postgres     Started
- ✔ Container orchestack-streamlit    Started</pre>
+ ✔ Container orchestack-dashboard     Started</pre>
 <p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
 <p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
 <div class="callout warn">
@@ -251,7 +251,7 @@ docker compose up -d</pre>
 <ol>
   <li>Inserts a row in <code class="inline">platform.users</code> with your details. The password is bcrypt-hashed (cost factor 12) before storage.</li>
   <li>Creates a session in <code class="inline">platform.sessions</code> and issues you a secure, HTTP-only session cookie (12-hour TTL by default).</li>
-  <li>Redirects you to the Streamlit admin dashboard at <code class="inline">/app</code>.</li>
+  <li>Redirects you to the OrcheStack admin dashboard at <code class="inline">/app</code>.</li>
   <li>You land on the <strong>service selection</strong> page — see <a href="configure.html">Step 3 — Configure services</a>.</li>
 </ol>
 <div class="callout">
@@ -259,7 +259,7 @@ docker compose up -d</pre>
 </div>
 
 <h2 id="adding-more-users">Adding more users</h2>
-<p>After the first user bootstrap, <strong>self-signup is disabled</strong>. New users are added by an Admin from the Streamlit <strong>Users</strong> page. This prevents strangers from registering if your OrcheStack instance is exposed publicly.</p>
+<p>After the first user bootstrap, <strong>self-signup is disabled</strong>. New users are added by an Admin from the dashboard <strong>Users</strong> page. This prevents strangers from registering if your OrcheStack instance is exposed publicly.</p>
 <p>See <a href="roles-permissions.html">Roles &amp; permissions</a> for how to design the permission matrix for each role.</p>
 """,
     ),
@@ -314,7 +314,7 @@ docker compose up -d</pre>
 <p>Expect the first-time pull to take 2–5 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
 
 <h2 id="editing-later">Editing credentials later</h2>
-<p>From the Streamlit admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
+<p>From the OrcheStack admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
 <pre>docker compose up -d --force-recreate &lt;service&gt;</pre>
 <p>Container recreation picks up the new environment variables. Data volumes are preserved, so you don't lose history when rotating a password.</p>
 <div class="callout warn">
@@ -339,7 +339,7 @@ docker compose up -d</pre>
         body="""\
 <h2 id="demo-dataset">Load the demo dataset</h2>
 <p>OrcheStack ships a demo dataset — a smallholder agricultural cooperative with yield records, market prices, and supply-chain events — to let you run the pipeline end-to-end without connecting a real source first.</p>
-<p>From the Streamlit admin dashboard, click <strong>Load demo data</strong>. OrcheStack does three things:</p>
+<p>From the OrcheStack admin dashboard, click <strong>Load demo data</strong>. OrcheStack does three things:</p>
 <ol>
   <li>Drops the demo CSVs into MinIO under <code class="inline">s3://OrcheStack/raw/demo/</code>.</li>
   <li>Configures an Airbyte connector that watches that bucket for new files.</li>
@@ -357,7 +357,7 @@ docker compose up -d</pre>
 </ol>
 
 <h2 id="monitor">Monitor the run</h2>
-<p>While the pipeline runs, Streamlit shows live progress. Each stage streams logs into the dashboard. You can also watch individual task states in the Airflow UI — click <strong>Open Airflow</strong> on the admin dashboard.</p>
+<p>While the pipeline runs, the dashboard shows live progress. Each stage streams logs into the dashboard. You can also watch individual task states in the Airflow UI — click <strong>Open Airflow</strong> in the dashboard.</p>
 <p>A full run of the demo pipeline typically takes 45–90 seconds on a 4-core laptop. Your first run will be slower (~3 minutes) because Airbyte and dbt container images are being pulled.</p>
 
 <h2 id="verify">Verify the output</h2>
@@ -370,7 +370,7 @@ docker compose up -d</pre>
 <p>If you see numbers, your pipeline is live. You've proven the end-to-end path: raw CSV → MinIO → PostgreSQL raw → dbt marts → Metabase dashboard.</p>
 
 <h2 id="schedule">Schedule nightly runs</h2>
-<p>By default, OrcheStack creates an Airflow DAG called <code class="inline">OrcheStack_nightly</code> that runs at 02:00 local time. You can edit its schedule from Streamlit's <strong>Pipelines</strong> page or directly in the Airflow UI. The DAG re-runs the full pipeline and emails a summary if tests fail.</p>
+<p>By default, OrcheStack creates an Airflow DAG called <code class="inline">OrcheStack_nightly</code> that runs at 02:00 local time. You can edit its schedule from the dashboard's <strong>Pipelines</strong> page or directly in the Airflow UI. The DAG re-runs the full pipeline and emails a summary if tests fail.</p>
 <div class="callout">
   <p><strong>Using your own data?</strong> Replace the demo connector with an Airbyte connector for your source (Postgres, Google Sheets, Stripe, etc.), update the dbt models under <code class="inline">./dbt/models/</code>, and run the same pipeline. Everything else stays the same.</p>
 </div>
@@ -399,7 +399,7 @@ docker compose up -d</pre>
 <ul>
   <li><strong>Reverse Proxy</strong> — routes HTTP traffic, terminates TLS, serves the landing page</li>
   <li><strong>Front-facing site</strong> — this docs site, plus home, services, and contact pages</li>
-  <li><strong>Streamlit</strong> — admin dashboard (served after auth)</li>
+  <li><strong>Dashboard</strong> — admin UI, HTMX + FastAPI + Tailwind (served after auth)</li>
   <li><strong>PostgreSQL</strong> — stores user accounts, roles, permissions, session ledger</li>
   <li><strong>Service Orchestrator</strong> — Python process managing hot/cold lifecycles</li>
 </ul>
@@ -439,13 +439,13 @@ docker compose up -d</pre>
 <p>Every service with a native web UI is reachable through the same domain via the reverse proxy:</p>
 <pre>/                → Front-facing site (landing, services, contact)
 /docs/*          → This docs site
-/app             → Streamlit (after auth)
+/app             → Dashboard (after auth)
 /app/metabase    → Metabase (hot)
 /app/airflow     → Airflow UI (hot)
 /app/airbyte     → Airbyte (cold — spun up on click)
 /app/openmeta    → OpenMetadata (cold)
 /app/pgadmin     → pgAdmin (cold)</pre>
-<p>Clicking any cold-service URL in the Streamlit dashboard triggers the orchestrator to spin it up, then redirects you to the proxy route once a health check passes.</p>
+<p>Clicking any cold-service URL in the dashboard triggers the orchestrator to spin it up, then redirects you to the proxy route once a health check passes.</p>
 
 <h2 id="storage-layout">Storage layout</h2>
 <p>OrcheStack uses a single PostgreSQL instance with multiple schemas to avoid database sprawl:</p>
@@ -497,7 +497,7 @@ docker compose up -d</pre>
 <p>Cold services transition through four states: <code class="inline">STOPPED</code> → <code class="inline">STARTING</code> → <code class="inline">RUNNING</code> → <code class="inline">STOPPING</code>. Transitions are driven by three triggers:</p>
 <ol>
   <li><strong>Airflow DAG schedule</strong> — e.g. the nightly ETL at 02:00 starts Airbyte + workers + dbt + Elementary in sequence.</li>
-  <li><strong>Streamlit manual button</strong> — e.g. "Run dbt now" or "Open pgAdmin".</li>
+  <li><strong>Dashboard manual button</strong> — e.g. "Run dbt now" or "Open pgAdmin".</li>
   <li><strong>Upstream dependency</strong> — e.g. when dbt finishes, Elementary auto-starts to record test results.</li>
 </ol>
 <p>A cold service only stops when its <em>reference-counted session count</em> hits zero AND the idle timeout has elapsed. See <a href="sessions.html">Service sessions</a> for the multi-user safety this provides.</p>
@@ -506,7 +506,7 @@ docker compose up -d</pre>
 <table>
   <thead><tr><th>State</th><th>Services running</th><th>Est. RAM</th></tr></thead>
   <tbody>
-    <tr><td>Base install</td><td>Proxy, Front, Streamlit, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
+    <tr><td>Base install</td><td>Proxy, Front, Dashboard, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
     <tr><td>Configured (idle)</td><td>Base + hot tier (MinIO, Metabase, Airflow scheduler)</td><td>~4–5 GB</td></tr>
     <tr><td>Active pipeline</td><td>Configured + cold tier during a run</td><td>~7–10 GB peak</td></tr>
   </tbody>
@@ -551,7 +551,7 @@ docker compose up -d</pre>
 </table>
 
 <h2 id="custom-roles">Creating custom roles</h2>
-<p>From the Streamlit admin dashboard, go to <strong>Users → Roles → New role</strong>. For each service, tick the permissions you want. Save.</p>
+<p>From the OrcheStack admin dashboard, go to <strong>Users → Roles → New role</strong>. For each service, tick the permissions you want. Save.</p>
 <p>Example — an "Analytics Engineer" role that can operate dbt and pgAdmin but has read-only access to Metabase:</p>
 <pre>service     | can_start | can_use | can_force_stop | can_edit_config
 dbt         | ✓         | ✓       |                | ✓
@@ -561,8 +561,8 @@ metabase    |           | ✓       |                |
 airbyte     | ✓         | ✓       |                | ✓</pre>
 
 <h2 id="enforcement">How enforcement works</h2>
-<p>Every protected Streamlit page has a guard at the top that checks the current user's role permission against the service they are trying to interact with. Unauthorised attempts redirect to the dashboard with a friendly error message.</p>
-<p>Below the application layer, PostgreSQL role-level privileges provide defence-in-depth: an Analyst role in PostgreSQL lacks <code class="inline">CREATE</code> and <code class="inline">DROP</code> privileges on the <code class="inline">marts</code> schema, so even a compromised Streamlit process cannot elevate their access.</p>
+<p>Every protected dashboard page has a guard at the top that checks the current user's role permission against the service they are trying to interact with. Unauthorised attempts redirect to the dashboard with a friendly error message.</p>
+<p>Below the application layer, PostgreSQL role-level privileges provide defence-in-depth: an Analyst role in PostgreSQL lacks <code class="inline">CREATE</code> and <code class="inline">DROP</code> privileges on the <code class="inline">marts</code> schema, so even a compromised dashboard process cannot elevate their access.</p>
 <div class="callout">
   <p><strong>Audit trail.</strong> Every permission-sensitive action (role creation, force-stop, credential edit) writes a row to <code class="inline">platform.audit_log</code> with actor, timestamp, and target. Admins can review these from the <strong>Audit</strong> tab.</p>
 </div>
@@ -605,7 +605,7 @@ airbyte     | ✓         | ✓       |                | ✓</pre>
 
 <h2 id="heartbeats">Heartbeats and stale sessions</h2>
 <p>What if someone closes their laptop mid-session without clicking "End my session"? Their row would stay <code class="inline">active</code> forever, keeping the container alive.</p>
-<p>Fix: <strong>heartbeats</strong>. Streamlit pings the session endpoint every 30 seconds while the user is on the page. A background job marks any session without a heartbeat for 5 minutes as <code class="inline">stale</code>. Stale sessions don't count.</p>
+<p>Fix: <strong>heartbeats</strong>. The dashboard pings the session endpoint every 30 seconds while the user is on the page. A background job marks any session without a heartbeat for 5 minutes as <code class="inline">stale</code>. Stale sessions don't count.</p>
 
 <h2 id="force-stop">Admin force-stop</h2>
 <p>Admins with <code class="inline">can_force_stop=true</code> can kill a container immediately, disconnecting all active sessions. This is intended for stuck or unresponsive services, not routine shutdown.</p>
@@ -626,7 +626,7 @@ airbyte     | ✓         | ✓       |                | ✓</pre>
         path="account-management.html",
         title="Account management",
         h1="Managing your account",
-        lede="Change your password, email, or username from the Streamlit admin dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.",
+        lede="Change your password, email, or username from the OrcheStack dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.",
         breadcrumb=[("index.html", "Docs"), ("index.html", "Concepts"), (None, "Account management")],
         toc=[
             ("where-creds-live", "Where your credentials live"),
@@ -657,7 +657,7 @@ airbyte     | ✓         | ✓       |                | ✓</pre>
 </div>
 
 <h2 id="change-your-own">Change your own password, email, or username</h2>
-<p>From any page in the Streamlit admin dashboard, open the user menu in the top-right and click <strong>Account settings</strong>. The page has three sections:</p>
+<p>From any page in the OrcheStack dashboard, open the user menu in the top-right and click <strong>Account settings</strong>. The page has three sections:</p>
 
 <h3 id="change-password">Change password</h3>
 <p>Enter your current password (for safety) and a new password (minimum 12 characters). OrcheStack:</p>
@@ -680,7 +680,7 @@ airbyte     | ✓         | ✓       |                | ✓</pre>
 <ol>
   <li>Asks for your email address.</li>
   <li>Generates a one-time reset token, stored in <code class="inline">platform.password_resets</code> with a 30-minute expiry.</li>
-  <li>Sends the token to your email (OrcheStack uses the SMTP credentials configured during install; if none, the token is shown to the Admin in Streamlit for manual delivery).</li>
+  <li>Sends the token to your email (OrcheStack uses the SMTP credentials configured during install; if none, the token is shown to the Admin in the dashboard for manual delivery).</li>
   <li>On click, you land on a form that accepts the new password and consumes the token.</li>
 </ol>
 <div class="callout warn">
@@ -782,7 +782,7 @@ name: 'acme_analytics'
 version: '1.0.0'
 profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 <p>If the two values already match, you're good. If not, update <code class="inline">profile:</code> in <code class="inline">dbt_project.yml</code> OR update the project name field in OrcheStack — either way, make them identical.</p>
-<p>Then, from your OrcheStack Streamlit admin dashboard:</p>
+<p>Then, from your OrcheStack OrcheStack dashboard:</p>
 <ol>
   <li>Click <strong>Services → dbt Core</strong>.</li>
   <li>Click <strong>Edit config</strong>.</li>
@@ -814,7 +814,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
   <li>On GitHub, go to <strong>Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token</strong>.</li>
   <li>Give the token <strong>Contents: read-only</strong> access to just your dbt repo.</li>
   <li>Copy the token.</li>
-  <li>In OrcheStack Streamlit → Services → dbt Core → Edit config, paste the token into <strong>Repo access token</strong>.</li>
+  <li>In the OrcheStack dashboard → Services → dbt Core → Edit config, paste the token into <strong>Repo access token</strong>.</li>
 </ol>
 
 <h3 id="ssh-deploy-key">SSH with a deploy key (more secure)</h3>
@@ -985,7 +985,7 @@ dbt build --target prod</pre>
 <p>Source credentials (for the systems Airbyte pulls FROM) are entered inside Airbyte's own UI after the first sync is configured.</p>
 
 <h2 id="adding-sources">Adding a new source</h2>
-<p>Click <strong>Open Airbyte</strong> from Streamlit. This spins up the container (if cold), then opens Airbyte's web UI at <code class="inline">/app/airbyte</code>.</p>
+<p>Click <strong>Open Airbyte</strong> from the dashboard. This spins up the container (if cold), then opens Airbyte's web UI at <code class="inline">/app/airbyte</code>.</p>
 <ol>
   <li>Click <strong>Sources → + new source</strong>.</li>
   <li>Choose the connector type (PostgreSQL, Google Sheets, Stripe, etc.).</li>
@@ -998,7 +998,7 @@ dbt build --target prod</pre>
 <ul>
   <li><strong>Sync fails with "connection refused"</strong> — the source system is unreachable from the Docker network. Check firewall rules and whether the source needs a VPN.</li>
   <li><strong>"Schema change detected"</strong> — the source added or removed a column. Airbyte's behaviour depends on your sync mode; see the Airbyte docs for schema evolution.</li>
-  <li><strong>Airbyte won't start</strong> — its internal PostgreSQL credentials are wrong. Edit the config in Streamlit.</li>
+  <li><strong>Airbyte won't start</strong> — its internal PostgreSQL credentials are wrong. Edit the config in the dashboard.</li>
 </ul>
 """,
     ),
@@ -1039,7 +1039,7 @@ dbt build --target prod</pre>
 <pre>airbyte_sync  →  dbt_build  →  great_expectations_check
                                          ↓
                                   elementary_report</pre>
-<p>Open Airflow from Streamlit to inspect DAG runs, retry failures, and pause schedules.</p>
+<p>Open Airflow from the dashboard to inspect DAG runs, retry failures, and pause schedules.</p>
 """,
     ),
 
@@ -1096,7 +1096,7 @@ dbt build --target prod</pre>
 <p>The default Airflow DAG (<code class="inline">OrcheStack_nightly</code>) runs dbt every day at 02:00. OrcheStack creates it automatically when dbt is selected during setup.</p>
 
 <h3 id="manual">Manual</h3>
-<p>From the Streamlit admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
+<p>From the OrcheStack admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
 
 <h2 id="observability">Observability</h2>
 <p>If you enabled <strong>Elementary</strong> during setup, its container runs immediately after each dbt invocation to record test results and detect anomalies. Elementary dashboards are accessible from <code class="inline">/app/elementary</code> via the reverse proxy.</p>
@@ -1108,8 +1108,8 @@ dbt build --target prod</pre>
 <p>dbt run failed? Three common causes:</p>
 <ul>
   <li><strong>Missing raw data.</strong> Airbyte didn't land anything. Check Airflow logs for the preceding <code class="inline">airbyte_sync</code> task.</li>
-  <li><strong>Permission denied on marts schema.</strong> Your dbt user lacks <code class="inline">CREATE</code> privilege on the marts schema. Fix via pgAdmin or Streamlit's credential editor.</li>
-  <li><strong>SQL error in a model.</strong> Streamlit's <strong>Logs</strong> tab shows the full dbt output with the failing model highlighted.</li>
+  <li><strong>Permission denied on marts schema.</strong> Your dbt user lacks <code class="inline">CREATE</code> privilege on the marts schema. Fix via pgAdmin or the dashboard credential editor.</li>
+  <li><strong>SQL error in a model.</strong> The dashboard's <strong>Logs</strong> tab shows the full dbt output with the failing model highlighted.</li>
 </ul>
 """,
     ),
@@ -1185,7 +1185,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 │   └── &lt;source&gt;/
 │       └── &lt;YYYY-MM-DD&gt;/
 ├── backups/              # nightly dumps of PostgreSQL
-└── exports/              # user-triggered data exports from Streamlit</pre>
+└── exports/              # user-triggered data exports from the dashboard</pre>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
@@ -1229,7 +1229,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 </div>
 
 <h2 id="first-dashboard">Your first dashboard</h2>
-<p>Open Metabase from the Streamlit dashboard. After the first-run wizard completes:</p>
+<p>Open Metabase from the dashboard. After the first-run wizard completes:</p>
 <ol>
   <li>Click <strong>Browse data</strong> → your warehouse → <code class="inline">marts</code> schema.</li>
   <li>Pick a table (e.g. <code class="inline">fct_sales</code>).</li>
@@ -1315,7 +1315,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
         ],
         body="""\
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in Streamlit — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
+<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
 
 <h2 id="role">Role</h2>
 <p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection. Alternatives: <strong>Adminer</strong> (~50 MB, single-file PHP) or <strong>pgweb</strong> (~30 MB, read-only Go binary).</p>
@@ -1328,7 +1328,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <p>On first launch, add a server connection pointing at <code class="inline">postgres:5432</code> with your warehouse credentials.</p>
 
 <h2 id="who-has-access">Who has access</h2>
-<p>By default, only users with roles that have <code class="inline">can_start=true</code> and <code class="inline">can_use=true</code> on pgAdmin. That's typically Admin and Engineer. Analysts can be granted access per-role from Streamlit's <strong>Users → Roles</strong> page.</p>
+<p>By default, only users with roles that have <code class="inline">can_start=true</code> and <code class="inline">can_use=true</code> on pgAdmin. That's typically Admin and Engineer. Analysts can be granted access per-role from the dashboard's <strong>Users → Roles</strong> page.</p>
 """,
     ),
 
@@ -1351,7 +1351,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <p>The generated <code class="inline">docker-compose.yml</code> references credentials as <code class="inline">${VAR_NAME}</code> — at container start, Docker Compose substitutes values from <code class="inline">.env</code>.</p>
 
 <h2 id="rotating">Rotating a credential</h2>
-<p>From the Streamlit admin dashboard:</p>
+<p>From the OrcheStack admin dashboard:</p>
 <ol>
   <li>Click the service tile.</li>
   <li>Click <strong>Edit config</strong>.</li>
@@ -1404,7 +1404,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 </ol>
 
 <h2 id="manual-backup">Manual backup</h2>
-<p>From the Streamlit admin dashboard, go to <strong>Operations → Backup now</strong>. Triggers the same Airflow task immediately.</p>
+<p>From the OrcheStack admin dashboard, go to <strong>Operations → Backup now</strong>. Triggers the same Airflow task immediately.</p>
 
 <h2 id="restore">Restoring from backup</h2>
 <p>On a fresh OrcheStack install:</p>
@@ -1441,7 +1441,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
   <li>Edit <code class="inline">docker-compose.yml</code> to bump image tags.</li>
   <li>Run <code class="inline">docker compose pull</code> to fetch the new images.</li>
   <li>Run <code class="inline">docker compose up -d</code>. Services with migrations will run them at startup.</li>
-  <li>Verify the Streamlit dashboard loads and the nightly DAG succeeds on its next run.</li>
+  <li>Verify the dashboard loads and the nightly DAG succeeds on its next run.</li>
 </ol>
 
 <h2 id="rollback">Rollback</h2>
@@ -1477,7 +1477,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <p>If a cold service won't stop (e.g. OpenMetadata stays running for hours):</p>
 <ol>
   <li>Check <code class="inline">platform.service_sessions</code> for stale sessions that aren't being garbage-collected.</li>
-  <li>From Streamlit, <strong>Force stop</strong> the service (requires <code class="inline">can_force_stop</code>).</li>
+  <li>From the dashboard, <strong>Force stop</strong> the service (requires <code class="inline">can_force_stop</code>).</li>
   <li>If that fails, <code class="inline">docker compose stop &lt;service&gt;</code> from the host.</li>
 </ol>
 
@@ -1486,7 +1486,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
   <li><strong>Service logs</strong>: <code class="inline">docker compose logs -f &lt;service&gt;</code></li>
   <li><strong>Pipeline logs</strong>: Airflow UI, or <code class="inline">./config/airflow/logs/</code></li>
   <li><strong>Platform audit log</strong>: <code class="inline">platform.audit_log</code> table</li>
-  <li><strong>dbt run logs</strong>: Streamlit <strong>Logs</strong> tab</li>
+  <li><strong>dbt run logs</strong>: The dashboard <strong>Logs</strong> tab</li>
 </ul>
 """,
     ),
@@ -1522,7 +1522,7 @@ OrcheStack version                    # print platform and CLI versions</pre>
         path="api.html",
         title="REST API",
         h1="REST API",
-        lede="Streamlit exposes a small REST API for automation and external integrations. Authenticate with a bearer token.",
+        lede="The dashboard exposes a small REST API for automation and external integrations. Authenticate with a bearer token.",
         breadcrumb=[("index.html", "Docs"), ("index.html", "Reference"), (None, "REST API")],
         toc=[
             ("auth", "Authentication"),
@@ -1530,7 +1530,7 @@ OrcheStack version                    # print platform and CLI versions</pre>
         ],
         body="""\
 <h2 id="auth">Authentication</h2>
-<p>Generate an API token from <strong>Account settings → API tokens</strong> in Streamlit. Include it on every request:</p>
+<p>Generate an API token from <strong>Account settings → API tokens</strong> in the dashboard. Include it on every request:</p>
 <pre>Authorization: Bearer &lt;your-token&gt;</pre>
 
 <h2 id="endpoints">Core endpoints</h2>
@@ -1562,7 +1562,7 @@ GET  /app/api/audit             # query the audit log</pre>
 <ul>
   <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
   <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
-  <li><code class="inline">orchestack-streamlit</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
   <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
   <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
 </ul>
@@ -1578,9 +1578,9 @@ GET  /app/api/audit             # query the audit log</pre>
       resources:
         limits:
           memory: 2g
-  orchestack-streamlit:
+  orchestack-dashboard:
     environment:
-      - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500</pre>
+      - DASHBOARD_LOG_LEVEL=info</pre>
 """,
     ),
 ]

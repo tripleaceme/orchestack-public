@@ -149,7 +149,7 @@
 <p>Expect the first-time pull to take 2–5 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
 
 <h2 id="editing-later">Editing credentials later</h2>
-<p>From the Streamlit admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
+<p>From the OrcheStack admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
 <pre>docker compose up -d --force-recreate &lt;service&gt;</pre>
 <p>Container recreation picks up the new environment variables. Data volumes are preserved, so you don't lose history when rotating a password.</p>
 <div class="callout warn">

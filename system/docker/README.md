@@ -4,9 +4,9 @@ This folder contains the base Docker Compose specification for OrcheStack's
 control plane. Running `docker compose up -d` from this directory brings up
 five containers that together form the platform's foundation: a reverse proxy,
 a PostgreSQL instance, an auth/setup nginx container, and stubs for the
-Streamlit dashboard and the service orchestrator.
+dashboard and the service orchestrator.
 
-This is the M1 deliverable. The stubs (streamlit, orchestrator) are placeholders
+This is the M1 deliverable. The stubs (dashboard, orchestrator) are placeholders
 that get replaced with real implementations at M2 and M3 respectively.
 
 ## Quick start
@@ -29,7 +29,7 @@ docker compose ps
 #   http://localhost/signup            → first-admin bootstrap (auth nginx)
 #   http://localhost/login             → admin login form
 #   http://localhost/setup/welcome.html → onboarding wizard
-#   http://localhost/app                → Streamlit stub (placeholder until M3)
+#   http://localhost/app                → dashboard (HTMX + FastAPI)
 #   http://localhost:8080/dashboard/   → Traefik dashboard (routing inspection)
 
 # Stop everything (preserves data volume).
@@ -50,7 +50,7 @@ docker compose down --volumes
 | `traefik/dynamic/` | Dynamic Traefik config files (empty at M1, populated at M4 if needed) |
 | `postgres-init/00-init.sql` | Creates the platform/raw/marts schemas on first boot |
 | `postgres-init/10-platform-schema.sql` | 10 platform.* tables, indexes, triggers, and seeded Admin/Engineer/Analyst roles |
-| `stubs/streamlit-stub.html` | Static placeholder served at /app until M3 |
+| `stubs/(removed in M3 — dashboard image replaces it)` | Static placeholder served at /app until M3 |
 
 ## The five base services
 
@@ -59,8 +59,8 @@ docker compose down --volumes
 | `proxy` | `traefik:v3.2` | Reverse proxy on :80 / :443 | — (Traefik stays) |
 | `postgres` | `postgres:16-alpine` | Platform metadata + warehouse | — (PostgreSQL stays) |
 | `auth` | `tripleaceme/orchestack-auth` | nginx serving signup/login/setup | — (this is the real image already) |
-| `streamlit` | `nginx:alpine` (stub) | Placeholder at `/app` | M3 → `tripleaceme/orchestack-streamlit` |
-| `orchestrator` | `alpine:3.20` (stub) | Heartbeat-only daemon | M2 → `tripleaceme/orchestack-orchestrator` |
+| `dashboard` | `tripleaceme/orchestack-dashboard` | HTMX + FastAPI admin UI at `/app` | shipped at M3 |
+| `orchestrator` | `tripleaceme/orchestack-orchestrator` | Service-lifecycle daemon | shipped at M2 |
 
 ## Routing — how requests reach each service
 
@@ -72,7 +72,7 @@ Traefik routes by URL path. The rules live as `labels:` on each service in
 | `/signup`, `/login` | `orchestack-auth` | Exact match |
 | `/setup/*` | `orchestack-auth` | Prefix match (welcome, select, configure, deploying) |
 | `/assets/*` | `orchestack-auth` | Prefix match (CSS, fonts, etc.) |
-| `/app/*` | `orchestack-streamlit` | Prefix stripped before forwarding (M1 stub only; M3 removes the stripping) |
+| `/app/*` | `orchestack-dashboard` | Prefix stripped before forwarding (M1 stub only; M3 removes the stripping) |
 | everything else | (404 — unrouted) | M4 adds routes for optional tools like `/app/metabase`, `/app/airflow`, etc. |
 
 The `postgres` and `orchestrator` services have no Traefik labels — they are
@@ -109,7 +109,7 @@ internal database — not your pipeline DB (which the wizard handles).
 Either stop it (`lsof -i :80` to find the culprit) or temporarily change the
 proxy's port mapping to `"8000:80"` and use `http://localhost:8000` instead.
 
-**Traefik dashboard shows the auth or streamlit router as unhealthy.** Check
+**Traefik dashboard shows the auth or dashboard router as unhealthy.** Check
 the upstream container's logs (`docker compose logs auth`) — the most common
 cause is the container isn't on the `orchestack-net` network, but every
 service in this compose file is explicitly bound to it, so this shouldn't
@@ -118,7 +118,7 @@ happen unless the compose file has been edited.
 ## The `platform.*` schema
 
 After PostgreSQL finishes its first boot, the platform schema contains 10
-tables that the orchestrator (M2), the Streamlit dashboard (M3), and the
+tables that the orchestrator (M2), the dashboard (M3), and the
 in-package auth pages will read and write. Quick reference:
 
 | Table | What it holds | Owners (read/write) |
@@ -156,7 +156,7 @@ docker compose exec postgres psql -U orchestack -d orchestack \
 ### What is NOT in the schema yet
 
 - **Database roles** (separate PostgreSQL users for the orchestrator,
-  Streamlit, and dbt). M1 uses the superuser everywhere for simplicity;
+  dashboard, and dbt). M1 uses the superuser everywhere for simplicity;
   M5 polish adds least-privilege role separation.
 - **Row-level security policies.** Not needed for the single-tenant
   single-operator design.

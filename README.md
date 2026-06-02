@@ -10,7 +10,7 @@
 
 OrcheStack bundles Apache Airflow, dbt Core, Airbyte, PostgreSQL and pgAdmin
 (default stack), plus MinIO, Great Expectations, OpenMetadata and Metabase
-(optional extensions), behind a unified Streamlit administrator dashboard.
+(optional extensions), behind a unified dashboard.
 Most services start on demand and stop when idle — letting the same Modern
 Data Stack run on an 8 GB Nigerian-affordable VPS that would otherwise need
 16 GB just to idle.
@@ -30,7 +30,7 @@ artefact of an MIT Professional Master's Project at Miva Open University.
 
 The marketing site, documentation site, in-package auth/setup-wizard nginx
 container, and the base `docker-compose.yml` for the control plane are
-implemented. The Python service orchestrator (M2) and Streamlit dashboard
+implemented. The Python service orchestrator (M2) and dashboard
 (M3) ship as stubs in the M1 compose file and get replaced by real
 implementations in their respective milestones.
 
@@ -38,7 +38,7 @@ implementations in their respective milestones.
 
 The base control plane brings up five containers — a reverse proxy, a
 PostgreSQL instance, the auth/setup nginx, and stubs for the orchestrator
-and Streamlit dashboard. Two install paths, **neither requires cloning this
+and dashboard. Two install paths, **neither requires cloning this
 repository**:
 
 **Option A — one-line installer (recommended)**
@@ -85,7 +85,7 @@ Then visit:
 | `http://localhost/signup` | First-administrator bootstrap form |
 | `http://localhost/login` | Administrator login |
 | `http://localhost/setup/welcome.html` | 4-step onboarding wizard |
-| `http://localhost/app` | Streamlit dashboard (M1 stub; real dashboard at M3) |
+| `http://localhost/app` | dashboard (M1 stub; real dashboard at M3) |
 | `http://localhost:8080/dashboard/` | Traefik routing dashboard (dev only) |
 
 If port 80 is in use on your host, override the host-side mapping in `.env`:
@@ -118,9 +118,12 @@ PROXY_HTTP_PORT=1993
     │   ├── .env.example                  Template (copy to .env, set ORCHESTACK_DB_PASSWORD)
     │   ├── traefik/                      Traefik static config + dynamic dir
     │   ├── postgres-init/                00-init.sql + 10-platform-schema.sql
-    │   ├── stubs/                        M1 placeholder HTML for streamlit stub
+    │   ├── stubs/                        (removed in M3 — dashboard replaces it)
     │   └── README.md                     Per-service details + troubleshooting
-    ├── streamlit-app/                    (M3) Real Streamlit dashboard
+    ├── dashboard/                        Administrator UI (HTMX + FastAPI + Tailwind)
+    │   ├── Dockerfile                    →  tripleaceme/orchestack-dashboard
+    │   ├── app/main.py                   FastAPI app + Jinja2 templates
+    │   └── app/templates/                base.html, index.html, _health_fragment.html
     ├── orchestrator/                     (M2) Python service-lifecycle daemon
     ├── dbt/                              (M4) Default dbt project skeleton
     ├── dags/                             (M4) Default Airflow DAGs
@@ -132,7 +135,7 @@ PROXY_HTTP_PORT=1993
 - **Container images** → Docker Hub under [`tripleaceme/orchestack-*`](https://hub.docker.com/u/tripleaceme):
   - [`tripleaceme/orchestack-auth`](https://hub.docker.com/r/tripleaceme/orchestack-auth) (built from `system/auth/` + shared `assets/css/`)
   - [`tripleaceme/orchestack-orchestrator`](https://hub.docker.com/r/tripleaceme/orchestack-orchestrator) (M2)
-  - [`tripleaceme/orchestack-streamlit`](https://hub.docker.com/r/tripleaceme/orchestack-streamlit) (M3)
+  - [`tripleaceme/orchestack-dashboard`](https://hub.docker.com/r/tripleaceme/orchestack-dashboard) (M3)
   - [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) (M4)
 - **Source code** → this repository ([`github.com/tripleaceme/orchestack`](https://github.com/tripleaceme/orchestack))
 - **Marketing + docs** → [`https://orchestack.africa`](https://orchestack.africa) (Cloudflare Pages, publishing from this folder)
@@ -149,7 +152,7 @@ in the project's design log:
    (PostgreSQL, Airflow scheduler, Metabase, MinIO) stay resident; cold-tier
    services (Airbyte, dbt, pgAdmin, Great Expectations, OpenMetadata) are
    activated by event triggers and stopped when idle.
-3. **Unified control plane.** A Streamlit dashboard behind a Traefik
+3. **Unified control plane.** A dashboard behind a Traefik
    reverse proxy provides a single URL space — `/app`, `/app/metabase`,
    `/app/airflow`, etc. — for every bundled tool.
 
@@ -192,6 +195,6 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 Bundled upstream open-source services (Apache Airflow, dbt Core, Airbyte,
 PostgreSQL, MinIO, Metabase, Great Expectations, OpenMetadata, pgAdmin,
-Traefik, Streamlit) retain their respective upstream licences (Apache 2.0,
+Traefik) retain their respective upstream licences (Apache 2.0,
 AGPL, MIT, PostgreSQL Licence, BSD) — OrcheStack only orchestrates these
 images and does not modify or redistribute their source code.

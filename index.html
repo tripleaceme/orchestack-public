@@ -82,7 +82,7 @@
           <span class="out">▸ Downloading runtime bundle...</span>
           <span class="out">✓ Extracted to ./orchestack/</span>
           <span class="out">▸ Pulling images and starting containers...</span>
-          <span class="out">[+] Running 5/5  ✓ proxy  ✓ postgres  ✓ auth  ✓ streamlit  ✓ orchestrator</span>
+          <span class="out">[+] Running 5/5  ✓ proxy  ✓ postgres  ✓ auth  ✓ dashboard  ✓ orchestrator</span>
           <span class="out" style="color:#b6c2cc">✓ OrcheStack is up. Open http://localhost to sign up.</span>
         </div>
         <div style="margin-top:10px"><span class="prompt">$</span> # one command — no git clone, no manual docker pull.
@@ -232,7 +232,7 @@
         <div class="chips-row">
           <span class="svc-chip">Reverse Proxy</span>
           <span class="svc-chip">Front-facing site</span>
-          <span class="svc-chip">Streamlit UI</span>
+          <span class="svc-chip">Dashboard (HTMX)</span>
           <span class="svc-chip">PostgreSQL</span>
           <span class="svc-chip">Service Orchestrator</span>
         </div>
@@ -369,7 +369,7 @@
         <div class="step4-right">
           <div class="term-block">
 <pre><span class="prompt-line">$</span> docker compose up -d
-<span class="comment">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ streamlit</span>
+<span class="comment">[+] Running 4/4  ✓ proxy  ✓ front  ✓ postgres  ✓ dashboard</span>
 <span class="comment">Ready at http://localhost:1993</span></pre>
             <button type="button" class="copy-btn" aria-label="Copy command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           </div>
@@ -411,9 +411,9 @@
         </div>
         <div class="step4-right">
           <div class="step4-screenshot">
-            <!-- Replace with a real screenshot of the Streamlit dashboard once captured -->
+            <!-- Replace with a real screenshot of the dashboard once captured -->
             <div class="step4-screenshot-placeholder">
-              Streamlit admin dashboard<br>
+              OrcheStack admin dashboard<br>
               <span style="font-weight:500; color: var(--muted); font-size:12.5px; margin-top:6px; display:block;">(Screenshot placeholder — swap in your dashboard PNG)</span>
             </div>
           </div>
