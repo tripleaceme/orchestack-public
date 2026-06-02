@@ -1,0 +1,54 @@
+# Metabase — BI dashboard (hot-tier).
+#
+# Brought up by the orchestrator on first session via:
+#   docker compose -f services/metabase.yml -p orchestack-service-metabase up -d
+#
+# Hot-tier: stays running once started. The reconciler exempts services
+# with `orchestack.tier=hot` from idle sweeps because Metabase typically
+# serves dashboards on a schedule (Slack snapshots, scheduled emails) —
+# stopping it would interrupt those.
+#
+# Network: joins the existing `orchestack-net` bridge created by the base
+# compose stack. Marked `external: true` so this snippet doesn't try to
+# create or own the network.
+#
+# Postgres reuse: stores its own metadata in a `metabase` database inside
+# the platform Postgres instance. Created on first start by Metabase
+# itself (MB_DB_TYPE=postgres + DB doesn't exist → autocreate).
+
+services:
+  metabase:
+    image: metabase/metabase:v0.51.7
+    container_name: orchestack-metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: orchestack-postgres
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${ORCHESTACK_DB_USER:-orchestack}
+      MB_DB_PASS: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
+      MB_DB_DBNAME: metabase
+      # Subpath deployment — Metabase is served at /app/metabase/ via Traefik
+      # so it shares the same host as the rest of OrcheStack.
+      MB_SITE_URL: http://localhost/app/metabase
+    networks:
+      - orchestack-net
+    labels:
+      # Reconciler tags — these are what the orchestrator's docker_ops
+      # filters on. Don't change without also updating SERVICE_CATALOGUE
+      # in app/config.py.
+      - orchestack.service=metabase
+      - orchestack.tier=hot
+      # Traefik routing — path-based, with prefix stripped before forwarding
+      # so Metabase's internal routes don't have to know about /app/metabase.
+      - traefik.enable=true
+      - traefik.http.routers.metabase.rule=PathPrefix(`/app/metabase`)
+      - traefik.http.routers.metabase.entrypoints=web
+      - traefik.http.middlewares.metabase-strip.stripprefix.prefixes=/app/metabase
+      - traefik.http.routers.metabase.middlewares=metabase-strip@docker
+      - traefik.http.services.metabase.loadbalancer.server.port=3000
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net

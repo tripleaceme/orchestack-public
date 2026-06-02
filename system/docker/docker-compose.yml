@@ -262,6 +262,25 @@ services:
       # Logging verbosity. Stays low by default; bump to "debug" when
       # tracing reconciler behaviour or investigating a stuck service.
       ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-info}
+      # How often the reconciler tick fires (seconds). Override here or
+      # via .env when calibrating during M5 evaluation.
+      ORCHESTRATOR_RECONCILE_INTERVAL: ${ORCHESTRATOR_RECONCILE_INTERVAL:-30}
+      # How long an idle service can stay running before the reconciler
+      # stops it. 10 minutes by default.
+      ORCHESTRATOR_IDLE_THRESHOLD: ${ORCHESTRATOR_IDLE_THRESHOLD:-600}
+    volumes:
+      # Direct Docker socket — the orchestrator's job IS container management
+      # so it gets full socket access. (Traefik uses the socket-proxy because
+      # it only needs read access for discovery; same threat model doesn't
+      # apply here.) The upstream Docker CLI bundled in the orchestrator
+      # image does proper API version negotiation, sidestepping Traefik's
+      # earlier v1.24 problem.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Per-service compose snippets. Mounted read-only — the orchestrator
+      # reads but never writes them. Adding a new managed service is a
+      # bundle update (new yml + SERVICE_CATALOGUE entry), not a runtime
+      # operation.
+      - ./services:/services:ro
     networks:
       - orchestack-net
     depends_on:

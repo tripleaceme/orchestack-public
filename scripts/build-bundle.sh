@@ -93,7 +93,7 @@ STAGING="$(mktemp -d)"
 trap 'rm -rf "${STAGING}"' EXIT
 
 BUNDLE="${STAGING}/${BUNDLE_NAME}"
-mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" "${BUNDLE}/stubs"
+mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" "${BUNDLE}/stubs" "${BUNDLE}/services"
 
 cp "${REPO_ROOT}/system/docker/docker-compose.yml"        "${BUNDLE}/docker-compose.yml"
 cp "${REPO_ROOT}/system/docker/.env.example"              "${BUNDLE}/.env.example"
@@ -101,6 +101,10 @@ cp "${REPO_ROOT}/system/docker/traefik/traefik.yml"       "${BUNDLE}/traefik/tra
 touch                                                     "${BUNDLE}/traefik/dynamic/.gitkeep"
 cp "${REPO_ROOT}"/system/docker/postgres-init/*.sql       "${BUNDLE}/postgres-init/"
 cp "${REPO_ROOT}/system/docker/stubs/streamlit-stub.html" "${BUNDLE}/stubs/streamlit-stub.html"
+# Per-service compose snippets — what the orchestrator brings up on demand
+# (M2.3+). One YAML per cold/hot-tier service; mounted read-only by the
+# orchestrator at /services inside its container.
+cp "${REPO_ROOT}"/system/docker/services/*.yml            "${BUNDLE}/services/"
 
 echo "${VERSION}" > "${BUNDLE}/VERSION"
 

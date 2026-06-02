@@ -1,14 +1,20 @@
 # OrcheStack orchestrator — runtime dependencies.
 #
 # Pinned versions for reproducibility. Bump deliberately, not opportunistically.
-# Update process: change the version here, rebuild the image locally
+# Update process: change the version here, rebuild locally
 # (`make image-orchestrator`), run the dev stack (`make dev-up`), verify
 # /api/health serves, push.
 
-# Core web framework. 0.115.x is the current stable line in mid-2026.
+# Web framework. 0.115.x is the current stable line in mid-2026.
 fastapi==0.115.6
 
 # ASGI server. The [standard] extra pulls in uvloop + httptools for the
-# performance bump; we don't strictly need it at this scale but it's also
-# what FastAPI's own docs recommend, so it's the least-surprising default.
+# performance bump; we don't strictly need it at this scale but it's
+# also what FastAPI's own docs recommend, so it's the least-surprising
+# default.
 uvicorn[standard]==0.32.1
+
+# Async postgres driver. Direct SQL — no ORM. asyncpg is the canonical
+# async driver and integrates with asyncio cleanly; we use it for both
+# the reconciler loop and the request handlers.
+asyncpg==0.30.0

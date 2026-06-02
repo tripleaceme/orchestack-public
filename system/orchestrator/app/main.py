@@ -1,86 +1,121 @@
 """OrcheStack orchestrator — FastAPI control-plane service.
 
-This module is the entry point of the orchestrator container, the service that
-implements OrcheStack's event-driven hot/cold tier orchestration. It replaces
-the alpine heartbeat stub that ran during M1.
+Wires together:
+  - The four API routers (services, sessions, pinning, setup)
+  - The asyncpg connection pool (lifespan-managed)
+  - The reconciler background task (lifespan-managed)
+  - The /api/health endpoint
 
-Phase 2.1 (this file) is intentionally minimal: a FastAPI app with one
-endpoint, /api/health, used by the container's HEALTHCHECK and (later) by
-Streamlit's status pane. The reconciler loop, wizard-handoff endpoint,
-service-control endpoints, and session API all land in subsequent phases —
-see design/m2-orchestrator.md for the full plan.
+The lifespan handler is the canonical FastAPI pattern for managing
+resources whose lifetime tracks the app's: open them on startup, close
+them on shutdown, expose them through app.state if route handlers need
+direct access (we use module-level singletons instead — db.get_pool()).
 
-Why FastAPI: async-friendly, integrates cleanly with asyncio (we need a
-long-running background task for the reconciler), uses pydantic for request
-validation (which we'll lean on heavily once the wizard-handoff endpoint
-exists), and has minimal boilerplate. Alternatives (Flask, aiohttp, starlette
-directly) all work but FastAPI is the smoothest path for the surface we're
-about to build.
+See design/m2-orchestrator.md for the architecture overview.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-# Configuration via env vars. Keep this minimal at phase 2.1 — every config
-# value is documented in OrcheStack/system/docker/.env.example so operators
-# can see what's tunable without reading code.
-LOG_LEVEL = os.environ.get("ORCHESTRATOR_LOG_LEVEL", "info").upper()
+from . import config, db, docker_ops, reconciler
+from .api import pinning, services, sessions, setup as setup_api
 
+# ---------- Logging --------------------------------------------------------
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 log = logging.getLogger("orchestrator")
 
+
+# ---------- Lifespan -------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Open the DB pool + launch the reconciler at startup; close on shutdown.
+
+    Exception handling here is intentional: if the DB can't be reached at
+    startup, we log loudly and continue — the orchestrator can still serve
+    /api/health (reporting postgres: false) so an operator can see what's
+    wrong. Better than crash-loop, which gives no useful feedback.
+    """
+    pool_ready = False
+    try:
+        await db.init_pool()
+        pool_ready = True
+    except Exception as e:
+        log.error("startup: DB pool init failed — running in degraded mode: %s", e)
+
+    stop_event = asyncio.Event()
+    reconciler_task: asyncio.Task | None = None
+    if pool_ready:
+        reconciler_task = asyncio.create_task(
+            reconciler.run_loop(stop_event), name="reconciler",
+        )
+
+    log.info(
+        "orchestack-orchestrator ready — phase=2.6 db=%s reconciler=%s",
+        "ok" if pool_ready else "degraded",
+        "running" if reconciler_task else "skipped",
+    )
+
+    try:
+        yield
+    finally:
+        # Shutdown: stop the reconciler, then close the pool.
+        if reconciler_task is not None:
+            log.info("shutdown: signalling reconciler to stop")
+            stop_event.set()
+            try:
+                await asyncio.wait_for(reconciler_task, timeout=10)
+            except asyncio.TimeoutError:
+                log.warning("reconciler did not stop within 10s, cancelling")
+                reconciler_task.cancel()
+        await db.close_pool()
+        log.info("shutdown complete")
+
+
+# ---------- App ------------------------------------------------------------
 app = FastAPI(
     title="OrcheStack orchestrator",
     description=(
         "Control-plane service for OrcheStack. Implements event-driven hot/cold "
-        "tier service orchestration. See design/m2-orchestrator.md for the "
-        "full design and design/api.md for the OpenAPI surface."
+        "tier service orchestration. See design/m2-orchestrator.md for the full "
+        "design."
     ),
     version="0.1.0",
-    # OpenAPI / Swagger UI lives at /orchestrator/docs once Traefik prefixes
-    # this service at /orchestrator. During local dev (no Traefik) it's at
-    # http://localhost:8000/docs.
+    lifespan=lifespan,
 )
 
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    """Log a single startup banner so operators can see we came up cleanly."""
-    log.info(
-        "orchestack-orchestrator phase=2.1 log_level=%s — ready",
-        LOG_LEVEL,
-    )
+# Mount the API routers.
+app.include_router(services.router)
+app.include_router(sessions.router)
+app.include_router(pinning.router)
+app.include_router(setup_api.router)
 
 
 @app.get("/api/health")
 async def health() -> dict[str, object]:
-    """Return readiness state for the container's HEALTHCHECK + Streamlit.
+    """Readiness state, including subsystem checks.
 
-    At phase 2.1 the only thing this service does is exist, so health is
-    binary: if FastAPI is responding, we're healthy. Future phases will
-    add postgres + docker socket-proxy connectivity checks here.
-
-    Schema kept stable across phases — fields will be added to the response
-    dict but never removed, so clients (Streamlit) can ignore unknown keys.
+    Schema is additive — new keys may appear over time. Clients should
+    treat the absence of a key as "not yet checked" rather than "failed".
+    The top-level `ok` is True only when ALL critical subsystems are ok.
     """
+    postgres_ok = await db.ping()
+    docker_ok = await docker_ops.ping()
     return {
-        "ok": True,
+        "ok": postgres_ok and docker_ok,
         "service": "orchestack-orchestrator",
         "version": app.version,
-        "phase": "2.1",
-        # Subsystem checks land in later phases. Documented here so the
-        # contract is visible — they'll appear with bool values once the
-        # corresponding code lands. Clients should treat absence as "not
-        # yet checked" rather than "failed".
+        "phase": "2.6",
         "checks": {
-            # "postgres": ...  (phase 2.4)
-            # "docker":   ...  (phase 2.2)
+            "postgres": postgres_ok,
+            "docker": docker_ok,
         },
     }

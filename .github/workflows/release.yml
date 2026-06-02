@@ -79,7 +79,8 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE="orchestack-runtime-${VERSION}"
-          mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" "${BUNDLE}/stubs"
+          mkdir -p "${BUNDLE}/traefik/dynamic" "${BUNDLE}/postgres-init" \
+                   "${BUNDLE}/stubs" "${BUNDLE}/services"
 
           # Copy the runtime files. Source: system/docker/ in this repo.
           cp system/docker/docker-compose.yml          "${BUNDLE}/docker-compose.yml"
@@ -89,6 +90,9 @@ jobs:
           touch                                        "${BUNDLE}/traefik/dynamic/.gitkeep"
           cp system/docker/postgres-init/*.sql         "${BUNDLE}/postgres-init/"
           cp system/docker/stubs/streamlit-stub.html   "${BUNDLE}/stubs/streamlit-stub.html"
+          # Per-service compose snippets — added in M2.3. One YAML file per
+          # managed cold/hot-tier tool. Mounted read-only by the orchestrator.
+          cp system/docker/services/*.yml              "${BUNDLE}/services/"
 
           # Embed the version so the operator can run `cat VERSION` to know
           # what they extracted.

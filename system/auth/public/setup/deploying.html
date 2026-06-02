@@ -42,100 +42,137 @@
 </main>
 
 <script>
-  // ---------- Pull the user's actual service selections so the status messages
-  // reference tools they picked, not generic ones. Falls back to a sensible
-  // default stack if nothing is in storage. ----------
+  // ============================================================
+  // Real deploy flow (M2.5+): POST the wizard state to the orchestrator,
+  // show the rotating status/jokes while waiting, then redirect.
+  //
+  // Previous behaviour (pre-M2): a pure simulated deploy with timers.
+  // We kept the status carousel and joke cycler because they're a
+  // genuinely good "this is happening" UX — but they now overlay a
+  // real network call rather than fake one.
+  // ============================================================
   const STORAGE_KEY = 'OrcheStack.setup';
+  const REDIRECT_TO = "/app/";
+  const ORCHESTRATOR_DEPLOY_URL = "/orchestrator/api/setup/deploy";
+
+  // Build the deploy request from the wizard state in localStorage.
+  function buildDeployRequest() {
+    const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return {
+      profile:     state.profile     || { full_name: "", email: "", username: null, company_name: null },
+      selections:  state.selections  || {},
+      credentials: state.credentials || {},
+    };
+  }
+
+  // Pull the selection list for the status carousel.
   const DEFAULT_STACK = ["Airbyte", "PostgreSQL", "MinIO", "dbt Core",
                          "Great Expectations", "OpenMetadata", "Metabase", "pgAdmin"];
-  function loadSelections() {
+  function loadSelectionList() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return DEFAULT_STACK;
-      const sel = JSON.parse(raw).selections || {};
+      const sel = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').selections || {};
       const picked = Object.values(sel).filter(v => v && v !== 'None');
       return picked.length ? picked : DEFAULT_STACK;
     } catch (e) { return DEFAULT_STACK; }
   }
-  const STACK = loadSelections();
+  const STACK = loadSelectionList();
 
-  // Build a status sequence from the actual selection. First we do the always-
-  // present platform bootstrap steps, then one "Starting X…" line per service.
   const STATUSES = [
-    "Writing docker-compose.yml with your service choices…",
-    "Writing credentials to ./config/.env (chmod 600)…",
-    "Creating PostgreSQL schemas (platform, raw, marts)…",
-    ...STACK.map(svc => `Pulling and starting ${svc}…`),
-    "Registering cold-tier services with the orchestrator…",
-    "Running first-boot database migrations…",
-    "Wiring up the Streamlit control plane…",
-    "Almost there — running health checks…",
+    "Validating your selections…",
+    "Creating the pipeline database…",
+    "Provisioning the pipeline DB role with scoped permissions…",
+    ...STACK.map(svc => `Registering ${svc} with the orchestrator…`),
+    "Persisting setup state to platform.setup_state…",
+    "Finalising the install…",
   ];
 
-  // ---------- Jokes (rotate every few seconds, never repeat back-to-back) ----------
   const JOKES = [
     "Why do Python developers wear glasses? Because they can't C#.",
     "Why did the developer go broke? Because he used up all his cache.",
     "Debugging is like being the detective in a crime movie where you're also the murderer.",
     "Why was the data engineer fired? He couldn't keep his tables clean.",
     "What do you call a data engineer who doesn't document? Eventually unemployed.",
-    "If it works, don't fix it, except if it's in production, then you have to fix it anyway.",
+    "If it works, don't fix it — unless it's in production, then you have to fix it anyway.",
     "Why did the dashboard break up with the database? Too many joins, not enough relationship.",
   ];
 
-  // ---------- Timers ----------
-  const TOTAL_MS = 18000;          // how long the simulated deploy takes (demo only)
-  const STATUS_EVERY = 1500;       // rotate status every 1.5s
-  const JOKE_EVERY = 4500;         // rotate joke every ~5s
-  const REDIRECT_TO = "/app/";     // where we go when the deploy is "done"
+  const STATUS_EVERY = 1500;
+  const JOKE_EVERY   = 4500;
 
   const statusEl = document.getElementById('status');
   const jokeEl   = document.getElementById('joke');
   const progress = document.getElementById('progress-fill');
-  const start    = performance.now();
 
-  // Status cycler
+  // ---------- Cosmetic cyclers (run regardless of deploy state) -----------
   let statusIdx = 0;
-  setInterval(() => {
+  const statusTimer = setInterval(() => {
     statusIdx = (statusIdx + 1) % STATUSES.length;
     statusEl.textContent = STATUSES[statusIdx];
   }, STATUS_EVERY);
 
-  // Joke cycler — avoid repeating the current joke
   let jokeIdx = 0;
-  setInterval(() => {
+  const jokeTimer = setInterval(() => {
     let next;
     do { next = Math.floor(Math.random() * JOKES.length); } while (next === jokeIdx);
     jokeIdx = next;
-    // Simple fade transition
     jokeEl.style.opacity = 0;
     setTimeout(() => { jokeEl.textContent = JOKES[jokeIdx]; jokeEl.style.opacity = 1; }, 200);
   }, JOKE_EVERY);
   jokeEl.style.transition = "opacity .3s ease";
 
-  // Progress bar fills over TOTAL_MS
+  // Progress bar — eases toward 90% so we always have headroom for the
+  // "actually done" jump to 100%. Avoids the look of "100%... still
+  // waiting..." that erodes user trust in progress bars.
+  const progressStart = performance.now();
+  const PROGRESS_CAP_MS = 20000;   // 20s to reach 90%
   const progressTimer = setInterval(() => {
-    const elapsed = performance.now() - start;
-    const pct = Math.min(100, (elapsed / TOTAL_MS) * 100);
+    const elapsed = performance.now() - progressStart;
+    const pct = Math.min(90, (elapsed / PROGRESS_CAP_MS) * 90);
     progress.style.width = pct + "%";
-    if (pct >= 100) clearInterval(progressTimer);
   }, 100);
 
-  // Final redirect once the simulated deploy is done
-  setTimeout(() => {
-    statusEl.innerHTML = "All services ready — taking you to your dashboard… ✓";
-    // Persist the "onboarding done" flag so future visits bypass /setup/*.
-    // In production this is a server-side flag on the user record.
+  // ---------- The actual deploy --------------------------------------------
+  function finish(success, message) {
+    clearInterval(statusTimer);
+    clearInterval(jokeTimer);
+    clearInterval(progressTimer);
+    progress.style.width = "100%";
+    statusEl.innerHTML = success
+      ? "All services ready, taking you to your dashboard… ✓"
+      : `<span style="color:var(--accent)">Deploy failed:</span> ${message}`;
+    if (success) {
+      try {
+        const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        state.onboardingCompleted = true;
+        state.deployedAt = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) { /* non-fatal */ }
+      setTimeout(() => { window.location.href = REDIRECT_TO; }, 1200);
+    }
+  }
+
+  (async function deploy() {
     try {
-      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      state.onboardingCompleted = true;
-      state.deployedAt = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (e) { /* non-fatal */ }
-    // In production, poll the orchestrator's /api/deploy-status until complete,
-    // then redirect. For the demo, we redirect on the simulated timer.
-    setTimeout(() => { window.location.href = REDIRECT_TO; }, 1200);
-  }, TOTAL_MS);
+      const res = await fetch(ORCHESTRATOR_DEPLOY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildDeployRequest()),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        finish(false, `HTTP ${res.status} — ${text.slice(0, 200)}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.status === "ready") {
+        finish(true);
+      } else {
+        finish(false, `unexpected status: ${data.status}`);
+      }
+    } catch (e) {
+      finish(false, `${e.name}: ${e.message}`);
+    }
+  })();
 </script>
 
 </body>

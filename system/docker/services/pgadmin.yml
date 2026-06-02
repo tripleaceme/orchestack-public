@@ -1,0 +1,39 @@
+# pgAdmin — database admin UI (cold-tier).
+#
+# Cold-tier: stopped by the reconciler when there are no active sessions
+# and the operator hasn't pinned it. Typical use is "open pgAdmin, debug a
+# query, close it" — no reason to keep it warm.
+#
+# Brought up on session-open via:
+#   docker compose -f services/pgadmin.yml -p orchestack-service-pgadmin up -d
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4:8.13
+    container_name: orchestack-pgadmin
+    restart: unless-stopped
+    environment:
+      # M2 default admin credentials. Override via the wizard at M2.5 or
+      # rotate via the dashboard once M3 lands.
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@orchestack.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-orchestack-dev-changeme}
+      # Disable the multi-user "server mode" — for a single-tenant install,
+      # the auth layer is OrcheStack itself, not pgAdmin's own user table.
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      # Subpath deployment: served at /app/pgadmin/ via Traefik. pgAdmin
+      # respects SCRIPT_NAME — Traefik passes the prefix in the header.
+      SCRIPT_NAME: /app/pgadmin
+    networks:
+      - orchestack-net
+    labels:
+      - orchestack.service=pgadmin
+      - orchestack.tier=cold
+      - traefik.enable=true
+      - traefik.http.routers.pgadmin.rule=PathPrefix(`/app/pgadmin`)
+      - traefik.http.routers.pgadmin.entrypoints=web
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
