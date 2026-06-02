@@ -75,15 +75,73 @@ SERVICES_DIR: str = os.environ.get("ORCHESTRATOR_SERVICES_DIR", "/services")
 # views — easier to reason about for operators.
 COMPOSE_PROJECT_PREFIX: str = "orchestack-service"
 
-# ----- Catalogue of services the orchestrator can manage --------------------
-# Maps the symbolic service name (as it appears in the wizard selections and
-# the compose snippet filename) to its tier classification. Tier governs
-# reconciler behaviour: cold = stop when idle, hot = keep running.
-#
-# Add a new managed service by: (1) dropping its compose snippet in
-# system/docker/services/<name>.yml, (2) adding an entry here. Phase 2.3 ships
-# this catalogue with two starter entries; M4 fills in the rest.
-SERVICE_CATALOGUE: dict[str, dict[str, str]] = {
-    "metabase": {"tier": "hot",  "display_name": "Metabase"},
-    "pgadmin":  {"tier": "cold", "display_name": "pgAdmin"},
+# ----- Default user (until M3 introduces real session cookies) --------------
+# Every FK-constrained insert (service_sessions, service_pinning, audit_log)
+# needs a valid platform.users.id. The wizard saves profile data to
+# localStorage only — no user row exists during M2. We use this seeded
+# id=1 system account (see 20-seed-default-user.sql) as the actor for all
+# orchestrator operations until M3 wires up real per-request auth.
+DEFAULT_USER_ID: int = 1
+
+# ----- Service catalogue ----------------------------------------------------
+# Maps the symbolic service name to: tier (hot/cold), display name, layer
+# (must match the platform.installed_services CHECK constraint), and
+# `managed` (True iff we have a compose snippet at services/<name>.yml and
+# can actually start/stop it; False = registered in installed_services but
+# orchestration deferred to M4).
+SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
+    # Managed services — orchestrator can start/stop these via compose snippets.
+    "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
+    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
+    # Registered-only — wizard can pick these but the orchestrator can't yet
+    # start/stop them (no compose snippet exists, that's M4 work).
+    "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": False},
+    "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": False},
+    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": False},
+    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": False},
+    "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": False},
+    "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": False},
+    # PostgreSQL is special — it's part of the base control plane (already
+    # running as orchestack-postgres), but the wizard's warehouse layer lets
+    # the operator pick it as the analytical warehouse too. Catalogue entry
+    # exists so installed_services records the choice; managed=False because
+    # the orchestrator doesn't start/stop the base postgres.
+    "postgresql":   {"tier": "hot",  "display_name": "PostgreSQL",          "layer": "warehouse",    "managed": False},
 }
+
+# Wizard layer keys → platform.installed_services.layer CHECK-constraint values.
+# The wizard uses snake_case / short forms; the schema uses kebab-case for
+# multi-word layers. Mapping here rather than changing either side because
+# both are stable contracts referenced in many places.
+WIZARD_LAYER_TO_SCHEMA: dict[str, str] = {
+    "ingestion":    "ingestion",
+    "orchestration": "orchestration",
+    "warehouse":    "warehouse",
+    "lake":         "data-lake",
+    "quality":      "quality",
+    "governance":   "governance",
+    "bi":           "bi",
+    "admin_ui":     "admin-ui",
+}
+
+# Wizard display name → catalogue key. The wizard stores "Metabase",
+# "Airbyte", "Apache Airflow", etc. — we need to map back to the lowercase
+# catalogue key. Case-insensitive, strips trailing parentheticals.
+def tool_name_to_catalogue_key(display: str) -> str | None:
+    norm = display.strip().lower()
+    # Strip a trailing parenthetical like "(recommended)" or "(Airflow DAGs)"
+    if "(" in norm:
+        norm = norm.split("(", 1)[0].strip()
+    # Match by display_name (case-insensitive)
+    for key, meta in SERVICE_CATALOGUE.items():
+        if meta["display_name"].lower() == norm:
+            return key
+    # Fallback: maybe it's already a catalogue key
+    if norm in SERVICE_CATALOGUE:
+        return norm
+    # Special cases — wizard display names that don't lowercase to a key.
+    # "custom python" is intentionally NOT mapped: the wizard's "Custom
+    # Python (Airflow DAGs)" option means "I'll write my own DAGs, no
+    # separate ingestion service" — there's nothing to install.
+    aliases = {"apache airflow": "airflow", "dbt core": "dbt"}
+    return aliases.get(norm)

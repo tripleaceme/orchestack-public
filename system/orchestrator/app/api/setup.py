@@ -3,36 +3,49 @@
 Called once when the operator clicks "Create services" on deploying.html.
 This is the moment localStorage state becomes real database state.
 
-Phase 2.5 scope (what this file does):
-1. Validate the request body shape (Pydantic)
-2. Create the pipeline database + scoped role inside postgres
-3. Insert one row into platform.setup_state with the full configuration
-4. Insert one platform.installed_services row per selected tool
-5. Return 202 Accepted with a deploy_id the client can use to poll status
+What this does:
+  1. Validate request body shape (Pydantic) + pipeline DB inputs (regex).
+  2. Create the pipeline database + scoped role inside postgres.
+  3. Upsert platform.setup_state for the actor user (current_step='completed').
+  4. Upsert one platform.installed_services row per selected, catalogued tool.
+  5. Return 200 OK with the deploy summary the client can render.
 
-What this DOES NOT do (deferred):
-- Image pulls. The operator can let the next session-open trigger that lazily.
-  (M5 may revisit if perceived first-tool-open latency is too slow.)
-- Writing per-service .env files to a shared volume. M4 picks this up when
-  the per-service compose snippets actually need wired-up env_files.
-- Starting any service. Services start lazily on first session.
+What this does NOT do (deferred):
+  - Image pulls. The operator can let the next session-open trigger that.
+  - Per-service .env file writes. M4 picks this up when the per-service
+    compose snippets actually need wired-up env_files.
+  - Starting any service. Services start lazily on first session.
 
-Deliberate non-feature: idempotency. Re-submitting the wizard is treated
-as a fresh deploy. If the operator wants to reconfigure, they re-run.
-Avoids the "what should the orchestrator do if the pipeline DB already
-exists with different credentials" question — which is real but not M2.
+Schema notes
+------------
+platform.setup_state is keyed on user_id and tracks wizard progress
+(current_step + selections). It is NOT keyed on a deploy_id. Each user
+has exactly one row that the wizard updates as they move through steps.
+M3 will redirect users with current_step='completed' away from the wizard.
+
+platform.installed_services is the registry of *what's been chosen* —
+the orchestrator reads it on startup to know which compose snippets to
+make available. tier/layer must satisfy CHECK constraints; we look those
+up from SERVICE_CATALOGUE.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
+import json
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import audit, db
+from .. import audit, config, db
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
+
+# Pipeline DB identifier regex — restrictive because these get interpolated
+# into CREATE DATABASE / CREATE ROLE statements (asyncpg won't parameterise
+# identifiers). The wizard's client-side validation enforces this already;
+# re-validating here is defence in depth — never trust the network.
+_SAFE_IDENT = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,30}$")
 
 
 class Profile(BaseModel):
@@ -46,157 +59,176 @@ class DeployRequest(BaseModel):
     profile: Profile
     selections: dict[str, str] = Field(
         ...,
-        description="Layer -> tool name, e.g. {'ingestion': 'Airbyte', 'warehouse': 'PostgreSQL'}",
+        description="Wizard layer -> tool display name (e.g. {'ingestion': 'Airbyte'})",
     )
     credentials: dict[str, str] = Field(
         ...,
-        description="Flat map of env var name to value (PIPELINE_DB_USER, AIRFLOW_FERNET_KEY, etc.)",
+        description="Flat map of env var name -> value",
+    )
+    user_id: int | None = Field(
+        None,
+        description="Actor user id. Defaults to system user during M2.",
     )
 
 
 def _validate_pipeline_db_inputs(creds: dict[str, str]) -> tuple[str, str, str]:
-    """Extract + sanity-check the pipeline DB credentials before SQL.
-
-    These get interpolated into CREATE DATABASE / CREATE ROLE statements
-    (asyncpg won't let us parameterise identifiers), so we restrict them
-    to a strict character class. The wizard already enforces this on
-    the client side but we re-validate here — never trust the network.
-    """
-    import re
-    safe = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,30}$")
+    """Extract + sanity-check pipeline DB credentials before any SQL."""
     user = creds.get("PIPELINE_DB_USER", "")
     name = creds.get("PIPELINE_DB_NAME", "")
     password = creds.get("PIPELINE_DB_PASSWORD", "")
-    if not safe.fullmatch(user):
-        raise HTTPException(400, f"PIPELINE_DB_USER {user!r} must match {safe.pattern}")
-    if not safe.fullmatch(name):
-        raise HTTPException(400, f"PIPELINE_DB_NAME {name!r} must match {safe.pattern}")
+    if not _SAFE_IDENT.fullmatch(user):
+        raise HTTPException(400, f"PIPELINE_DB_USER {user!r} must match {_SAFE_IDENT.pattern}")
+    if not _SAFE_IDENT.fullmatch(name):
+        raise HTTPException(400, f"PIPELINE_DB_NAME {name!r} must match {_SAFE_IDENT.pattern}")
     if len(password) < 12:
         raise HTTPException(400, "PIPELINE_DB_PASSWORD must be at least 12 chars")
     return user, name, password
 
 
-@router.post("/deploy", status_code=202)
+@router.post("/deploy")
 async def deploy(req: DeployRequest) -> dict[str, object]:
-    """Materialise the wizard's plan into database state.
-
-    Returns 202 Accepted with a deploy_id; the client polls
-    /api/setup/deploy/{id} to learn the outcome. (For M2.5 the deploy
-    finishes synchronously inside this handler, so polling immediately
-    returns "ready" — but the contract is async so we can move expensive
-    operations like image pulls behind it later.)
-    """
-    deploy_id = str(uuid4())
+    """Materialise the wizard's plan into database state."""
+    user_id = req.user_id if req.user_id is not None else config.DEFAULT_USER_ID
     user, name, password = _validate_pipeline_db_inputs(req.credentials)
 
     await audit.write(
-        "setup_deploy_started",
-        details={"deploy_id": deploy_id, "selections": req.selections},
+        "setup_deploy_started", user_id=user_id,
+        details={"selections": req.selections},
     )
 
-    # ---- 1. Create the pipeline database and its scoped role -----------
-    # We connect as the bootstrap superuser (config.DB_USER) and issue
-    # CREATE DATABASE outside any transaction (postgres requires this).
-    # If the DB already exists from a previous deploy, that's a 409 — we
-    # don't silently reuse, because credentials might differ.
+    # ---- 1. Create the pipeline database + scoped role ----------------
+    # asyncpg won't parameterise identifiers, so we double-quote the
+    # validated names. The password IS parameterised — safe even if it
+    # contains quotes. CREATE DATABASE cannot run inside a transaction.
     try:
-        # asyncpg won't let us parameterise identifiers, so we double-quote
-        # the validated names. The password IS parameterised — safe even
-        # if it contains quotes.
         async with db.get_pool().acquire() as conn:
-            exists = await conn.fetchval(
-                "SELECT 1 FROM pg_database WHERE datname = $1",
-                name,
+            db_exists = await conn.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", name,
             )
-            if exists:
+            if db_exists:
                 raise HTTPException(
                     409,
-                    f"pipeline database {name!r} already exists. "
-                    "Re-deploying with a different name or dropping the "
-                    "existing one are both options. M2 does not auto-drop.",
+                    f"pipeline database {name!r} already exists. M2 does not "
+                    "auto-drop existing databases; remove it manually or pick a "
+                    "different name and re-submit the wizard.",
                 )
 
             role_exists = await conn.fetchval(
                 "SELECT 1 FROM pg_roles WHERE rolname = $1", user,
             )
             if not role_exists:
-                # Quote the role name; parameterise the password literal.
                 await conn.execute(
                     f'CREATE ROLE "{user}" WITH LOGIN PASSWORD $1', password,
                 )
             await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
-
     except HTTPException:
         raise
     except Exception as e:
         await audit.write(
-            "setup_deploy_db_failed",
-            details={"deploy_id": deploy_id, "error": str(e)},
+            "setup_deploy_db_failed", user_id=user_id,
+            details={"error": str(e)},
         )
         raise HTTPException(500, f"pipeline DB creation failed: {e}") from e
 
-    # ---- 2. Persist the full setup state (one row, latest wins) --------
-    import json
+    # ---- 2. Mark this user's wizard as completed ---------------------
+    # setup_state has user_id as primary key — UPSERT semantics. We store
+    # the selections in the JSONB column so M3 can render "what they
+    # picked" without re-querying installed_services.
     await db.execute(
         """
-        INSERT INTO platform.setup_state (status, payload, deploy_id, created_at)
-        VALUES ('ready', $1::jsonb, $2, now())
+        INSERT INTO platform.setup_state
+            (user_id, current_step, selections, started_at, updated_at, completed_at)
+        VALUES ($1, 'completed', $2::jsonb, now(), now(), now())
+        ON CONFLICT (user_id) DO UPDATE SET
+            current_step = 'completed',
+            selections   = EXCLUDED.selections,
+            updated_at   = now(),
+            completed_at = now()
         """,
-        json.dumps({
-            "profile": req.profile.model_dump(),
-            "selections": req.selections,
-            # Don't store password material in setup_state; it's already in
-            # postgres' own auth tables. Storing it twice would be a second
-            # leak surface.
-            "credentials_keys": sorted(req.credentials.keys()),
-        }),
-        deploy_id,
+        user_id, json.dumps(req.selections),
     )
 
-    # ---- 3. Mark each selected tool as installed -----------------------
+    # ---- 3. Register each selected, catalogued tool ------------------
+    registered: list[str] = []
+    skipped: list[dict[str, str]] = []
     async with db.transaction() as conn:
-        for layer, tool in req.selections.items():
-            if tool == "None" or not tool:
+        for wizard_layer, display_name in req.selections.items():
+            if not display_name or display_name == "None":
                 continue
+            catalogue_key = config.tool_name_to_catalogue_key(display_name)
+            if catalogue_key is None:
+                skipped.append({
+                    "wizard_layer": wizard_layer, "tool": display_name,
+                    "reason": "not_in_catalogue",
+                })
+                continue
+            meta = config.SERVICE_CATALOGUE[catalogue_key]
+            schema_layer = config.WIZARD_LAYER_TO_SCHEMA.get(
+                wizard_layer, meta["layer"]
+            )
             await conn.execute(
                 """
                 INSERT INTO platform.installed_services
-                    (service_name, layer, installed_at)
-                VALUES ($1, $2, now())
-                ON CONFLICT (service_name) DO UPDATE
-                    SET layer = EXCLUDED.layer, installed_at = now()
+                    (name, display_name, layer, tier, enabled,
+                     configured_at, configured_by_user_id)
+                VALUES ($1, $2, $3, $4, TRUE, now(), $5)
+                ON CONFLICT (name) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    layer        = EXCLUDED.layer,
+                    tier         = EXCLUDED.tier,
+                    enabled      = TRUE,
+                    configured_at = now(),
+                    configured_by_user_id = EXCLUDED.configured_by_user_id
                 """,
-                tool, layer,
+                catalogue_key,
+                meta["display_name"],
+                schema_layer,
+                meta["tier"],
+                user_id,
             )
+            registered.append(catalogue_key)
 
     await audit.write(
-        "setup_deploy_complete",
+        "setup_deploy_complete", user_id=user_id,
         details={
-            "deploy_id": deploy_id,
             "pipeline_db": name,
             "pipeline_user": user,
-            "selections": req.selections,
+            "registered": registered,
+            "skipped": skipped,
         },
     )
     return {
-        "deploy_id": deploy_id,
         "status": "ready",
         "pipeline_db": name,
         "pipeline_user": user,
+        "registered_services": registered,
+        "skipped_services": skipped,
     }
 
 
-@router.get("/deploy/{deploy_id}")
-async def get_deploy_status(deploy_id: str) -> dict[str, object]:
-    """Poll the status of a deploy. Used by deploying.html during M2.5."""
+@router.get("/state")
+async def get_setup_state(user_id: int | None = None) -> dict[str, object]:
+    """Return the wizard state for a user. Defaults to system user.
+
+    Used by route guards (M3) to decide whether to bounce a user to /setup/*
+    or to /app/. current_step='completed' means onboarding done.
+    """
+    uid = user_id if user_id is not None else config.DEFAULT_USER_ID
     row = await db.fetchrow(
-        "SELECT status, created_at FROM platform.setup_state WHERE deploy_id = $1",
-        deploy_id,
+        """
+        SELECT current_step, selections, started_at, updated_at, completed_at
+        FROM platform.setup_state
+        WHERE user_id = $1
+        """,
+        uid,
     )
     if row is None:
-        raise HTTPException(404, "deploy not found")
+        return {"user_id": uid, "current_step": "welcome", "selections": {}}
     return {
-        "deploy_id": deploy_id,
-        "status": row["status"],
-        "created_at": row["created_at"].isoformat(),
+        "user_id": uid,
+        "current_step": row["current_step"],
+        "selections": json.loads(row["selections"]) if isinstance(row["selections"], str) else (row["selections"] or {}),
+        "started_at":   row["started_at"].isoformat()   if row["started_at"]   else None,
+        "updated_at":   row["updated_at"].isoformat()   if row["updated_at"]   else None,
+        "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
     }

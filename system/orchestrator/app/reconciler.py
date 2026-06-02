@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from . import audit, config, db, docker_ops
 
@@ -49,16 +50,23 @@ async def reconcile_once() -> dict[str, int]:
         return summary  # nothing to sweep
 
     try:
-        # Sessions are "active" if their last_seen_at is recent enough.
-        # Group by service so we have a quick lookup.
+        # Sessions are "active" if their last_heartbeat_at is recent enough
+        # AND they haven't been closed by an explicit DELETE. We compute the
+        # cutoff in Python rather than as a SQL interval expression for two
+        # reasons: (a) asyncpg's binary protocol doesn't auto-cast int→text
+        # so `$1 || ' seconds'` would error; (b) passing a precomputed
+        # TIMESTAMPTZ matches the column type, so postgres can use the
+        # partial index on last_heartbeat_at directly.
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=config.SESSION_ACTIVE_WINDOW)
         rows = await db.fetch(
             """
             SELECT service_name, COUNT(*) AS n
             FROM platform.service_sessions
-            WHERE last_seen_at > now() - ($1 || ' seconds')::interval
+            WHERE last_heartbeat_at > $1
+              AND closed_at IS NULL
             GROUP BY service_name
             """,
-            config.SESSION_ACTIVE_WINDOW,
+            cutoff,
         )
         active_by_service = {r["service_name"]: r["n"] for r in rows}
         summary["active"] = sum(active_by_service.values())

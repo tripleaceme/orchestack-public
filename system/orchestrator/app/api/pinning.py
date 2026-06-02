@@ -7,16 +7,18 @@ when the wizard doesn't specify is 2 hours, which matches the typical
 "open a tool, switch context for an hour, come back" pattern operators
 have during active development.
 
-Two endpoints:
-    POST   /api/services/{name}/pin     { ttl_seconds: int | null }
-    DELETE /api/services/{name}/pin
+Schema mapping
+--------------
+platform.service_pinning's columns are pinned_by_user_id, pinned_at,
+expires_at, reason. Our API parameter `user_id` maps to pinned_by_user_id;
+`ttl_seconds` becomes expires_at via Python timedelta arithmetic.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from .. import audit, config, db
@@ -35,6 +37,8 @@ class PinRequest(BaseModel):
         ),
         ge=60,  # 1 minute minimum; shorter would be indistinguishable from "no pin"
     )
+    user_id: int | None = Field(None, description="Defaults to system user")
+    reason: str | None = Field(None, description="Optional human-readable reason for the pin")
 
 
 @router.post("/{name}/pin")
@@ -43,27 +47,35 @@ async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
 
-    if req.ttl_seconds is None:
-        expires_at = None
-    else:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=req.ttl_seconds)
+    user_id = req.user_id if req.user_id is not None else config.DEFAULT_USER_ID
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=req.ttl_seconds)
+        if req.ttl_seconds is not None
+        else None
+    )
 
     # Upsert: one pin per service. If you re-pin, you extend the TTL.
+    # Note: ON CONFLICT requires the unique constraint on service_name,
+    # which the schema has (TEXT NOT NULL UNIQUE).
     await db.execute(
         """
-        INSERT INTO platform.service_pinning (service_name, expires_at, created_at)
-        VALUES ($1, $2, now())
-        ON CONFLICT (service_name)
-        DO UPDATE SET expires_at = EXCLUDED.expires_at, created_at = now()
+        INSERT INTO platform.service_pinning
+            (service_name, pinned_by_user_id, pinned_at, expires_at, reason)
+        VALUES ($1, $2, now(), $3, $4)
+        ON CONFLICT (service_name) DO UPDATE SET
+            pinned_by_user_id = EXCLUDED.pinned_by_user_id,
+            pinned_at         = now(),
+            expires_at        = EXCLUDED.expires_at,
+            reason            = EXCLUDED.reason
         """,
-        name, expires_at,
+        name, user_id, expires_at, req.reason,
     )
     await audit.write(
-        "service_pinned",
-        service_name=name,
+        "service_pinned", service_name=name, user_id=user_id,
         details={
             "ttl_seconds": req.ttl_seconds,
             "expires_at": expires_at.isoformat() if expires_at else "never",
+            "reason": req.reason,
         },
     )
     return {
@@ -73,19 +85,25 @@ async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
     }
 
 
-@router.delete("/{name}/pin", status_code=204)
+@router.delete("/{name}/pin", status_code=204, response_class=Response)
 async def unpin_service(name: str) -> None:
-    """Remove the pin from a service. Reconciler can stop it again at next idle."""
+    """Remove the pin from a service. Reconciler can stop it again at next idle.
+
+    response_class=Response so FastAPI sends the 204 with no body (HTTP 204
+    forbids a response body by RFC 7230).
+    """
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
 
-    result = await db.execute(
-        "DELETE FROM platform.service_pinning WHERE service_name = $1",
+    # Use RETURNING to tell whether a row was actually pinned vs. already
+    # absent — asyncpg execute() command-tag parsing is fragile for
+    # multi-digit row counts.
+    row = await db.fetchrow(
+        "DELETE FROM platform.service_pinning WHERE service_name = $1 RETURNING service_name",
         name,
     )
-    # No 404 on "not pinned" — DELETE is idempotent. We log the result anyway.
+    # No 404 on "not pinned" — DELETE is idempotent. We log the result.
     await audit.write(
-        "service_unpinned",
-        service_name=name,
-        details={"was_pinned": result.endswith("0") is False},
+        "service_unpinned", service_name=name,
+        details={"was_pinned": row is not None},
     )

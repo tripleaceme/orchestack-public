@@ -191,6 +191,12 @@ CREATE TABLE IF NOT EXISTS platform.service_sessions (
   id                BIGSERIAL PRIMARY KEY,
   service_name      TEXT NOT NULL,
   user_id           BIGINT NOT NULL REFERENCES platform.users(id) ON DELETE CASCADE,
+  -- Opaque token the client uses to address its own session in subsequent
+  -- API calls (POST checkin, DELETE close). UUIDs prevent token guessing
+  -- across sessions and let clients address sessions without needing a
+  -- round-trip to look up the integer id. gen_random_uuid() requires
+  -- pgcrypto OR postgres >= 13 (UUID functions are built-in there).
+  token             UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
   opened_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   closed_at         TIMESTAMPTZ
@@ -200,6 +206,8 @@ CREATE INDEX IF NOT EXISTS idx_service_sessions_active
   WHERE closed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_service_sessions_user
   ON platform.service_sessions(user_id, closed_at);
+CREATE INDEX IF NOT EXISTS idx_service_sessions_token
+  ON platform.service_sessions(token);
 COMMENT ON TABLE platform.service_sessions IS
   'Reference-counted active user sessions per service. The orchestrator''s idle-timeout sweep reads this to decide what to stop.';
 COMMENT ON COLUMN platform.service_sessions.last_heartbeat_at IS
