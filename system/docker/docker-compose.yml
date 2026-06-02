@@ -229,24 +229,26 @@ services:
 
   # ==========================================================================
   # 5. orchestrator — Service-lifecycle daemon.
-  # M1: alpine container running a heartbeat loop. M2 replaces this with the
-  # real Python orchestrator from tripleaceme/orchestack-orchestrator. The
-  # orchestrator has NO HTTP surface — it reads platform.service_sessions and
-  # platform.service_pinning, controls containers via the Docker socket.
+  #
+  # Phase 2.1 (current): FastAPI skeleton serving /api/health. Pulled from
+  # Docker Hub as tripleaceme/orchestack-orchestrator. The compose service
+  # name, container name, network, and dependencies are stable from the
+  # M1 stub — only the image changed. Same swap pattern that auth uses.
+  #
+  # Future phases bring up service-control endpoints (POST /api/services/*),
+  # the reconciler loop (idle-sweep cold-tier services), and the wizard
+  # handoff (POST /api/setup/deploy). See design/m2-orchestrator.md for the
+  # full plan.
+  #
+  # No Docker socket mount yet — phase 2.2 wires this up via the existing
+  # socket-proxy service (the same one Traefik uses), not a direct
+  # /var/run/docker.sock mount. That keeps the socket-access boundary
+  # consistent across the platform.
   # ==========================================================================
   orchestrator:
-    image: alpine:3.20
+    image: tripleaceme/orchestack-orchestrator:${ORCHESTRATOR_TAG:-latest}
     container_name: orchestack-orchestrator
     restart: unless-stopped
-    command:
-      - sh
-      - -c
-      - 'echo "[orchestrator] M1 stub — real implementation in M2"; while true; do echo "[orchestrator] $(date -Iseconds) idle tick"; sleep 60; done'
-    volumes:
-      # The real orchestrator (M2) needs the Docker socket to start/stop
-      # cold-tier service containers. The stub does not use it but we mount
-      # it now so the compose contract is stable across the M1→M2 swap.
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       # Orchestrator connects to OrcheStack's INTERNAL database to read
       # platform.* tables (users, service_sessions, pinning). It does NOT
@@ -257,8 +259,24 @@ services:
       POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack}
       POSTGRES_PASSWORD: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack}
+      # Logging verbosity. Stays low by default; bump to "debug" when
+      # tracing reconciler behaviour or investigating a stuck service.
+      ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-info}
     networks:
       - orchestack-net
     depends_on:
       postgres:
         condition: service_healthy
+    labels:
+      - traefik.enable=true
+      # Phase 2.1 mounts the orchestrator at /orchestrator/* so Streamlit
+      # (M3) can call it via the same hostname. Path-prefix matched at
+      # Traefik; the FastAPI app sees the un-stripped path (matches its
+      # /api/* routes natively because the prefix is preserved).
+      - traefik.http.routers.orchestrator.rule=PathPrefix(`/orchestrator`)
+      - traefik.http.routers.orchestrator.entrypoints=web
+      # Strip /orchestrator before forwarding so /orchestrator/api/health
+      # arrives at FastAPI as /api/health.
+      - traefik.http.middlewares.orchestrator-strip.stripprefix.prefixes=/orchestrator
+      - traefik.http.routers.orchestrator.middlewares=orchestrator-strip@docker
+      - traefik.http.services.orchestrator.loadbalancer.server.port=8000

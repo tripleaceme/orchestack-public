@@ -1,0 +1,80 @@
+# Build and push the orchestack-orchestrator image to Docker Hub.
+#
+# Triggered by pushes to main that change anything under system/orchestrator/
+# (the source folder for this image), or by manual workflow_dispatch.
+#
+# Required GitHub Secrets (same as the auth workflow — already set):
+#   - DOCKERHUB_USERNAME — your Docker Hub account name (tripleaceme)
+#   - DOCKERHUB_TOKEN    — a personal access token from
+#                          hub.docker.com/settings/security
+#
+# Multi-arch build (linux/amd64 + linux/arm64) for parity with the auth
+# image and to support both x86 VPSes and Apple-Silicon dev machines.
+
+name: Build and push orchestack-orchestrator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'system/orchestrator/**'
+      - '.github/workflows/build-orchestack-orchestrator.yml'
+  workflow_dispatch:
+
+env:
+  # Opt every JS action into Node 24 ahead of the 2026-09-16 forced cutoff.
+  # See the auth-build workflow for the explanation.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch build support)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for tagging
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: tripleaceme/orchestack-orchestrator
+          # Tags produced:
+          #   - latest  (always on every push to main)
+          #   - 0.1.0   (semver — bumped manually here when releasing)
+          #   - 0.1-rev{git short SHA}  (immutable per-commit tag)
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=0.1.0,enable={{is_default_branch}}
+            type=sha,prefix=0.1-rev,format=short
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v5
+        with:
+          # The orchestrator's Dockerfile uses system/orchestrator/ as the
+          # build context (narrower than the auth image's repo-root context —
+          # the orchestrator has no shared assets to pull from elsewhere).
+          context: ./system/orchestrator
+          file: ./system/orchestrator/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GitHub Actions cache, scoped per-image so the auth and
+          # orchestrator caches don't collide.
+          cache-from: type=gha,scope=orchestrator
+          cache-to: type=gha,mode=max,scope=orchestrator

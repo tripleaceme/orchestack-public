@@ -102,4 +102,4 @@ tag-release: ## Tag a release (call with VERSION=0.1.1, fires CI on push)
 verify: ## Confirm the local stack is serving (curl /signup, expects 200)
 	@curl -fsSI http://localhost/signup > /dev/null \
 		&& echo "/signup serving 200 OK" \
-		|| (echo "/signup is not serving — run 'make dev-up' or check 'make dev-logs'"; exit 1)
+		|| (echo "/signup is not serving, run 'make dev-up' or check 'make dev-logs'"; exit 1)
