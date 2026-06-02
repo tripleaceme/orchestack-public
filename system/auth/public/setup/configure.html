@@ -199,7 +199,7 @@
 
     // ------- Warehouse -------
     "PostgreSQL": {
-      desc: "Your <strong>pipeline warehouse</strong> — separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata. Created on the same Postgres instance OrcheStack uses for its own state, but with its own user, password, and DB name so they stay cleanly separated. <em>OrcheStack's own credentials are in <code>.env</code> and not touched here.</em>",
+      desc: "Your <strong>pipeline warehouse</strong> is separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata. Created on the same Postgres instance OrcheStack uses for its own state, but with its own user, password, and DB name so they stay cleanly separated. <em>OrcheStack's own credentials are in <code>.env</code> and not touched here.</em>",
       fields: [
         { name: "PIPELINE_DB_USER", label: "Pipeline DB user", type: "text", placeholder: "e.g. acme_warehouse", required: true,
           hint: "PostgreSQL user that owns your pipeline database. Distinct from OrcheStack's internal user (which lives in .env). Created during deploy by the orchestrator with privileges scoped to the pipeline DB only — it cannot read or modify OrcheStack's platform tables." },
@@ -289,7 +289,7 @@
         { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text",
           default: "postgresql://${PIPELINE_DB_USER}:***@postgres:5432/${PIPELINE_DB_NAME}",
           readonly: true,
-          hint: "Auto-derived from the pipeline DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with PIPELINE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts) — it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
+          hint: "Auto-derived from the pipeline DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with PIPELINE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts), it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
         { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text",
           default: "./config/great_expectations/checkpoints",
           readonly: true,

@@ -44,6 +44,15 @@ node_modules/
 .nuxt/
 
 # ============================================================================
+# Build artefacts — runtime bundles produced by scripts/build-bundle.sh
+# (both the versioned tarball and the unversioned alias). These are
+# release outputs that get uploaded to GitHub Releases by the CI workflow;
+# they should never be committed back into the source tree.
+# ============================================================================
+orchestack-runtime*.tar.gz
+orchestack-runtime*.tar.gz.sha256
+
+# ============================================================================
 # Editor + OS clutter.
 # ============================================================================
 .DS_Store
