@@ -24,6 +24,15 @@ on:
       - '.github/workflows/build-orchestack-auth.yml'
   workflow_dispatch:  # also allow manual triggering from the Actions tab
 
+env:
+  # GitHub Actions deprecated Node 20 actions on 2026-06-16 and removes the
+  # runtime on 2026-09-16. This env var opts every JavaScript action in this
+  # workflow into Node 24 without requiring us to bump every action's major
+  # version. Bumping the actions individually (actions/checkout@v5,
+  # docker/build-push-action@v6, etc.) is the long-term fix; this is the
+  # belt-and-suspenders bridge until those bumps happen.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-push:
     runs-on: ubuntu-latest

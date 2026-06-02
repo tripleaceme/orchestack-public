@@ -94,15 +94,13 @@ services:
   # below for the routing rules.
   # ==========================================================================
   proxy:
-    # Pinned to the floating v3 tag (latest stable v3.x) rather than v3.2
-    # specifically. Traefik v3.2 hardcoded Docker API version v1.24 in its
-    # provider initialisation — that's below the MinAPIVersion=1.40 modern
-    # Docker daemons enforce, so the provider silently fails to discover any
-    # containers. The hardcode was removed in a later v3.x patch; using the
-    # floating tag picks up the fix without pinning to a specific patch.
-    # Re-pin to a specific minor (e.g. traefik:v3.4) before a v1.0 production
-    # release for reproducibility.
-    image: traefik:v3
+    # Pinned to traefik:v3.7 (the floating tag for the latest v3.7.x patch).
+    # We previously used the floating `traefik:v3` tag to escape v3.2's
+    # hardcoded-v1.24 Docker API bug; now we pin to the specific minor so
+    # two operators installing the same bundle get the same Traefik. The
+    # v3.7.x line is stable as of 2026-06; bump this when a future minor
+    # ships features we want (or when v3.7 stops receiving security fixes).
+    image: traefik:v3.7
     container_name: orchestack-proxy
     restart: unless-stopped
     command:
