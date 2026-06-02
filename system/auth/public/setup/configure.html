@@ -188,13 +188,25 @@
 
     // ------- Orchestration -------
     "Apache Airflow": {
-      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata.",
+      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata. Your team's DAGs live in your own Git repo — OrcheStack clones them into the Airflow container on first deploy and refreshes on every run.",
       fields: [
         { name: "AIRFLOW_FERNET_KEY", label: "Fernet key", type: "text", placeholder: "Click Generate to create a Fernet key", required: true,
           readonly: true, generate: "fernet-key",
           hint: "Encryption key for connection passwords inside Airflow. Click Generate — the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
+        { name: "AIRFLOW_DAGS_REPO_URL", label: "DAGs Git repository (optional)", type: "text", placeholder: "Leave blank if your DAGs aren't on GitHub yet",
+          hint: "If your team's Airflow DAGs are already on GitHub, paste the HTTPS or SSH URL — OrcheStack clones it into the Airflow container on first deploy and refreshes it on every scheduler tick. If you haven't set up a repo yet, skip this now and add it later from Streamlit → Services → Airflow → Edit config." },
+        { name: "AIRFLOW_DAGS_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
+          hint: "Which branch OrcheStack pulls from on each refresh. 'main' for most production setups. Only matters once you've connected a repo." },
+        { name: "AIRFLOW_DAGS_REPO_PATH", label: "DAGs subdirectory", type: "text", default: "dags",
+          hint: "Path inside your repo where DAG Python files live. Default 'dags/' matches the Airflow convention; change if your DAGs are nested deeper (e.g. 'airflow/dags' in a monorepo)." },
       ],
-      note: "The Fernet key encrypts stored connection passwords inside Airflow.",
+      note: "Two things to do AFTER setup finishes:",
+      noteHtml: `
+        <ul>
+          <li>If your DAGs aren't in a Git repo yet, create one (private is fine — OrcheStack supports SSH keys for private repos). The repo should contain a top-level <code>dags/</code> folder with your <code>.py</code> DAG files. Once pushed, paste the repo URL into Streamlit → Services → Airflow → Edit config and OrcheStack starts syncing on the next scheduler tick.</li>
+          <li>Back up the Fernet key shown above to a password manager. The key encrypts all stored connection passwords inside Airflow — if you lose it, every Airflow Connection you've configured becomes unrecoverable and you'll have to recreate them.</li>
+        </ul>
+      `,
     },
 
     // ------- Warehouse -------
