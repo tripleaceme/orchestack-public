@@ -97,9 +97,23 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     )
 
     # ---- 1. Create the pipeline database + scoped role ----------------
-    # asyncpg won't parameterise identifiers, so we double-quote the
-    # validated names. The password IS parameterised — safe even if it
-    # contains quotes. CREATE DATABASE cannot run inside a transaction.
+    # PostgreSQL DDL statements DO NOT accept $N parameter placeholders —
+    # the parameterized-query protocol works only on DML grammar slots.
+    # CREATE ROLE ... PASSWORD $1 fails with "syntax error at or near $1".
+    # We have to inject the password as a quoted literal at the SQL level.
+    #
+    # Safety: the user/name are regex-validated upstream to match
+    # ^[a-zA-Z][a-zA-Z0-9_]{2,30}$ so they're safe as double-quoted
+    # identifiers. The password is wrapped in PostgreSQL's standard single-
+    # quote literal form: surround with ' and double any internal '. This
+    # is what pg_catalog.quote_literal() produces; we just do it in Python
+    # because asyncpg won't expose it through parameter substitution.
+    #
+    # CREATE DATABASE additionally cannot run inside a transaction.
+    def _quote_literal(s: str) -> str:
+        """PostgreSQL string literal escape — see comments above."""
+        return "'" + s.replace("'", "''") + "'"
+
     try:
         async with db.get_pool().acquire() as conn:
             db_exists = await conn.fetchval(
@@ -118,7 +132,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             )
             if not role_exists:
                 await conn.execute(
-                    f'CREATE ROLE "{user}" WITH LOGIN PASSWORD $1', password,
+                    f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {_quote_literal(password)}'
                 )
             await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
     except HTTPException:
