@@ -23,7 +23,22 @@ router = APIRouter(prefix="/api/services", tags=["services"])
 
 @router.get("")
 async def list_services() -> dict[str, object]:
-    """Return state of every service in the catalogue."""
+    """Return state of every service in the catalogue.
+
+    Fields per service:
+      name          — catalogue key (lowercase, no spaces; used in URLs)
+      display_name  — human-readable name for UI ("Apache Airflow")
+      tier          — "hot" or "cold" (governs reconciler behaviour)
+      layer         — pipeline layer the service belongs to ("bi", "ingestion",
+                      "warehouse", etc.). Useful for UIs that group services.
+      state         — "running" or "stopped" (derived from docker ps)
+      container     — Docker container name if running, else null
+      managed       — True iff the orchestrator has a compose snippet for this
+                      service and can actually start/stop it. False means
+                      the service is catalogue-registered but M4-pending —
+                      the dashboard should disable start/stop buttons in that
+                      case to avoid a 500 from the orchestrator.
+    """
     running = await docker_ops.list_running_services()
     running_by_name = {r["service"]: r for r in running}
 
@@ -34,8 +49,10 @@ async def list_services() -> dict[str, object]:
             "name": name,
             "display_name": meta["display_name"],
             "tier": meta["tier"],
+            "layer": meta.get("layer"),
             "state": "running" if is_running else "stopped",
             "container": running_by_name.get(name, {}).get("container"),
+            "managed": bool(meta.get("managed", False)),
         })
     return {"services": items}
 

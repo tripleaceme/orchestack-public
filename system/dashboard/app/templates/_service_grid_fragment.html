@@ -1,0 +1,23 @@
+{#
+  The full service grid. Returned from /api/dashboard/services/grid every
+  10s by HTMX's auto-refresh. Renders one card per service, then a banner
+  if `error` is set (orchestrator unreachable).
+
+  Why two render paths in one template:
+    Happy path — `services` is a non-empty list → grid of cards.
+    Error path — `error` is set → render a single banner explaining the
+    failure, NOT cards (we don't want to show stale state masquerading as
+    current state). The poll keeps running; recovery is automatic.
+#}
+{% if error %}
+  <div class="col-span-full bg-red-50 border border-red-200 rounded-lg p-4
+              text-sm text-red-800">
+    <strong class="font-semibold">Orchestrator unreachable.</strong>
+    <span class="text-red-700"> Last error: {{ error }}</span>
+    <span class="text-xs text-red-600 ml-2">— retrying in 10s</span>
+  </div>
+{% else %}
+  {% for service in services %}
+    {% include "_service_card_fragment.html" %}
+  {% endfor %}
+{% endif %}

@@ -2,24 +2,49 @@
 
 {% block content %}
 
-  <div class="mb-8">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">Welcome to OrcheStack</h1>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+      Service status
+    </h1>
     <p class="text-sm text-[var(--text-2)] mt-1">
-      Phase 3.1 — dashboard skeleton. Service grid, sessions, audit log, and
-      keep-warm controls land in later phases.
+      Live state of every service in the OrcheStack catalogue. Cards refresh
+      every 10 seconds; click <em>Start</em> or <em>Stop</em> to change a
+      service's state — that card updates immediately.
     </p>
   </div>
 
   {#
-    Health card — proves the dashboard can call the orchestrator and
-    render the result. HTMX polls the fragment endpoint every 10s and
-    swaps the result into this div. `load delay:50ms` fires the first
-    request right after page load so the operator isn't staring at a
-    blank card for 10 seconds.
+    Service grid — HTMX polls /api/dashboard/services/grid every 10s and
+    swaps the result into this container's innerHTML. `load delay:50ms`
+    fires the first request right after page load so the operator isn't
+    staring at a loading state for the full 10-second cycle.
+
+    `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` gives us 1 card on phones,
+    2 on tablets, 3 on desktops. Each card is self-contained — see
+    _service_card_fragment.html — and re-renders on its own start/stop
+    swap independently of the grid's polling cycle.
   #}
-  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6 max-w-2xl">
-    <div class="flex items-baseline justify-between mb-4">
-      <h2 class="text-base font-semibold text-[var(--text)]">Orchestrator status</h2>
+  <section class="mb-10">
+    <div id="services-grid"
+         hx-get="{{ url_for('services_grid') }}"
+         hx-trigger="load delay:50ms, every 10s"
+         hx-swap="innerHTML"
+         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[200px]">
+      <div class="col-span-full text-sm text-[var(--text-2)] italic">
+        Loading service status…
+      </div>
+    </div>
+  </section>
+
+  {#
+    Orchestrator health card — separate from the service grid because it
+    exposes platform-level health (database, docker socket, etc.) rather
+    than per-service state. Kept small + collapsed into a sidebar-like
+    block; promote to a full panel if it becomes load-bearing.
+  #}
+  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 max-w-2xl">
+    <div class="flex items-baseline justify-between mb-3">
+      <h2 class="text-sm font-semibold text-[var(--text)]">Platform health</h2>
       <span class="text-xs text-[var(--text-2)]">Refreshes every 10s</span>
     </div>
 
@@ -27,8 +52,10 @@
          hx-get="{{ url_for('health_fragment') }}"
          hx-trigger="load delay:50ms, every 10s"
          hx-swap="innerHTML"
-         class="min-h-[80px]">
-      <div class="text-sm text-[var(--text-2)] italic">Loading orchestrator status…</div>
+         class="min-h-[60px]">
+      <div class="text-sm text-[var(--text-2)] italic">
+        Loading orchestrator health…
+      </div>
     </div>
   </section>
 
