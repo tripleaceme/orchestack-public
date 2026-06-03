@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+      Audit log
+    </h1>
+    <p class="text-sm text-[var(--text-2)] mt-1">
+      Append-only record of every privileged action. Filter by event type,
+      target service, or date range. Pagination is offset-based; the
+      orchestrator caps page size at 500.
+    </p>
+  </div>
+
+  {#
+    Filter form — submits via HTMX to the table fragment endpoint.
+    `hx-include` on each input + `hx-target=#audit-table` keeps everything
+    on the same page. We don't use a real <form action=> because that
+    would do a full-page reload; HTMX does the equivalent fetch but
+    swaps just the table.
+  #}
+  <form id="audit-filters"
+        hx-get="{{ url_for('audit_table_fragment') }}"
+        hx-target="#audit-table"
+        hx-swap="innerHTML"
+        hx-trigger="change from:input, change from:select, submit"
+        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-4
+               grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <label class="block">
+      <span class="text-xs font-medium text-[var(--text-2)]">Event type</span>
+      <input type="text" name="event_type" placeholder="e.g. service_started"
+             class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                    px-2 py-1.5 bg-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-[var(--text-2)]">Target service</span>
+      <input type="text" name="target" placeholder="e.g. metabase"
+             class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                    px-2 py-1.5 bg-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-[var(--text-2)]">Since</span>
+      <input type="datetime-local" name="since"
+             class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                    px-2 py-1.5 bg-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-[var(--text-2)]">Until</span>
+      <input type="datetime-local" name="until"
+             class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                    px-2 py-1.5 bg-white" />
+    </label>
+  </form>
+
+  <section id="audit-table"
+           hx-get="{{ url_for('audit_table_fragment') }}"
+           hx-trigger="load delay:50ms"
+           hx-swap="innerHTML"
+           class="min-h-[120px]">
+    <div class="text-sm text-[var(--text-2)] italic">Loading audit log…</div>
+  </section>
+{% endblock %}

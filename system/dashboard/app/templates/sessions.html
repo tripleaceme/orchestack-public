@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+      Active sessions
+    </h1>
+    <p class="text-sm text-[var(--text-2)] mt-1">
+      Every open service tab across all users. The reconciler closes
+      sessions that haven't sent a heartbeat in 5 minutes — those
+      disappear from this list automatically.
+    </p>
+  </div>
+
+  <section
+    id="sessions-table"
+    hx-get="{{ url_for('sessions_active_fragment') }}"
+    hx-trigger="load delay:50ms, every 10s"
+    hx-swap="innerHTML"
+    class="min-h-[120px]">
+    <div class="text-sm text-[var(--text-2)] italic">Loading sessions…</div>
+  </section>
+{% endblock %}

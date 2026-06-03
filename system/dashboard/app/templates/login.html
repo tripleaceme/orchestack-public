@@ -1,0 +1,82 @@
+{#
+  Login page. Server-rendered HTML form (NOT HTMX) — we want a real form
+  POST that follows the 303 redirect with the Set-Cookie header from the
+  orchestrator. HTMX could do it too, but the full-page navigation is
+  what makes the cookie-receive flow simplest.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title or "Sign in" }} · OrcheStack</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy: #0f2a44; --navy-2: #1c3554;
+      --accent: #b45309;
+      --bg: #fafbfc; --surface: #ffffff; --border: #e5e9ef;
+      --text: #0f172a; --text-2: #64748b;
+    }
+    html, body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: var(--bg); color: var(--text); }
+    .brand-mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 40px;
+      background: var(--navy); color: white;
+      border-radius: 10px; font-weight: 800; font-size: 22px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center px-4">
+
+  <div class="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm p-8">
+    <div class="flex items-center gap-3 mb-6">
+      <span class="brand-mark">O</span>
+      <div>
+        <div class="font-semibold text-[var(--navy)] tracking-tight">OrcheStack</div>
+        <div class="text-xs text-[var(--text-2)]">Sign in to your control plane</div>
+      </div>
+    </div>
+
+    {% if error %}
+      <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+        {{ error }}
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('login_action') }}" class="space-y-3">
+      <label class="block">
+        <span class="text-xs font-medium text-[var(--text-2)]">Username or email</span>
+        <input name="username_or_email" required autofocus autocomplete="username"
+               class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                      px-3 py-2 bg-white focus:outline-none
+                      focus:ring-2 focus:ring-[var(--navy)] focus:border-[var(--navy)]" />
+      </label>
+      <label class="block">
+        <span class="text-xs font-medium text-[var(--text-2)]">Password</span>
+        <input name="password" type="password" required autocomplete="current-password"
+               class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                      px-3 py-2 bg-white focus:outline-none
+                      focus:ring-2 focus:ring-[var(--navy)] focus:border-[var(--navy)]" />
+      </label>
+      <input type="hidden" name="next" value="{{ next or '/' }}" />
+      <button type="submit"
+              class="w-full text-sm font-medium py-2 rounded
+                     bg-[var(--navy)] text-white
+                     hover:bg-[var(--navy-2)] transition-colors">
+        Sign in
+      </button>
+    </form>
+
+    <p class="text-xs text-[var(--text-2)] mt-4 text-center">
+      No account?
+      <a href="/signup" class="text-[var(--navy)] underline">Sign up</a>
+    </p>
+  </div>
+
+</body>
+</html>

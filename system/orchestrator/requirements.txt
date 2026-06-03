@@ -18,3 +18,8 @@ uvicorn[standard]==0.32.1
 # async driver and integrates with asyncio cleanly; we use it for both
 # the reconciler loop and the request handlers.
 asyncpg==0.30.0
+
+# Password hashing for M3.5's auth flow (signup + login). bcrypt is the
+# canonical choice; we run the CPU-bound hash/verify calls under
+# asyncio.to_thread so they don't block the event loop.
+bcrypt==4.2.0

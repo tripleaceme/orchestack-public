@@ -45,7 +45,12 @@
     <h1>Welcome back</h1>
     <p class="sub">Log in to manage your data platform.</p>
 
-    <form id="login-form" action="/app/api/login" method="POST">
+    {# The canonical login form lives at /app/login (dashboard-served) as
+       of M3.5 — login state is owned by the orchestrator + propagated via
+       a cookie that needs the dashboard's Path=/ scope. This page is kept
+       only so old links (marketing site, bookmarks) don't 404; the JS
+       below redirects on load. #}
+    <form id="login-form" action="/app/login" method="GET">
       <div class="form-group">
         <label for="l-identifier">Username or email</label>
         <input id="l-identifier" name="identifier" type="text" placeholder="you@company.ng" required autocomplete="username" autofocus>
@@ -57,13 +62,14 @@
         </label>
         <input id="l-password" name="password" type="password" placeholder="••••••••••••" required autocomplete="current-password">
       </div>
-      <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
-        <input id="l-remember" name="remember" type="checkbox" style="width:auto">
-        <label for="l-remember" style="margin:0;font-weight:500;color:var(--text-2)">Keep me signed in for 12 hours</label>
-      </div>
 
-      <button type="submit" class="btn btn-primary form-submit">Log in</button>
+      <button type="submit" class="btn btn-primary form-submit">Continue to sign-in →</button>
     </form>
+    <script>
+      // Auto-redirect to the canonical dashboard login. This page is a
+      // backward-compat shim; the form above is a no-JS fallback.
+      window.location.replace('/app/login');
+    </script>
 
     <div class="alt">
       Don't have an account yet? <a href="signup.html">Sign up</a>

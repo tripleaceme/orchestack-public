@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="mb-2">
+    <a href="{{ url_for('home') }}" class="text-xs text-[var(--text-2)] hover:text-[var(--navy)]">
+      ← Back to services
+    </a>
+  </div>
+
+  {% if service %}
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+        {{ service.display_name }}
+      </h1>
+      <p class="text-sm text-[var(--text-2)] mt-1">
+        <span class="font-mono">{{ service.layer or service.name }}</span>
+        · {{ service.tier }} tier
+        · {{ "running" if service.state == "running" else "stopped" }}
+      </p>
+    </div>
+
+    <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 mb-6">
+      <h2 class="text-sm font-semibold mb-3">Keep warm (pin)</h2>
+      <div hx-get="{{ url_for('services_grid') }}"
+           class="hidden"></div>
+      {#
+        Pin button loads its own initial state via a separate fragment
+        endpoint so the page-render path stays cheap. The button replaces
+        itself on click via the outerHTML swap pattern.
+      #}
+      <div id="pin-container"
+           hx-get="{{ url_for('pin_initial_button', name=service_name) }}"
+           hx-trigger="load delay:50ms"
+           hx-swap="innerHTML">
+        <div class="text-sm text-[var(--text-2)] italic">Loading pin state…</div>
+      </div>
+    </section>
+
+    <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
+      <h2 class="text-sm font-semibold mb-3">Recent activity</h2>
+      <div hx-get="{{ url_for('audit_table_fragment') }}?target={{ service_name }}&limit=20"
+           hx-trigger="load delay:50ms"
+           hx-swap="innerHTML"
+           class="min-h-[120px]">
+        <div class="text-sm text-[var(--text-2)] italic">Loading activity…</div>
+      </div>
+    </section>
+
+  {% else %}
+    <div class="bg-red-50 border border-red-200 rounded-lg p-5 text-sm text-red-800">
+      <strong class="font-semibold">Service not found.</strong>
+      <span class="text-red-700">
+        Either the name is wrong or the orchestrator is unreachable.
+      </span>
+    </div>
+  {% endif %}
+{% endblock %}

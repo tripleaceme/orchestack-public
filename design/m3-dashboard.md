@@ -1,10 +1,18 @@
 # M3 — Dashboard design
 
-**Status**: Design — implementation not started.
+**Status**: Implementation complete (phases 3.1 → 3.6).
 **Owner**: Ayoade.
-**Last updated**: 2026-06-02.
+**Last updated**: 2026-06-03.
 **Framework decision**: HTMX + FastAPI + Tailwind + Jinja2, after a 5-way
 evaluation in `test_ui_framework/`. See §1 for the rationale.
+
+> **2026-06-03 retrospective** — all six phases shipped on the original
+> framework choice. The bet on "no Python-wrapper framework" held up: the
+> dashboard's visual identity matches the marketing site and auth pages
+> exactly because we wrote the HTML ourselves with Tailwind. Total
+> dashboard image: ~120 MB (python:3.12-slim + fastapi + httpx + jinja),
+> well under the 500 MB target. See §11 "What we actually built" at the
+> bottom of this document for the full delta vs. the original plan.
 
 This document specifies the OrcheStack administrator dashboard: the
 operator-facing UI that consumes the orchestrator's HTTP API and presents
@@ -306,3 +314,120 @@ Drawing the line clearly:
    the home page. Modal is faster to develop and feels snappier; dedicated
    page is shareable via URL. Picking dedicated page for now; revisit if
    the link-sharing use case turns out not to matter.
+
+---
+
+## 11. What we actually built (retrospective)
+
+Filling in the gap between the design above and what shipped. Each phase
+landed roughly within the time estimate; the main delta is in shape, not
+scope.
+
+### 11.1 Phases as shipped
+
+| Phase | Original plan | What shipped | Delta |
+|-------|---------------|--------------|-------|
+| 3.1 Skeleton | nginx stub replacement; `/app/` page calls `/api/health` via HTMX | Same, plus base.html design tokens reused by all later pages | — |
+| 3.2 Service grid | 9 cards from `GET /api/services`, start/stop buttons, 10s refresh, connection indicator | Same + extended orchestrator API with `layer` and `managed` so unmanaged services render a disabled "Unavailable" button instead of allowing a guaranteed-500 click | Extra orchestrator API fields |
+| 3.3 Sessions + tool opens | Click card → opens proxied tool URL + opens session, JS heartbeat ticker, `/app/sessions` page | Same. Heartbeats fire from the *dashboard tab*, not the tool tab (we can't inject JS into Metabase/pgAdmin); reconciler is the safety net for closed-tool-tab cleanup | Dashboard-tab-owned heartbeat lifecycle |
+| 3.4 Audit + pin UI | Paginated `/app/audit` page with filters, pin toggle on service detail, optimistic UI | Same. Service detail page also embeds a filtered audit-log view (`?target=<service>`) so per-service activity is visible without leaving the page | Service-detail page composes audit fragment |
+| 3.5 Auth integration | `POST /api/auth/login`, `/logout`, `GET /api/auth/me`, `require_session` dependency, signup writes to `platform.users` | Same. `auth/public/login.html` now redirects to `/app/login` (the dashboard's canonical login). Cookie has `Path=/` so it propagates to all OrcheStack routes (dashboard + orchestrator + auth) | Old `/login` becomes a redirect |
+| 3.6 Polish + docs | Empty states, keyboard shortcuts, tooltips, this design doc updated | Same. Keyboard shortcuts: `g h` / `g s` / `g a` / `?`. Compiled Tailwind deferred to v1.0 (CDN still in use) | Tailwind compile deferred |
+
+### 11.2 Route map at end of M3
+
+Dashboard (`tripleaceme/orchestack-dashboard`) — Traefik strips `/app`:
+
+```
+Pages (all require auth; redirect to /app/login on 401)
+  GET  /                              → Service grid
+  GET  /sessions                      → Active-sessions table
+  GET  /audit                         → Audit log with filters
+  GET  /services/{name}               → Service detail (pin + activity)
+  GET  /login                         → Login form (unauth OK)
+
+HTMX fragment endpoints
+  GET  /api/dashboard/health
+  GET  /api/dashboard/services/grid
+  GET  /api/dashboard/services/{name}/pin-button
+  GET  /api/dashboard/sessions/active
+  GET  /api/dashboard/audit/table
+
+HTMX action endpoints
+  POST /api/dashboard/services/{name}/start  → returns updated card
+  POST /api/dashboard/services/{name}/stop   → returns updated card
+  POST /api/dashboard/services/{name}/pin    → returns pin button
+  DELETE /api/dashboard/services/{name}/pin  → returns pin button
+
+Session lifecycle (consumed by the JS in base.html)
+  POST /api/dashboard/services/{name}/open      → JSON { token, tool_url }
+  POST /api/dashboard/sessions/{token}/heartbeat
+  POST /api/dashboard/sessions/{token}/close    → DELETE via sendBeacon
+
+Auth (proxied to orchestrator)
+  POST /api/dashboard/auth/login   (form-encoded)
+  POST /api/dashboard/auth/logout
+
+Container liveness
+  GET  /healthz                       → "ok" (no orchestrator call)
+```
+
+Orchestrator additions during M3:
+
+```
+GET  /api/services             — extended with layer + managed
+GET  /api/services/{name}/pin  — pin state for the dashboard's toggle
+GET  /api/sessions             — paginated list with users JOIN
+GET  /api/audit                — paginated audit log with filters
+POST /api/auth/login           — bcrypt-verify, set Set-Cookie
+POST /api/auth/logout          — revoke session, clear cookie
+GET  /api/auth/me              — current user + roles
+POST /api/users                — signup; first user auto-Admin
+```
+
+### 11.3 Architectural choices that surprised us
+
+- **localStorage for session tokens, not a server-side "my sessions"
+  endpoint.** Until M3.5 wires up auth cookies, every session belongs to
+  the seeded `DEFAULT_USER_ID`. The dashboard tab uses localStorage to
+  remember which tokens it owns; the heartbeat ticker reads from there.
+  Phase 3.5 could replace this with `GET /api/sessions?user_id=me` once
+  the user is identifiable, but localStorage continues to work and the
+  refactor wasn't worth the churn.
+- **Dashboard tab owns the heartbeat, not the tool tab.** We can't inject
+  JS into Metabase / pgAdmin / etc. — they're third-party apps. The
+  dashboard tab fires `/api/sessions/{token}/checkin` every 30s for
+  every active service. Closing the dashboard kills all your sessions
+  in 5 min (reconciler's stale-heartbeat sweep); closing just one tool
+  tab is invisible to us, but the reconciler also catches that case
+  because nobody's heartbeating for that service.
+- **`hx-on::before-request` for optimistic UI.** Instead of a separate
+  pre-mutation state in the template, the start/stop buttons use the
+  HTMX-emitted `before-request` event to mutate themselves *before* the
+  HTTP call: button text → "Stopping…", `disabled = true`. Failure
+  re-renders the whole card with the current state, which fixes the
+  optimistic mutation if it was wrong. ~3 extra lines per button beat
+  a full state machine.
+- **JSON `target` filter for the audit log.** The audit table reuses
+  exactly one fragment endpoint for the global view AND the per-service
+  view — the service-detail page passes `?target=<service_name>` and
+  gets the filtered subset for free. One Jinja template covers both
+  use cases.
+
+### 11.4 What we deliberately did NOT do
+
+- **Compiled Tailwind.** CDN still in use; final image is ~70 KB heavier
+  than it could be. Acceptable trade-off for now; v1.0 cleanup item.
+- **WebSocket service-state stream.** 10s polling is fine at this scale.
+  WebSocket upgrade is a future-work item if 10s lag ever feels slow.
+- **Service worker for cross-tab session tracking.** Operators close the
+  dashboard ⇒ all sessions die in 5 min. Acceptable; documented.
+- **Audit retention policy.** Audit log grows unbounded. M5's evaluation
+  query computes some aggregates; production-grade retention/archival
+  is post-M3 work.
+- **`/app/admin/users` page.** Listed in §4 but not built — user
+  management beyond first-user auto-Admin is post-M3 (M4 follow-up).
+- **Forgot-password flow.** The signup → login → use loop is complete;
+  recovery is post-M3. Operators can `UPDATE platform.users SET
+  password_hash = ...` directly via pgAdmin if they need to in the
+  meantime.

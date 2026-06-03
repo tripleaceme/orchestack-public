@@ -1,0 +1,43 @@
+{#
+  Pin/unpin button. Rendered standalone (on the service detail page) AND
+  after pin/unpin actions to flip state. Uses `hx-swap="outerHTML"`
+  against itself by setting an id on the outermost element.
+#}
+{% if pin %}
+  <div id="pin-button-{{ service_name }}" class="flex items-center gap-3">
+    <button hx-delete="{{ url_for('unpin_service_action', name=service_name) }}"
+            hx-target="#pin-button-{{ service_name }}"
+            hx-swap="outerHTML"
+            hx-confirm="Remove the keep-warm pin from {{ service_name }}?"
+            class="text-sm font-medium px-3 py-1.5 rounded
+                   border border-amber-300 text-amber-800 bg-amber-50
+                   hover:bg-amber-100 transition-colors">
+      ★ Pinned — click to unpin
+    </button>
+    <span class="text-xs text-[var(--text-2)]">
+      {% if pin.expires_at %}
+        expires {{ pin.expires_at[:19] }}
+      {% else %}
+        no expiry
+      {% endif %}
+      {% if pin.pinned_by_username %}
+        · by <span class="font-mono">{{ pin.pinned_by_username }}</span>
+      {% endif %}
+    </span>
+  </div>
+{% else %}
+  <div id="pin-button-{{ service_name }}">
+    <button hx-post="{{ url_for('pin_service_action', name=service_name) }}"
+            hx-target="#pin-button-{{ service_name }}"
+            hx-swap="outerHTML"
+            class="text-sm font-medium px-3 py-1.5 rounded
+                   border border-[var(--border)] text-[var(--text-2)] bg-white
+                   hover:border-amber-300 hover:text-amber-800 transition-colors">
+      ☆ Pin (keep warm)
+    </button>
+    <p class="text-xs text-[var(--text-2)] mt-1">
+      Pinning prevents the reconciler from stopping this service while
+      it's idle. Default duration: 2 hours.
+    </p>
+  </div>
+{% endif %}

@@ -107,16 +107,69 @@
 
 <script>
   // ============================================================
-  // M1 stub — save profile to localStorage, then route to the wizard.
-  // The wizard pages read OrcheStack.setup.profile to display
-  // "Signed in as <email>" etc. The password is NEVER stored client-side;
-  // it would normally be POSTed to /app/api/signup, bcrypted, and the
-  // backend would set a session cookie. We deliberately do not even
-  // capture password into a variable that survives the function scope.
+  // M3.5 — real signup. POST to /orchestrator/api/users, which:
+  //   1. bcrypts the password
+  //   2. INSERTs into platform.users
+  //   3. auto-assigns the Admin role if this is the first user
+  // Then we save the non-secret profile to localStorage (so the wizard
+  // can display "Signed in as <email>") and navigate to setup/welcome.
+  //
+  // The password is sent over the wire (TLS in prod) and is NEVER stored
+  // client-side — we deliberately do not assign it into any var that
+  // outlives this submit handler.
   // ============================================================
-  document.getElementById('signup-form').addEventListener('submit', (e) => {
+  document.getElementById('signup-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const data = new FormData(e.target);
+
+    // Inline error banner — created lazily.
+    let errEl = document.getElementById('signup-error');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.id = 'signup-error';
+      errEl.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:0.75rem;border-radius:8px;margin-bottom:1rem;font-size:0.875rem;display:none;';
+      e.target.parentNode.insertBefore(errEl, e.target);
+    }
+    const showError = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; };
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating account…';
+
+    let resp;
+    try {
+      resp = await fetch('/orchestrator/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username:     data.get('username'),
+          email:        data.get('email'),
+          full_name:    data.get('full_name'),
+          password:     data.get('password'),
+          company_name: data.get('company_name') || null,
+        }),
+      });
+    } catch (transportErr) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create account';
+      showError(`Sign-up service is unreachable. ${transportErr.message}`);
+      return;
+    }
+
+    if (!resp.ok) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create account';
+      let detail = 'Sign-up failed. Please try again.';
+      try {
+        const body = await resp.json();
+        if (body && body.detail) detail = body.detail;
+      } catch (_) { /* non-JSON response */ }
+      showError(detail);
+      return;
+    }
+
+    // Success: stash the profile (no password) for the wizard's display
+    // banner, then navigate to the wizard's welcome step.
     const profile = {
       full_name:    data.get('full_name'),
       email:        data.get('email'),

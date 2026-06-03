@@ -58,8 +58,10 @@
     </p>
   {% endif %}
 
-  {# Action button: start or stop, disabled for unmanaged services. #}
-  <div class="mt-auto pt-1">
+  {# Action buttons. Optimistic UI: hx-on::before-request gives the card
+     a visual "working..." state immediately, before the orchestrator
+     responds. The actual response replaces the whole card via outerHTML. #}
+  <div class="mt-auto pt-1 space-y-1.5">
     {% if not service.managed %}
       <button type="button" disabled
               title="This service is in the catalogue but its compose snippet ships in M4."
@@ -69,31 +71,49 @@
         Unavailable
       </button>
     {% elif is_running %}
+      {# Primary action: Open the tool in a new tab + create a session.
+         Calls a JS helper in base.html that POSTs to /open then opens
+         the tool URL. #}
+      <button type="button"
+              onclick="orchestackOpenService('{{ service.name }}')"
+              title="Open {{ service.display_name }} in a new tab"
+              class="w-full text-sm font-medium py-1.5 rounded
+                     bg-[var(--navy)] text-white
+                     hover:bg-[var(--navy-2)] transition-colors">
+        Open
+      </button>
+      {# Secondary action: Stop the service. Outline style. #}
       <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
               hx-swap="outerHTML"
               hx-disabled-elt="this"
-              hx-indicator="#spinner-{{ service.name }}"
+              hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
+              hx-on::before-request="this.textContent = 'Stopping…'; this.disabled = true"
               class="w-full text-sm font-medium py-1.5 rounded border
                      border-[var(--border)] text-[var(--text)] bg-white
                      hover:border-red-300 hover:text-red-700
                      transition-colors disabled:opacity-50">
         Stop
-        <span id="spinner-{{ service.name }}" class="htmx-indicator">…</span>
       </button>
     {% else %}
       <button hx-post="{{ url_for('start_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
               hx-swap="outerHTML"
               hx-disabled-elt="this"
-              hx-indicator="#spinner-{{ service.name }}"
+              hx-on::before-request="this.textContent = 'Starting…'; this.disabled = true"
               class="w-full text-sm font-medium py-1.5 rounded
                      bg-[var(--navy)] text-white
                      hover:bg-[var(--navy-2)] transition-colors
                      disabled:opacity-50">
         Start
-        <span id="spinner-{{ service.name }}" class="htmx-indicator">…</span>
       </button>
     {% endif %}
+    {# Tertiary action: link to the detail page. Always present so users
+       can pin or see activity even for stopped/unmanaged services. #}
+    <a href="{{ url_for('service_detail', name=service.name) }}"
+       class="block text-center text-xs text-[var(--text-2)]
+              hover:text-[var(--navy)] underline-offset-2 hover:underline">
+      Details · pin · activity
+    </a>
   </div>
 </article>

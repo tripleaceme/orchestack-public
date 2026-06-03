@@ -1,26 +1,17 @@
-"""OrcheStack dashboard — phases 3.1 → 3.2.
+"""OrcheStack dashboard — phases 3.1 → 3.6.
 
-Phase 3.1 shipped:
-  - FastAPI skeleton + base.html
-  - /healthz (container liveness, NOT orchestrator)
-  - /api/dashboard/health → orchestrator health proxy
+Routes in this file are grouped by concern:
+    Container liveness           /healthz
+    Pages                        /, /sessions, /audit, /services/{name}, /login
+    HTMX fragment endpoints      /api/dashboard/<...>
+    Session lifecycle            /api/dashboard/services/<name>/open,
+                                 /api/dashboard/sessions/<token>/heartbeat
+                                 /api/dashboard/sessions/<token>/close
+    Auth                         /api/dashboard/auth/login, /logout
 
-Phase 3.2 adds:
-  - GET /api/dashboard/services/grid — full grid fragment (auto-refresh)
-  - POST /api/dashboard/services/{name}/start → returns updated card
-  - POST /api/dashboard/services/{name}/stop  → returns updated card
-
-What this phase does NOT yet ship (lands in later phases):
-  - Session check-ins (phase 3.3)
-  - Audit log + pinning (phase 3.4)
-  - Authentication (phase 3.5)
-  - Compiled Tailwind, polish (phase 3.6)
-
-URL handling: Traefik strips the `/app` prefix before forwarding requests
-to this container. We pass `root_path="/app"` to FastAPI so its URL
-generation (Jinja2's `url_for`) reconstructs the full external URL —
-internal routes stay at `/`, `/api/dashboard/*`, but HTML links go out as
-`/app/`, `/app/api/dashboard/*`. One setting handles the asymmetry.
+URL handling: Traefik strips the `/app` prefix before forwarding to this
+container. We pass `root_path="/app"` to FastAPI so url_for() reconstructs
+the full external URL; internal routes stay at `/`, `/api/dashboard/*`.
 
 See OrcheStack/design/m3-dashboard.md for the architecture overview.
 """
@@ -32,8 +23,8 @@ import os
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .orchestrator_client import OrchestratorClient
@@ -43,34 +34,25 @@ ORCHESTRATOR_URL = os.environ.get(
     "ORCHESTRATOR_URL", "http://orchestack-orchestrator:8000"
 )
 LOG_LEVEL = os.environ.get("DASHBOARD_LOG_LEVEL", "info").upper()
-
-# `root_path=/app` because Traefik strips `/app` before forwarding. With
-# this, FastAPI's URL generation correctly reconstructs the external URL.
 ROOT_PATH = os.environ.get("DASHBOARD_ROOT_PATH", "/app")
+SESSION_COOKIE_NAME = "orchestack_session"
 
-# ---------- Logging --------------------------------------------------------
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 log = logging.getLogger("dashboard")
 
-# ---------- Templates ------------------------------------------------------
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
-# ---------- Orchestrator client (shared) ----------------------------------
-# One instance for the whole app — the client itself is stateless beyond
-# its base_url, and creates a fresh httpx.AsyncClient per call.
 orchestrator = OrchestratorClient(ORCHESTRATOR_URL)
 
-# ---------- App ------------------------------------------------------------
 app = FastAPI(
     title="OrcheStack dashboard",
-    description="Administrator UI. Phase 3.2 — service grid + actions.",
-    version="0.2.0",
+    description="Administrator UI. Phases 3.1–3.6.",
+    version="0.6.0",
     root_path=ROOT_PATH,
-    # Disable interactive docs in production; pure presentation app.
     docs_url=None,
     redoc_url=None,
 )
@@ -79,12 +61,61 @@ app = FastAPI(
 @app.on_event("startup")
 async def on_startup() -> None:
     log.info(
-        "orchestack-dashboard phase=3.2 root_path=%s orchestrator=%s — ready",
+        "orchestack-dashboard phase=3.6 root_path=%s orchestrator=%s — ready",
         ROOT_PATH, ORCHESTRATOR_URL,
     )
 
 
-# ---------- /healthz (container-level health, separate from orchestrator) --
+# ===========================================================================
+#  Auth — current user dependency
+# ===========================================================================
+async def current_user(request: Request) -> dict[str, object] | None:
+    """Resolve the current user from the session cookie, or None.
+
+    Doesn't 401 — that's `require_user`'s job. This helper is used by
+    page handlers that want to render different states for logged-in vs.
+    not-logged-in users (e.g. the header showing 'Signed in as X').
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    if not cookie:
+        return None
+    try:
+        return await orchestrator.auth_me(cookie)
+    except httpx.HTTPError:
+        return None
+
+
+async def require_user(request: Request) -> dict[str, object]:
+    """Guard route dependency — 401-redirects to /app/login if not signed in."""
+    user = await current_user(request)
+    if user is None:
+        # We can't return a redirect directly from a Depends — raise an
+        # HTTPException that the global exception handler turns into a
+        # redirect. The path the user wanted is preserved via `next`.
+        raise HTTPException(
+            status_code=307,
+            detail="login_required",
+            headers={"Location": f"{ROOT_PATH}/login?next={request.url.path}"},
+        )
+    return user
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    """Convert 307 login_required exceptions into real RedirectResponses."""
+    if exc.status_code == 307 and exc.detail == "login_required":
+        return RedirectResponse(url=exc.headers["Location"], status_code=307)
+    # Fall through to FastAPI's default JSON response for everything else.
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=dict(exc.headers or {}),
+    )
+
+
+# ===========================================================================
+#  Container liveness
+# ===========================================================================
 @app.get("/healthz", response_class=PlainTextResponse, include_in_schema=False)
 async def healthz() -> str:
     """Liveness check for Docker's HEALTHCHECK directive.
@@ -98,30 +129,73 @@ async def healthz() -> str:
     return "ok\n"
 
 
-# ---------- Home page ------------------------------------------------------
+# ===========================================================================
+#  Pages
+# ===========================================================================
 @app.get("/", response_class=HTMLResponse, name="home")
-async def home(request: Request) -> HTMLResponse:
-    """Render the dashboard home page.
-
-    Server-rendered shell + an HTMX grid that polls for live service
-    state. First paint shows the empty grid (with "Loading…") and HTMX
-    fills it in ~50ms later.
-    """
+async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """Service grid + platform health card."""
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "page_title": "Home"},
+        {"request": request, "page_title": "Home", "user": user},
     )
 
 
-# ---------- HTMX fragment: orchestrator health ----------------------------
+@app.get("/sessions", response_class=HTMLResponse, name="sessions_page")
+async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """`/app/sessions` — live table of all open service sessions."""
+    return templates.TemplateResponse(
+        "sessions.html",
+        {"request": request, "page_title": "Sessions", "user": user},
+    )
+
+
+@app.get("/audit", response_class=HTMLResponse, name="audit_page")
+async def audit_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """`/app/audit` — paginated audit log with filters."""
+    return templates.TemplateResponse(
+        "audit.html",
+        {"request": request, "page_title": "Audit log", "user": user},
+    )
+
+
+@app.get("/services/{name}", response_class=HTMLResponse, name="service_detail")
+async def service_detail(
+    request: Request, name: str, user=Depends(require_user)
+) -> HTMLResponse:
+    """`/app/services/{name}` — per-service detail page with pin toggle."""
+    try:
+        svc = await orchestrator.get_service(name)
+    except httpx.HTTPError:
+        svc = None
+    return templates.TemplateResponse(
+        "service_detail.html",
+        {
+            "request": request,
+            "page_title": svc["display_name"] if svc else name,
+            "service": svc,
+            "service_name": name,
+            "user": user,
+        },
+    )
+
+
+@app.get("/login", response_class=HTMLResponse, name="login_page")
+async def login_page(request: Request, next: str = "/") -> HTMLResponse:
+    """`/app/login` — username/password form."""
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "page_title": "Sign in", "next": next, "error": None},
+    )
+
+
+# ===========================================================================
+#  HTMX fragment: orchestrator health
+# ===========================================================================
 @app.get("/api/dashboard/health", response_class=HTMLResponse,
           name="health_fragment")
 async def health_fragment(request: Request) -> HTMLResponse:
     """Proxy to the orchestrator's /api/health, render as an HTML fragment.
-
-    HTMX swaps this fragment into the page on a timer. The fragment is
-    deliberately small — just the connection status + the orchestrator's
-    subsystem checks. The full page never re-renders.
 
     Failure handling: if the orchestrator is unreachable, we still return
     200 with a fragment that says "orchestrator unreachable" — that way
@@ -140,30 +214,17 @@ async def health_fragment(request: Request) -> HTMLResponse:
 
     return templates.TemplateResponse(
         "_health_fragment.html",
-        {
-            "request": request,
-            "reachable": reachable,
-            "health": health,
-        },
+        {"request": request, "reachable": reachable, "health": health},
     )
 
 
-# ---------- HTMX fragment: service grid -----------------------------------
+# ===========================================================================
+#  HTMX fragment: service grid
+# ===========================================================================
 @app.get("/api/dashboard/services/grid", response_class=HTMLResponse,
           name="services_grid")
 async def services_grid_fragment(request: Request) -> HTMLResponse:
-    """Render the full service grid.
-
-    Called every 10s by HTMX's `hx-trigger="every 10s"`. Returns the
-    whole grid's innerHTML — the parent div is preserved by HTMX, so
-    only the contents (the cards themselves) flicker on refresh.
-
-    Error handling: if the orchestrator is unreachable, we render a
-    single banner via the same fragment template. The grid container
-    keeps polling and recovers automatically once the orchestrator is
-    back. We deliberately do NOT cache the last good response — showing
-    stale state during an outage is worse than showing the outage.
-    """
+    """Render the full service grid (called every 10s by HTMX)."""
     try:
         data = await orchestrator.list_services()
         services = data.get("services", [])
@@ -175,40 +236,33 @@ async def services_grid_fragment(request: Request) -> HTMLResponse:
 
     return templates.TemplateResponse(
         "_service_grid_fragment.html",
-        {
-            "request": request,
-            "services": services,
-            "error": error,
-        },
+        {"request": request, "services": services, "error": error},
     )
 
 
-# ---------- HTMX action: start a service ----------------------------------
+# ===========================================================================
+#  HTMX action: start a service
+# ===========================================================================
 @app.post("/api/dashboard/services/{name}/start", response_class=HTMLResponse,
            name="start_service_action")
 async def start_service_action(request: Request, name: str) -> HTMLResponse:
     """Tell the orchestrator to start `name`, return the updated card.
 
-    Two HTTP calls per request: POST start, then GET list to fetch the
-    new state. We could optimise by trusting the start response's
-    `{state: "running"}` payload, but re-listing keeps the card's
-    container name accurate — that comes from `docker ps`, not from the
-    catalogue.
-
     Error path: if start fails (orchestrator down, compose error), we
-    re-fetch the service to render it in its actual current state, then
-    rely on the visual cue of the still-stopped dot. Phase 3.4 will add
-    a toast/banner for explicit error feedback.
+    re-fetch the service to render its actual current state — the visual
+    cue of the still-stopped dot is the error feedback. Phase 3.6 may add
+    a toast for explicit error feedback.
     """
     try:
         await orchestrator.start_service(name)
     except httpx.HTTPError as e:
         log.warning("start_service(%s) failed: %s", name, e)
-
     return await _render_card(request, name)
 
 
-# ---------- HTMX action: stop a service -----------------------------------
+# ===========================================================================
+#  HTMX action: stop a service
+# ===========================================================================
 @app.post("/api/dashboard/services/{name}/stop", response_class=HTMLResponse,
            name="stop_service_action")
 async def stop_service_action(request: Request, name: str) -> HTMLResponse:
@@ -217,19 +271,241 @@ async def stop_service_action(request: Request, name: str) -> HTMLResponse:
         await orchestrator.stop_service(name)
     except httpx.HTTPError as e:
         log.warning("stop_service(%s) failed: %s", name, e)
-
     return await _render_card(request, name)
 
 
-# ---------- Helper --------------------------------------------------------
+# ===========================================================================
+#  HTMX action: pin / unpin
+# ===========================================================================
+@app.post("/api/dashboard/services/{name}/pin", response_class=HTMLResponse,
+           name="pin_service_action")
+async def pin_service_action(request: Request, name: str) -> HTMLResponse:
+    try:
+        await orchestrator.pin_service(name)
+    except httpx.HTTPError as e:
+        log.warning("pin_service(%s) failed: %s", name, e)
+    return await _render_pin_button(request, name)
+
+
+@app.get("/api/dashboard/services/{name}/pin-button", response_class=HTMLResponse,
+          name="pin_initial_button")
+async def pin_initial_button(request: Request, name: str) -> HTMLResponse:
+    """Initial render of the pin button — used on the service detail page
+    when it first loads. The action endpoints (POST/DELETE) reuse the
+    same fragment template so subsequent state changes look identical."""
+    return await _render_pin_button(request, name)
+
+
+@app.delete("/api/dashboard/services/{name}/pin", response_class=HTMLResponse,
+            name="unpin_service_action")
+async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
+    try:
+        await orchestrator.unpin_service(name)
+    except httpx.HTTPError as e:
+        log.warning("unpin_service(%s) failed: %s", name, e)
+    return await _render_pin_button(request, name)
+
+
+# ===========================================================================
+#  Session lifecycle (Open / heartbeat / close)
+# ===========================================================================
+@app.post("/api/dashboard/services/{name}/open", name="open_service_session")
+async def open_service_session(name: str) -> JSONResponse:
+    """Open an orchestrator session against `name` and return the tool URL.
+
+    Returns JSON `{token, tool_url, service}`. The dashboard's client-side
+    JS stores `token` in localStorage so the heartbeat ticker can refresh
+    it, and opens `tool_url` in a new tab.
+
+    The `tool_url` is constructed from the dashboard's ROOT_PATH (so it
+    works regardless of where Traefik mounts the dashboard) plus the
+    service name — e.g. `/app/metabase`. The actual tool container's
+    Traefik label decides what's there; the dashboard doesn't care.
+    """
+    try:
+        result = await orchestrator.open_session(name, auto_start=True)
+    except httpx.HTTPError as e:
+        log.warning("open_session(%s) failed: %s", name, e)
+        return JSONResponse(
+            status_code=502,
+            content={"error": "orchestrator unreachable", "detail": str(e)},
+        )
+    # Tool URL: tools are mounted under the dashboard's same root.
+    # /app/metabase, /app/pgadmin, etc. — Traefik handles the dispatch.
+    tool_url = f"{ROOT_PATH}/{name}"
+    return JSONResponse({
+        "token": result.get("token"),
+        "service": name,
+        "tool_url": tool_url,
+        "started": result.get("started", False),
+    })
+
+
+@app.post("/api/dashboard/sessions/{token}/heartbeat",
+           name="session_heartbeat")
+async def session_heartbeat(token: str) -> JSONResponse:
+    """Forward a session heartbeat to the orchestrator's checkin endpoint."""
+    try:
+        result = await orchestrator.checkin_session(token)
+    except httpx.HTTPError as e:
+        log.warning("checkin(%s) failed: %s", token[:8], e)
+        return JSONResponse(
+            status_code=502,
+            content={"error": "orchestrator unreachable"},
+        )
+    return JSONResponse(result)
+
+
+@app.post("/api/dashboard/sessions/{token}/close", name="session_close")
+async def session_close(token: str) -> Response:
+    """Close a session — proxies to the orchestrator's DELETE.
+
+    Note: POST (not DELETE) because this endpoint is the target of
+    `navigator.sendBeacon()` calls from beforeunload handlers, and
+    sendBeacon doesn't support DELETE. The forwarded orchestrator call
+    is the real DELETE.
+    """
+    try:
+        await orchestrator.close_session(token)
+    except httpx.HTTPError as e:
+        log.warning("close_session(%s) failed: %s", token[:8], e)
+    return Response(status_code=204)
+
+
+# ===========================================================================
+#  HTMX fragment: active sessions table
+# ===========================================================================
+@app.get("/api/dashboard/sessions/active", response_class=HTMLResponse,
+          name="sessions_active_fragment")
+async def sessions_active_fragment(request: Request) -> HTMLResponse:
+    """Render the active-sessions table fragment (polled every 10s)."""
+    try:
+        data = await orchestrator.list_sessions(active=True)
+        sessions = data.get("sessions", [])
+        error = None
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("list_sessions failed: %s", e)
+        sessions = []
+        error = str(e)
+    return templates.TemplateResponse(
+        "_sessions_table_fragment.html",
+        {"request": request, "sessions": sessions, "error": error},
+    )
+
+
+# ===========================================================================
+#  HTMX fragment: audit log table
+# ===========================================================================
+@app.get("/api/dashboard/audit/table", response_class=HTMLResponse,
+          name="audit_table_fragment")
+async def audit_table_fragment(
+    request: Request,
+    event_type: str | None = None, target: str | None = None,
+    since: str | None = None, until: str | None = None,
+    limit: int = 50, offset: int = 0,
+) -> HTMLResponse:
+    """Render the audit-log table fragment with optional filters."""
+    try:
+        data = await orchestrator.list_audit(
+            event_type=event_type, target=target,
+            since=since, until=until,
+            limit=limit, offset=offset,
+        )
+        events = data.get("events", [])
+        total = data.get("total", 0)
+        error = None
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("list_audit failed: %s", e)
+        events = []
+        total = 0
+        error = str(e)
+    return templates.TemplateResponse(
+        "_audit_table_fragment.html",
+        {
+            "request": request,
+            "events": events, "total": total, "error": error,
+            "limit": limit, "offset": offset,
+            "event_type": event_type, "target": target,
+            "since": since, "until": until,
+        },
+    )
+
+
+# ===========================================================================
+#  Auth — login + logout (proxies to orchestrator)
+# ===========================================================================
+@app.post("/api/dashboard/auth/login", name="login_action")
+async def login_action(
+    request: Request,
+    username_or_email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+) -> Response:
+    """Forward credentials to the orchestrator's login endpoint and
+    propagate the Set-Cookie response back to the browser.
+
+    Returns a 303 redirect to `next` on success (or `/`); falls back to
+    re-rendering the login page with an error on failure. 303 (not 302)
+    is the canonical "post-redirect-get" status that turns a form POST
+    into a GET — prevents the browser from double-submitting if the user
+    refreshes the page after login.
+    """
+    try:
+        body, set_cookie = await orchestrator.auth_login(username_or_email, password)
+    except httpx.HTTPStatusError as e:
+        log.info("login failed for %r (status %d)", username_or_email, e.response.status_code)
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request, "page_title": "Sign in",
+                "next": next, "error": "Invalid username or password.",
+            },
+            status_code=401,
+        )
+    except httpx.HTTPError as e:
+        log.warning("login transport error: %s", e)
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request, "page_title": "Sign in",
+                "next": next, "error": "Sign-in service is unreachable. Try again shortly.",
+            },
+            status_code=502,
+        )
+
+    # Construct the response — redirect to `next` (validated to start with
+    # `/` to prevent open-redirect attacks against external URLs).
+    safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
+    response = RedirectResponse(url=f"{ROOT_PATH}{safe_next}", status_code=303)
+    if set_cookie:
+        # Forward the orchestrator's Set-Cookie header verbatim. The cookie's
+        # Path is set by the orchestrator (typically Path=/); HttpOnly +
+        # SameSite=Lax are set there too.
+        response.headers["set-cookie"] = set_cookie
+    return response
+
+
+@app.post("/api/dashboard/auth/logout", name="logout_action")
+async def logout_action(request: Request) -> Response:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.auth_logout(cookie)
+    except httpx.HTTPError as e:
+        log.warning("logout proxy failed: %s", e)
+    response = RedirectResponse(url=f"{ROOT_PATH}/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response
+
+
+# ===========================================================================
+#  Helpers
+# ===========================================================================
 async def _render_card(request: Request, name: str) -> HTMLResponse:
     """Look up a single service by name and render its card fragment.
 
-    Used by both start and stop action endpoints — they both need to
-    return the updated card after their respective state change. If the
-    service has vanished from the catalogue (shouldn't happen) we render
-    an inert stopped+unmanaged card so HTMX still gets valid HTML to
-    swap in.
+    If the service has vanished from the catalogue (shouldn't happen) we
+    render an inert stopped+unmanaged card so HTMX still gets valid HTML
+    to swap in.
     """
     try:
         svc = await orchestrator.get_service(name)
@@ -239,16 +515,25 @@ async def _render_card(request: Request, name: str) -> HTMLResponse:
 
     if svc is None:
         svc = {
-            "name": name,
-            "display_name": name,
-            "tier": "cold",
-            "layer": None,
-            "state": "stopped",
-            "container": None,
+            "name": name, "display_name": name, "tier": "cold",
+            "layer": None, "state": "stopped", "container": None,
             "managed": False,
         }
 
     return templates.TemplateResponse(
         "_service_card_fragment.html",
         {"request": request, "service": svc},
+    )
+
+
+async def _render_pin_button(request: Request, name: str) -> HTMLResponse:
+    """Re-render the pin/unpin button for the service detail page."""
+    try:
+        pin = await orchestrator.get_pin(name)
+    except httpx.HTTPError as e:
+        log.warning("get_pin(%s) failed: %s", name, e)
+        pin = None
+    return templates.TemplateResponse(
+        "_pin_button_fragment.html",
+        {"request": request, "service_name": name, "pin": pin},
     )

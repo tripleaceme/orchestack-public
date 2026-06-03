@@ -69,3 +69,126 @@ class OrchestratorClient:
             resp = await client.get(f"{self.base_url}/api/health")
             resp.raise_for_status()
             return resp.json()
+
+    # ---- Sessions ---------------------------------------------------------
+    async def open_session(
+        self, service: str, *, auto_start: bool = True, user_id: int | None = None
+    ) -> dict[str, object]:
+        """Open a service session against the orchestrator.
+
+        Long timeout because auto_start may trigger a compose-up that pulls
+        an image. Same number as start_service() for consistency.
+        """
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/sessions",
+                json={"service": service, "auto_start": auto_start, "user_id": user_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def checkin_session(self, token: str) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.post(f"{self.base_url}/api/sessions/{token}/checkin")
+            resp.raise_for_status()
+            return resp.json()
+
+    async def close_session(self, token: str) -> None:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.delete(f"{self.base_url}/api/sessions/{token}")
+            resp.raise_for_status()
+
+    async def list_sessions(
+        self, *, active: bool = True, limit: int = 100, offset: int = 0
+    ) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(
+                f"{self.base_url}/api/sessions",
+                params={"active": str(active).lower(), "limit": limit, "offset": offset},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    # ---- Pinning ----------------------------------------------------------
+    async def pin_service(
+        self, name: str, *, ttl_seconds: int | None = 7200, reason: str | None = None
+    ) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/services/{name}/pin",
+                json={"ttl_seconds": ttl_seconds, "reason": reason},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def unpin_service(self, name: str) -> None:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.delete(f"{self.base_url}/api/services/{name}/pin")
+            resp.raise_for_status()
+
+    async def get_pin(self, name: str) -> dict[str, object] | None:
+        """Return the current pin record for `name`, or None if not pinned.
+
+        Relies on the orchestrator's GET /api/services/{name}/pin endpoint
+        (added in M3.4) — 404 means not pinned, 200 means pinned with
+        details.
+        """
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{self.base_url}/api/services/{name}/pin")
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+
+    # ---- Audit ------------------------------------------------------------
+    async def list_audit(
+        self, *, event_type: str | None = None, target: str | None = None,
+        since: str | None = None, until: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict[str, object]:
+        params: dict[str, object] = {"limit": limit, "offset": offset}
+        if event_type:
+            params["event_type"] = event_type
+        if target:
+            params["target"] = target
+        if since:
+            params["since"] = since
+        if until:
+            params["until"] = until
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{self.base_url}/api/audit", params=params)
+            resp.raise_for_status()
+            return resp.json()
+
+    # ---- Auth (M3.5) ------------------------------------------------------
+    async def auth_login(
+        self, username_or_email: str, password: str
+    ) -> tuple[dict[str, object], str | None]:
+        """Login. Returns (json_body, set_cookie_header)."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/auth/login",
+                json={"username_or_email": username_or_email, "password": password},
+            )
+            resp.raise_for_status()
+            return resp.json(), resp.headers.get("set-cookie")
+
+    async def auth_logout(self, session_cookie: str | None) -> None:
+        cookies = {"orchestack_session": session_cookie} if session_cookie else {}
+        async with httpx.AsyncClient(timeout=5.0, cookies=cookies) as client:
+            resp = await client.post(f"{self.base_url}/api/auth/logout")
+            # 204 is success, 401 is "already logged out" — neither is a problem.
+            if resp.status_code not in (200, 204, 401):
+                resp.raise_for_status()
+
+    async def auth_me(self, session_cookie: str | None) -> dict[str, object] | None:
+        """Return the user identity for `session_cookie`, or None if invalid."""
+        if not session_cookie:
+            return None
+        cookies = {"orchestack_session": session_cookie}
+        async with httpx.AsyncClient(timeout=3.0, cookies=cookies) as client:
+            resp = await client.get(f"{self.base_url}/api/auth/me")
+            if resp.status_code == 401:
+                return None
+            resp.raise_for_status()
+            return resp.json()

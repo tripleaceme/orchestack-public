@@ -41,6 +41,49 @@ class PinRequest(BaseModel):
     reason: str | None = Field(None, description="Optional human-readable reason for the pin")
 
 
+@router.get("/{name}/pin")
+async def get_pin(name: str) -> dict[str, object]:
+    """Return the current pin record for `name`, or 404 if not pinned.
+
+    Used by the dashboard's service detail page to render the toggle in
+    the correct state on first load. The active-pin check matches the
+    reconciler's: pin row exists AND (expires_at IS NULL OR expires_at > now()).
+    Expired-but-still-present pins return 404 — they're effectively
+    unpinned from the reconciler's perspective.
+    """
+    if name not in config.SERVICE_CATALOGUE:
+        raise HTTPException(404, f"unknown service: {name}")
+
+    row = await db.fetchrow(
+        """
+        SELECT
+          sp.service_name,
+          sp.pinned_by_user_id,
+          sp.pinned_at,
+          sp.expires_at,
+          sp.reason,
+          u.username AS pinned_by_username,
+          u.full_name AS pinned_by_full_name
+        FROM platform.service_pinning sp
+        LEFT JOIN platform.users u ON u.id = sp.pinned_by_user_id
+        WHERE sp.service_name = $1
+          AND (sp.expires_at IS NULL OR sp.expires_at > now())
+        """,
+        name,
+    )
+    if row is None:
+        raise HTTPException(404, f"no active pin for {name}")
+    return {
+        "service": row["service_name"],
+        "pinned_by_user_id": row["pinned_by_user_id"],
+        "pinned_by_username": row["pinned_by_username"],
+        "pinned_by_full_name": row["pinned_by_full_name"],
+        "pinned_at": row["pinned_at"].isoformat() if row["pinned_at"] else None,
+        "expires_at": row["expires_at"].isoformat() if row["expires_at"] else None,
+        "reason": row["reason"],
+    }
+
+
 @router.post("/{name}/pin")
 async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
     """Pin a service so the reconciler won't stop it."""
