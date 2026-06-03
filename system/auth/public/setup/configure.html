@@ -188,7 +188,7 @@
 
     // ------- Orchestration -------
     "Apache Airflow": {
-      desc: "Scheduler + webserver. Airflow reuses the platform PostgreSQL for its metadata. Your team's DAGs live in your own Git repo — OrcheStack clones them into the Airflow container on first deploy and refreshes on every run.",
+      desc: "Your team's DAGs live in your own Git repo. OrcheStack clones them into the Airflow container on first deploy and refreshes on every run.",
       fields: [
         { name: "AIRFLOW_FERNET_KEY", label: "Fernet key", type: "text", placeholder: "Click Generate to create a Fernet key", required: true,
           readonly: true, generate: "fernet-key",
@@ -203,8 +203,8 @@
       note: "Two things to do AFTER setup finishes:",
       noteHtml: `
         <ul>
-          <li>If your DAGs aren't in a Git repo yet, create one (private is fine — OrcheStack supports SSH keys for private repos). The repo should contain a top-level <code>dags/</code> folder with your <code>.py</code> DAG files. Once pushed, paste the repo URL into dashboard → Services → Airflow → Edit config and OrcheStack starts syncing on the next scheduler tick.</li>
-          <li>Back up the Fernet key shown above to a password manager. The key encrypts all stored connection passwords inside Airflow — if you lose it, every Airflow Connection you've configured becomes unrecoverable and you'll have to recreate them.</li>
+          <li>If your DAGs aren't in a Git repo yet, create one and set to private. The repo should contain a top-level <code>dags/</code> folder with your <code>.py</code> DAG files. Once pushed, paste the repo URL into dashboard → Services → Airflow → Edit config and OrcheStack starts syncing on the next scheduler tick.</li>
+          <li>Back up the Fernet key shown above to a password manager. The key encrypts all stored connection passwords inside Airflow. If you lose it, every Airflow Connection you've configured becomes unrecoverable and you'll have to recreate them.</li>
         </ul>
       `,
     },
@@ -302,19 +302,19 @@
           default: "postgresql://${PIPELINE_DB_USER}:***@postgres:5432/${PIPELINE_DB_NAME}",
           readonly: true,
           hint: "Auto-derived from the pipeline DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with PIPELINE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts), it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
-        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory", type: "text",
-          default: "./config/great_expectations/checkpoints",
+        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory (relative to your install dir)", type: "text",
+          default: "config/great_expectations/checkpoints",
           readonly: true,
-          hint: "Standard project-relative path — resolves to <OrcheStack-install-dir>/config/great_expectations/checkpoints/ on the host. Mounted into the GE container so checkpoint definitions persist between runs and can be version-controlled alongside your dbt project." },
+          hint: "Path inside your OrcheStack install dir where GE writes checkpoint definitions. Mounted into the GE container so checkpoints persist between runs and can be version-controlled alongside your dbt project. On disk: <your-install-dir>/config/great_expectations/checkpoints/ — for example, ~/orchestack/config/great_expectations/checkpoints/ if you installed there." },
       ],
     },
     "Soda Core": {
       desc: "YAML-first data quality. Simpler setup; less powerful than Great Expectations. Configuration file lives at a standard project-relative path; no manual input needed.",
       fields: [
-        { name: "SODA_CONFIG_PATH", label: "soda.yml path", type: "text",
-          default: "./config/soda/soda.yml",
+        { name: "SODA_CONFIG_PATH", label: "soda.yml path (relative to your install dir)", type: "text",
+          default: "config/soda/soda.yml",
           readonly: true,
-          hint: "Standard project-relative path — resolves to <OrcheStack-install-dir>/config/soda/soda.yml on the host. Edit this file after install to add your connection info and check definitions." },
+          hint: "Path inside your OrcheStack install dir to Soda's main config file. Edit this file after install to add your connection info and check definitions. On disk: <your-install-dir>/config/soda/soda.yml — for example, ~/orchestack/config/soda/soda.yml if you installed there." },
       ],
     },
 
