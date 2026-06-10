@@ -55,9 +55,22 @@ async def list_services() -> dict[str, object]:
     )
     configured_names = {r["name"] for r in rows}
 
+    # Which services are currently keep-warm pinned? Matches the
+    # reconciler's pin check: row exists AND (expires_at IS NULL OR
+    # expires_at > now()). Expired pins are treated as unpinned.
+    pin_rows = await db.fetch(
+        """
+        SELECT service_name, expires_at
+        FROM platform.service_pinning
+        WHERE expires_at IS NULL OR expires_at > now()
+        """
+    )
+    pinned_by_name = {r["service_name"]: r for r in pin_rows}
+
     items = []
     for name, meta in config.SERVICE_CATALOGUE.items():
         is_running = name in running_by_name
+        pin_row = pinned_by_name.get(name)
         items.append({
             "name": name,
             "display_name": meta["display_name"],
@@ -67,6 +80,11 @@ async def list_services() -> dict[str, object]:
             "container": running_by_name.get(name, {}).get("container"),
             "managed": bool(meta.get("managed", False)),
             "configured": name in configured_names,
+            "pinned": pin_row is not None,
+            "pin_expires_at": (
+                pin_row["expires_at"].isoformat()
+                if pin_row and pin_row["expires_at"] else None
+            ),
         })
     return {"services": items}
 

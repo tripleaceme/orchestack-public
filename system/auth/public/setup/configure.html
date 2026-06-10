@@ -15,7 +15,7 @@
 <header>
   <div class="wrap">
     <nav class="nav">
-      <a href="https://orchestack.africa" class="brand">
+      <a href="/app/" class="brand">
         <div class="brand-mark">O</div>
         <span>OrcheStack</span>
       </a>
@@ -416,6 +416,36 @@
     "bi",
     "admin_ui",
   ];
+
+  // ============================================================
+  // Deep-link selection injection (M3.6 polish)
+  //
+  // When the dashboard sends an operator here with ?service=X&layer=Y on a
+  // service card click (#7 from M3 testing feedback), the operator may
+  // have skipped that service during the initial wizard — in which case
+  // `selections[layer]` is "None" or absent and the configure page would
+  // render with no tab for X. Patch this BEFORE we read state so the
+  // injected selection persists across reloads.
+  // ============================================================
+  (function injectDeepLinkSelection() {
+    const params = new URLSearchParams(window.location.search);
+    const service = params.get('service');
+    const layer   = params.get('layer');
+    if (!service || !layer) return;
+
+    let state;
+    try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+    catch (e) { state = {}; }
+    state.selections = state.selections || {};
+
+    // Only overwrite "None" or unset — don't clobber a real prior choice
+    // (the operator may have picked a different tool for this layer).
+    const current = state.selections[layer];
+    if (!current || current === 'None') {
+      state.selections[layer] = service;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  })();
 
   // ============================================================
   // Load state

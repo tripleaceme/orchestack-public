@@ -129,11 +129,18 @@ async def ping() -> bool:
 
 
 async def start_service(service: str) -> CommandResult:
-    """Bring a cold-tier service up. Idempotent — `up -d` no-ops if already running."""
+    """Bring a cold-tier service up. Idempotent — `up -d` no-ops if already running.
+
+    Timeout is 5 minutes, not the usual 3, because the first start of a
+    fresh service pulls its image which can be 100-500 MB. On a
+    Nigerian-affordable VPS with a ~10 Mbps link, a 200 MB image takes
+    160 seconds just to pull. Subsequent starts are sub-second once the
+    image is cached, so the bigger timeout is paid only on cold cache.
+    """
     return await asyncio.to_thread(
         _run_sync,
         _service_compose_args(service) + ["up", "-d", "--remove-orphans"],
-        180,
+        300,
     )
 
 
