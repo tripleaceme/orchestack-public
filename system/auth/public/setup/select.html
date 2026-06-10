@@ -149,12 +149,12 @@
     <h2 id="cs-title">ClickHouse is on the roadmap</h2>
     <p class="modal-sub" id="cs-body">
       We're working on bringing <strong id="cs-tool">ClickHouse</strong> to OrcheStack. For now, please
-      use <strong id="cs-recommended">PostgreSQL</strong> — here's why we recommend it:
+      use <strong id="cs-recommended">PostgreSQL</strong>, here's why we recommend it:
     </p>
     <div class="reasons-title" id="cs-reasons-title">Why PostgreSQL is the best choice today</div>
     <ul class="reasons" id="cs-reasons"></ul>
     <div class="modal-footer">
-      <button type="button" class="btn btn-primary" id="cs-ok">Got it — use the recommended</button>
+      <button type="button" class="btn btn-primary" id="cs-ok">Got it. Use the recommended</button>
     </div>
   </div>
 </div>
@@ -220,16 +220,16 @@
     warehouse: {
       recommended: "PostgreSQL",
       reasons: [
-        "30+ years in production — the world's most deployed open-source database",
+        "30+ years in production as the world's most deployed open-source database",
         "Largest community of any database: 100k+ Stack Overflow answers, extensive docs and tutorials",
         "Works out of the box with every OrcheStack component (dbt, Metabase, Airflow, OpenMetadata)",
-        "Handles 95% of SME analytical workloads — ClickHouse shines above ~1 TB, DuckDB is for local single-user analysis",
+        "Handles 95% of SME analytical workloads. For larger or more specialized needs, ClickHouse and DuckDB are on the roadmap",
       ],
     },
     transformation: {
       recommended: "dbt Core",
       reasons: [
-        "The industry standard for analytics engineering — used by 1000+ data teams worldwide",
+        "The industry standard for analytics engineering, used by 1000+ data teams worldwide",
         "500+ community packages on dbt Hub for tests, macros, and connector integrations",
         "Richest learning resources: dbt Fundamentals course, certifications, countless community tutorials",
         "SQLMesh is promising but its ecosystem and package library are much younger",
@@ -238,7 +238,7 @@
     quality: {
       recommended: "Great Expectations",
       reasons: [
-        "The most established open-source data quality framework — 8+ years in production",
+        "The most established open-source data quality framework, 8+ years in production",
         "Hundreds of pre-built expectations and integrations with dbt, Airflow, and pandas",
         "Active Slack community, detailed documentation, rich tutorial content",
         "Soda Core is simpler but has fewer features and a smaller ecosystem",
@@ -248,7 +248,7 @@
       recommended: "OpenMetadata",
       reasons: [
         "Purpose-built for the modern data stack with native connectors for dbt, Airbyte, and Metabase",
-        "Lighter to operate than DataHub — single PostgreSQL + Elasticsearch vs a multi-service stack",
+        "Lighter to operate than DataHub and single PostgreSQL + Elasticsearch vs a multi-service stack",
         "Rapid development with a transparent roadmap and an active Slack community",
         "DataHub is more mature at LinkedIn-scale enterprises, but heavier than most SMEs need",
       ],
@@ -256,7 +256,7 @@
     bi: {
       recommended: "Metabase",
       reasons: [
-        "The friendliest BI tool for non-technical users — ask questions via a query builder, no SQL required",
+        "The friendliest BI tool for non-technical users, ask questions via a query builder, no SQL required",
         "Massive community and extensive onboarding documentation for stakeholders",
         "Deploys as a single container with no extra services required",
         "Superset is more powerful but requires more technical setup; Lightdash requires dbt expertise first",
@@ -267,7 +267,7 @@
       reasons: [
         "The official PostgreSQL administration tool, maintained by the PostgreSQL project itself",
         "Full-featured: ERD views, query plans, server stats, backup helpers",
-        "The most documented Postgres admin tool — every tutorial online uses it",
+        "The most documented Postgres admin tool. Extensive tutorials and Stack Overflow presence",
         "Adminer is lighter (~50 MB vs ~500 MB) but less approachable; pgweb is read-only",
       ],
     },
