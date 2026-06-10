@@ -7,8 +7,7 @@
     </h1>
     <p class="text-sm text-[var(--text-2)] mt-1">
       Append-only record of every privileged action. Filter by event type,
-      target service, or date range. Pagination is offset-based; the
-      orchestrator caps page size at 500.
+      target service, or date range. Default page size is 20 — adjust below.
     </p>
   </div>
 
@@ -17,7 +16,8 @@
     `hx-include` on each input + `hx-target=#audit-table` keeps everything
     on the same page. We don't use a real <form action=> because that
     would do a full-page reload; HTMX does the equivalent fetch but
-    swaps just the table.
+    swaps just the table. The page-size dropdown lives in the same form
+    so it's serialised alongside the filters on every request.
   #}
   <form id="audit-filters"
         hx-get="{{ url_for('audit_table_fragment') }}"
@@ -25,7 +25,7 @@
         hx-swap="innerHTML"
         hx-trigger="change from:input, change from:select, submit"
         class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-4
-               grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+               grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
     <label class="block">
       <span class="text-xs font-medium text-[var(--text-2)]">Event type</span>
       <input type="text" name="event_type" placeholder="e.g. service_started"
@@ -49,6 +49,17 @@
       <input type="datetime-local" name="until"
              class="mt-1 w-full text-sm border border-[var(--border)] rounded
                     px-2 py-1.5 bg-white" />
+    </label>
+    <label class="block">
+      <span class="text-xs font-medium text-[var(--text-2)]">Rows per page</span>
+      <select name="limit"
+              class="mt-1 w-full text-sm border border-[var(--border)] rounded
+                     px-2 py-1.5 bg-white">
+        <option value="20" selected>20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
     </label>
   </form>
 

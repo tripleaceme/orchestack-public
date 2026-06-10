@@ -12,11 +12,37 @@
     </p>
   </div>
 
+  {#
+    Page-size selector. Lives outside the polled fragment so its value
+    survives the every-10s reload. `hx-include` pulls the dropdown into
+    the polled request as a `limit` query param.
+  #}
+  <form id="sessions-controls"
+        hx-get="{{ url_for('sessions_active_fragment') }}"
+        hx-target="#sessions-table"
+        hx-swap="innerHTML"
+        hx-trigger="change from:select"
+        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 mb-4
+               inline-flex items-center gap-3">
+    <label class="text-xs font-medium text-[var(--text-2)]">
+      Rows per page
+      <select name="limit"
+              class="ml-2 text-sm border border-[var(--border)] rounded
+                     px-2 py-1 bg-white">
+        <option value="20" selected>20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+    </label>
+  </form>
+
   <section
     id="sessions-table"
     hx-get="{{ url_for('sessions_active_fragment') }}"
     hx-trigger="load delay:50ms, every 10s"
     hx-swap="innerHTML"
+    hx-include="#sessions-controls"
     class="min-h-[120px]">
     <div class="text-sm text-[var(--text-2)] italic">Loading sessions…</div>
   </section>

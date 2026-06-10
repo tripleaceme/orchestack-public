@@ -33,7 +33,7 @@ async def list_sessions(
     active: bool = Query(True, description="If true (default), only sessions with closed_at IS NULL."),
     service: str | None = Query(None, description="Filter by service name."),
     user_id: int | None = Query(None, description="Filter by user_id."),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, object]:
     """List service sessions, joined with users for display purposes.

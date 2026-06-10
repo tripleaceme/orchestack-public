@@ -43,7 +43,7 @@ async def list_audit(
     target: str | None = Query(None, description="Exact match on the 'target' field."),
     since: str | None = Query(None, description="ISO 8601 lower bound on created_at (inclusive)."),
     until: str | None = Query(None, description="ISO 8601 upper bound on created_at (exclusive)."),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """Paginated audit-log query.

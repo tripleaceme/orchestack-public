@@ -449,19 +449,34 @@ async def session_close(token: str) -> Response:
 # ===========================================================================
 @app.get("/api/dashboard/sessions/active", response_class=HTMLResponse,
           name="sessions_active_fragment")
-async def sessions_active_fragment(request: Request) -> HTMLResponse:
-    """Render the active-sessions table fragment (polled every 10s)."""
+async def sessions_active_fragment(
+    request: Request, limit: int = 20, offset: int = 0,
+) -> HTMLResponse:
+    """Render the active-sessions table fragment (polled every 10s).
+
+    Page size defaults to 20 to keep the polled response small; operator
+    can bump via the page-size selector on the sessions page.
+    """
     try:
-        data = await orchestrator.list_sessions(active=True)
+        data = await orchestrator.list_sessions(active=True, limit=limit, offset=offset)
         sessions = data.get("sessions", [])
+        total = data.get("total", 0)
         error = None
     except (httpx.HTTPError, ValueError) as e:
         log.warning("list_sessions failed: %s", e)
         sessions = []
+        total = 0
         error = str(e)
     return templates.TemplateResponse(
         "_sessions_table_fragment.html",
-        {"request": request, "sessions": sessions, "error": error},
+        {
+            "request": request,
+            "sessions": sessions,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "error": error,
+        },
     )
 
 
@@ -474,7 +489,7 @@ async def audit_table_fragment(
     request: Request,
     event_type: str | None = None, target: str | None = None,
     since: str | None = None, until: str | None = None,
-    limit: int = 50, offset: int = 0,
+    limit: int = 20, offset: int = 0,
 ) -> HTMLResponse:
     """Render the audit-log table fragment with optional filters."""
     try:
