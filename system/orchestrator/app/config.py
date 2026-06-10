@@ -75,6 +75,15 @@ SERVICES_DIR: str = os.environ.get("ORCHESTRATOR_SERVICES_DIR", "/services")
 # views — easier to reason about for operators.
 COMPOSE_PROJECT_PREFIX: str = "orchestack-service"
 
+# Path INSIDE the orchestrator container where the operator's `.env` is
+# bind-mounted (see system/docker/docker-compose.yml). Passed to every
+# `docker compose --env-file <path>` invocation so per-service compose
+# snippets can interpolate ${ORCHESTACK_DB_PASSWORD}, ${PIPELINE_DB_*},
+# etc. without those variables having to live in the orchestrator's own
+# process environment. Override via ORCHESTRATOR_ENV_FILE if the mount
+# location ever changes.
+ENV_FILE: str = os.environ.get("ORCHESTRATOR_ENV_FILE", "/etc/orchestack/.env")
+
 # ----- Default user (until M3 introduces real session cookies) --------------
 # Every FK-constrained insert (service_sessions, service_pinning, audit_log)
 # needs a valid platform.users.id. The wizard saves profile data to

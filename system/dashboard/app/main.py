@@ -159,6 +159,78 @@ async def audit_page(request: Request, user=Depends(require_user)) -> HTMLRespon
     )
 
 
+@app.get("/credentials", response_class=HTMLResponse, name="credentials_page")
+async def credentials_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """`/app/credentials` — admin view for reading + updating .env variables.
+
+    Sensitive values (passwords, secrets, tokens, keys) are masked until
+    the operator clicks Reveal on a specific row. Read-only variables
+    (image tags, the platform DB password) are rendered without an Edit
+    affordance.
+    """
+    return templates.TemplateResponse(
+        "credentials.html",
+        {"request": request, "page_title": "Credentials", "user": user},
+    )
+
+
+@app.get("/api/dashboard/credentials/table", response_class=HTMLResponse,
+          name="credentials_table_fragment")
+async def credentials_table_fragment(request: Request, reveal: bool = False) -> HTMLResponse:
+    """HTMX fragment — the credentials table itself, with optional reveal."""
+    try:
+        data = await orchestrator.list_credentials(reveal=reveal)
+        credentials = data.get("credentials", [])
+        error = None
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("list_credentials failed: %s", e)
+        credentials = []
+        error = str(e)
+    return templates.TemplateResponse(
+        "_credentials_table_fragment.html",
+        {
+            "request": request,
+            "credentials": credentials,
+            "reveal": reveal,
+            "error": error,
+        },
+    )
+
+
+@app.post("/api/dashboard/credentials/{key}",
+           response_class=HTMLResponse, name="credentials_update_action")
+async def credentials_update_action(
+    request: Request, key: str, value: str = Form(...),
+    user=Depends(require_user),
+) -> HTMLResponse:
+    """Update one .env variable + re-render its table row."""
+    try:
+        await orchestrator.update_credential(
+            key, value, actor_user_id=user.get("user_id"),
+        )
+    except httpx.HTTPError as e:
+        log.warning("update_credential(%s) failed: %s", key, e)
+    # Re-render the full table so the row shows its new state (masked
+    # again, with a brief "Updated" indicator handled in the template).
+    try:
+        data = await orchestrator.list_credentials(reveal=False)
+        credentials = data.get("credentials", [])
+        error = None
+    except (httpx.HTTPError, ValueError) as e:
+        credentials = []
+        error = str(e)
+    return templates.TemplateResponse(
+        "_credentials_table_fragment.html",
+        {
+            "request": request,
+            "credentials": credentials,
+            "reveal": False,
+            "error": error,
+            "updated_key": key,
+        },
+    )
+
+
 @app.get("/services/{name}", response_class=HTMLResponse, name="service_detail")
 async def service_detail(
     request: Request, name: str, user=Depends(require_user)

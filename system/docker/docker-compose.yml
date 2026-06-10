@@ -301,6 +301,14 @@ services:
       # bundle update (new yml + SERVICE_CATALOGUE entry), not a runtime
       # operation.
       - ./services:/services:ro
+      # Operator's `.env` — the orchestrator passes this to
+      # `docker compose --env-file` so per-service compose snippets can
+      # interpolate variables like ${ORCHESTACK_DB_PASSWORD} when the
+      # reconciler / wizard brings a managed service up. Mounted RW so
+      # the credentials-admin view in the dashboard can write updated
+      # values back. The orchestrator is OrcheStack's own code; the
+      # read-AND-write surface is intentional.
+      - ./.env:/etc/orchestack/.env
     networks:
       - orchestack-net
     depends_on:

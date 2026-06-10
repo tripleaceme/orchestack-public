@@ -114,6 +114,8 @@
            class="nav-link {{ 'active' if path == '/sessions' else '' }}">Sessions</a>
         <a href="{{ url_for('audit_page') }}"
            class="nav-link {{ 'active' if path == '/audit' else '' }}">Audit</a>
+        <a href="{{ url_for('credentials_page') }}"
+           class="nav-link {{ 'active' if path == '/credentials' else '' }}">Credentials</a>
       </nav>
 
       <div class="flex items-center gap-4 text-sm text-[var(--text-2)]">
@@ -258,6 +260,7 @@
           if (e.key === 'h') go('/');
           else if (e.key === 's') go('/sessions');
           else if (e.key === 'a') go('/audit');
+          else if (e.key === 'c') go('/credentials');
           return;
         }
         if (e.key === 'g') {
@@ -271,6 +274,7 @@
             "  g h    Go to Services (home)\n" +
             "  g s    Go to Sessions\n" +
             "  g a    Go to Audit log\n" +
+            "  g c    Go to Credentials\n" +
             "  ?      Show this help"
           );
         }

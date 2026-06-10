@@ -38,6 +38,16 @@
       <div class="joke-label">While you wait</div>
       <p class="joke-text" id="joke">Why do Python developers wear glasses? Because they can't C#.</p>
     </div>
+
+    <!--
+      Recovery footer — hidden while the deploy is in flight, revealed only
+      when finish(false, ...) is called. The operator can either jump back
+      to the previous wizard step to fix bad input, or restart from scratch.
+    -->
+    <div id="recovery-actions" class="recovery-actions" hidden>
+      <a class="btn btn-secondary btn-sm" href="configure.html">← Back to configure</a>
+      <a class="btn btn-tertiary btn-sm" href="select.html">↺ Restart from selection</a>
+    </div>
   </div>
 </main>
 
@@ -140,6 +150,15 @@
     statusEl.innerHTML = success
       ? "All services ready, taking you to your dashboard… ✓"
       : `<span style="color:var(--accent)">Deploy failed:</span> ${message}`;
+    // Reveal the recovery actions only on failure so successful deploys
+    // don't show distracting "back" links during the 1.2s redirect window.
+    if (!success) {
+      const recovery = document.getElementById('recovery-actions');
+      if (recovery) recovery.hidden = false;
+      // Also stop the spinner — the deploy isn't happening any more.
+      const spinner = document.querySelector('.spinner');
+      if (spinner) spinner.style.display = 'none';
+    }
     if (success) {
       try {
         const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');

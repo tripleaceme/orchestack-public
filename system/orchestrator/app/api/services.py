@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from .. import audit, config, docker_ops
+from .. import audit, config, db, docker_ops
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -38,9 +38,22 @@ async def list_services() -> dict[str, object]:
                       the service is catalogue-registered but M4-pending —
                       the dashboard should disable start/stop buttons in that
                       case to avoid a 500 from the orchestrator.
+      configured    — True iff the operator selected this service in the
+                      setup wizard (i.e. there's a row in
+                      platform.installed_services). The dashboard uses this
+                      to differentiate "not yet picked by the operator"
+                      (offer a Configure link) from "M4-pending" (just
+                      grey out).
     """
     running = await docker_ops.list_running_services()
     running_by_name = {r["service"]: r for r in running}
+
+    # Which services has the operator already configured? Single query +
+    # in-memory lookup keeps this cheap regardless of catalogue size.
+    rows = await db.fetch(
+        "SELECT name FROM platform.installed_services WHERE enabled = TRUE"
+    )
+    configured_names = {r["name"] for r in rows}
 
     items = []
     for name, meta in config.SERVICE_CATALOGUE.items():
@@ -53,6 +66,7 @@ async def list_services() -> dict[str, object]:
             "state": "running" if is_running else "stopped",
             "container": running_by_name.get(name, {}).get("container"),
             "managed": bool(meta.get("managed", False)),
+            "configured": name in configured_names,
         })
     return {"services": items}
 

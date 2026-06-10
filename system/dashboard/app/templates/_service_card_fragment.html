@@ -52,19 +52,37 @@
     <p class="text-xs font-mono text-[var(--text-2)] truncate -mt-1.5">
       {{ service.container }}
     </p>
+  {% elif not service.configured %}
+    <p class="text-xs text-[var(--text-2)] -mt-1.5">
+      Not yet configured
+    </p>
   {% elif not service.managed %}
     <p class="text-xs text-[var(--text-2)] -mt-1.5">
       Not yet shipped — lands in M4
     </p>
   {% endif %}
 
-  {# Action buttons. Optimistic UI: hx-on::before-request gives the card
-     a visual "working..." state immediately, before the orchestrator
-     responds. The actual response replaces the whole card via outerHTML. #}
+  {# Action buttons. Three modes from least-to-most-actionable:
+     1. Not configured       → "+ Configure" link to the wizard (scoped via ?service=)
+     2. Configured + unmanaged → "Unavailable" (M4 will ship the compose snippet)
+     3. Configured + managed  → Open / Start / Stop (the existing flow)
+
+     Optimistic UI: hx-on::before-request gives the card a visual
+     "working..." state before the orchestrator responds. #}
   <div class="mt-auto pt-1 space-y-1.5">
-    {% if not service.managed %}
+    {% if not service.configured %}
+      {# Not configured by the operator yet. Click takes them into the
+         setup wizard scoped to this service. Replaces the old M4-disabled
+         dead-end. #}
+      <a href="/setup/configure.html?service={{ service.display_name }}"
+         class="block w-full text-center text-sm font-medium py-1.5 rounded
+                bg-[var(--navy)] text-white
+                hover:bg-[var(--navy-2)] transition-colors">
+        + Configure
+      </a>
+    {% elif not service.managed %}
       <button type="button" disabled
-              title="This service is in the catalogue but its compose snippet ships in M4."
+              title="This service is configured but its compose snippet ships in M4."
               class="w-full text-sm font-medium py-1.5 rounded border
                      border-[var(--border)] text-[var(--text-2)]
                      bg-[var(--bg)] cursor-not-allowed">

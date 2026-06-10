@@ -54,14 +54,37 @@ class CommandResult:
 
 
 def _service_compose_args(service: str) -> list[str]:
-    """Build the `docker compose` argument prefix for a managed service."""
+    """Build the `docker compose` argument prefix for a managed service.
+
+    `--env-file` is passed explicitly because the orchestrator runs from
+    its own working directory inside the container, NOT from a directory
+    that contains `.env`. Without this flag, compose would try and fail to
+    interpolate ${ORCHESTACK_DB_PASSWORD}, ${PIPELINE_DB_*}, etc., when
+    bringing up any service that references those variables (see
+    services/metabase.yml). The `.env` file itself is bind-mounted into
+    the orchestrator at config.ENV_FILE — see system/docker/docker-compose.yml.
+
+    If the env file doesn't exist (development edge case where the
+    orchestrator is run without the canonical compose), we still emit the
+    flag but with the path; docker compose will surface a clear error.
+    """
     compose_file = os.path.join(config.SERVICES_DIR, f"{service}.yml")
     project_name = f"{config.COMPOSE_PROJECT_PREFIX}-{service}"
-    return [
+    args = [
         "docker", "compose",
         "--file", compose_file,
         "--project-name", project_name,
     ]
+    if os.path.exists(config.ENV_FILE):
+        args += ["--env-file", config.ENV_FILE]
+    else:
+        log.warning(
+            "env-file not found at %s — compose interpolation may fail. "
+            "Did you mount the operator's .env into the orchestrator? "
+            "See system/docker/docker-compose.yml.",
+            config.ENV_FILE,
+        )
+    return args
 
 
 def _run_sync(args: list[str], timeout: int = 180) -> CommandResult:

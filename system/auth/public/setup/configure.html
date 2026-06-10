@@ -536,6 +536,24 @@
     prevBtn.addEventListener('click', () => show(current - 1));
     nextBtn.addEventListener('click', () => show(current + 1));
 
+    // Deep-link support — when an operator clicks a service card on the
+    // dashboard (#7 from M3 testing feedback), the dashboard sends them
+    // here with ?service=<name> in the URL. Match against the tool name
+    // (case-insensitive, fuzzy on spaces) and pre-select that tab so the
+    // operator lands directly on the relevant credentials form.
+    (function deepLinkToTab() {
+      const requested = new URLSearchParams(window.location.search).get('service');
+      if (!requested) return;
+      const norm = s => (s || '').toLowerCase().replace(/[\s-_.]+/g, '');
+      const target = norm(requested);
+      const idx = servicesToConfigure.findIndex(svc => {
+        return norm(svc.tool) === target
+            || norm(svc.tool).includes(target)
+            || target.includes(norm(svc.tool));
+      });
+      if (idx >= 0) show(idx);
+    })();
+
     const form = document.getElementById('config-form');
 
     // Delegated handler for in-browser secret generation. Buttons rendered
@@ -558,6 +576,22 @@
         btn.textContent = originalText;
         btn.classList.remove('btn-generated');
       }, 1500);
+    });
+
+    // Live password-strength counter — fires on every keystroke in any
+    // input that has an associated <div class="pw-strength"> sibling. Cheap
+    // delegation: one listener on the form catches them all.
+    form.addEventListener('input', (e) => {
+      const inp = e.target;
+      if (!inp || !inp.name || inp.type !== 'password') return;
+      const strength = form.querySelector(`.pw-strength[data-target="${inp.name}"]`);
+      if (!strength) return;
+      const len = inp.value.length;
+      const min = parseInt(strength.dataset.min, 10) || 12;
+      const lenEl = strength.querySelector('.pw-len');
+      if (lenEl) lenEl.textContent = len;
+      strength.classList.toggle('pw-ok', len >= min);
+      strength.classList.toggle('pw-weak', len > 0 && len < min);
     });
 
     form.addEventListener('submit', (e) => {
@@ -647,6 +681,14 @@
       if (field.disabled)    attrs.push(`disabled`);
       if (field.readonly)    attrs.push(`readonly`);
       if (savedValue)        attrs.push(`value="${escapeAttr(savedValue)}"`);
+      // Password fields get a server-aligned minlength so the browser's
+      // own validation prevents the operator getting all the way to the
+      // deploy step before the orchestrator returns HTTP 400. Server
+      // requires >= 12 chars; some fields need more (MinIO 16+) — the
+      // optional `field.minlength` overrides.
+      const isPassword = field.type === 'password' && !field.readonly && !field.disabled;
+      const minLen = field.minlength ?? (isPassword ? 12 : null);
+      if (minLen) attrs.push(`minlength="${minLen}"`);
 
       const infoIcon = field.hint
         ? ` <span class="info-icon" tabindex="0" aria-label="More info">?<span class="info-tip">${escapeHtml(field.hint)}</span></span>`
@@ -669,10 +711,20 @@
            </div>`
         : inputHtml;
 
+      // Live character counter for password fields — shows progress toward
+      // the minimum length so the operator gets immediate feedback rather
+      // than a 400 at the deploy step.
+      const strengthHtml = isPassword
+        ? `<div class="pw-strength" data-target="${field.name}" data-min="${minLen}">
+             <span class="pw-len">${savedValue.length}</span>/${minLen} characters minimum
+           </div>`
+        : '';
+
       parts.push(`
         <div class="${groupClass}">
           <label for="${field.name}">${escapeHtml(field.label)}${derivedBadge}${infoIcon}</label>
           ${controlHtml}
+          ${strengthHtml}
         </div>
       `);
     });

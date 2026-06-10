@@ -192,3 +192,26 @@ class OrchestratorClient:
                 return None
             resp.raise_for_status()
             return resp.json()
+
+    # ---- Credentials (M3.6 polish) ----------------------------------------
+    async def list_credentials(self, reveal: bool = False) -> dict[str, object]:
+        """Return every variable in the operator's `.env` with metadata."""
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(
+                f"{self.base_url}/api/credentials",
+                params={"reveal": str(reveal).lower()},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def update_credential(
+        self, key: str, value: str, *, actor_user_id: int | None = None
+    ) -> dict[str, object]:
+        """Update a single .env variable. Audit log records the key only."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.put(
+                f"{self.base_url}/api/credentials/{key}",
+                json={"value": value, "actor_user_id": actor_user_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
