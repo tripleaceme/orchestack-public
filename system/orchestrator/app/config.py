@@ -92,13 +92,13 @@ DEFAULT_USER_ID: int = 1
 SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # Managed services — orchestrator can start/stop these via compose snippets.
     "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
-    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
+    "pgadmin":      {"tier": "hot",  "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
     # Registered-only — wizard can pick these but the orchestrator can't yet
     # start/stop them (no compose snippet exists, that's M4 work).
     "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": False},
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": False},
     "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": False},
-    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": False},
+    "minio":        {"tier": "cold", "display_name": "MinIO",               "layer": "data-lake",    "managed": False},
     "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": False},
     "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": False},
     # PostgreSQL is special — it's part of the base control plane (already
