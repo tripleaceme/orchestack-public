@@ -57,6 +57,15 @@ services:
       - traefik.enable=true
       - traefik.http.routers.metabase.rule=PathPrefix(`/app/metabase`)
       - traefik.http.routers.metabase.entrypoints=web
+      # Explicit priority so the longer /app/metabase prefix definitively
+      # beats the dashboard's /app prefix. Without this, Traefik's
+      # rule-length tiebreaker SHOULD pick metabase (longer prefix), but
+      # M3 testing surfaced cases where /app/metabase served the dashboard
+      # FastAPI 404 instead — meaning the metabase router was either not
+      # registered or lost the priority race. Setting priority=200 (default
+      # rule-length is ~30) makes it unambiguous. The dashboard remains at
+      # default priority so it still catches /app, /app/sessions, etc.
+      - traefik.http.routers.metabase.priority=200
       - traefik.http.middlewares.metabase-strip.stripprefix.prefixes=/app/metabase
       - traefik.http.routers.metabase.middlewares=metabase-strip@docker
       - traefik.http.services.metabase.loadbalancer.server.port=3000

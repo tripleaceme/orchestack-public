@@ -188,10 +188,75 @@ async def credentials_page(request: Request, user=Depends(require_user)) -> HTML
     )
 
 
+# ----------------------------------------------------------------------
+# Service grouping for the Credentials page
+#
+# Operators asked for a per-service view of credentials: pick the service
+# from a dropdown, see only its keys. This is purely a UX grouping —
+# under the hood every key still lives in a single flat .env file.
+#
+# Bucketing rule: longest matching prefix wins (so e.g. "MB_DB_USER"
+# resolves to "Metabase" rather than landing in "Other"). Keys with no
+# match fall into "Other". The order of CREDENTIAL_SERVICE_GROUPS is
+# both the prefix-match order AND the dropdown display order, so put
+# the platform group first.
+# ----------------------------------------------------------------------
+CREDENTIAL_SERVICE_GROUPS: list[tuple[str, list[str]]] = [
+    ("OrcheStack platform", ["ORCHESTACK_"]),
+    ("Image tags",          ["_TAG"]),  # suffix-match handled specially
+    ("Pipeline warehouse",  ["PIPELINE_DB_"]),
+    ("Airbyte",             ["AIRBYTE_"]),
+    ("Apache Airflow",      ["AIRFLOW_"]),
+    ("dbt Core",            ["DBT_"]),
+    ("Metabase",            ["METABASE_", "MB_"]),
+    ("Apache Superset",     ["SUPERSET_"]),
+    ("Lightdash",           ["LIGHTDASH_"]),
+    ("MinIO",               ["MINIO_"]),
+    ("OpenMetadata",        ["OPENMETADATA_"]),
+    ("Great Expectations",  ["GE_"]),
+    ("Soda Core",           ["SODA_"]),
+    ("SQLMesh",             ["SQLMESH_"]),
+    ("ClickHouse",          ["CLICKHOUSE_"]),
+    ("DuckDB",              ["DUCKDB_"]),
+    ("pgAdmin",             ["PGADMIN_"]),
+    ("Adminer",             ["ADMINER_"]),
+    ("pgweb",               ["PGWEB_"]),
+    ("DataHub",             ["DATAHUB_"]),
+]
+
+
+def _service_for_credential(key: str) -> str:
+    """Return the operator-facing service name for a given .env key.
+
+    Image-tag suffix has priority over prefix matches — every service
+    has a *_TAG variable that we want grouped together under one header
+    so operators see image versions in one place.
+    """
+    if key.endswith("_TAG"):
+        return "Image tags"
+    for group, prefixes in CREDENTIAL_SERVICE_GROUPS:
+        if group == "Image tags":
+            continue
+        for prefix in prefixes:
+            if key.startswith(prefix):
+                return group
+    return "Other"
+
+
 @app.get("/api/dashboard/credentials/table", response_class=HTMLResponse,
           name="credentials_table_fragment")
-async def credentials_table_fragment(request: Request, reveal: bool = False) -> HTMLResponse:
-    """HTMX fragment — the credentials table itself, with optional reveal."""
+async def credentials_table_fragment(
+    request: Request,
+    reveal: bool = False,
+    service: str = "All",
+) -> HTMLResponse:
+    """HTMX fragment — the credentials table, optionally filtered by service.
+
+    ?service=Metabase narrows the table to keys whose prefix maps to that
+    group. ?service=All (default) shows every key. The dropdown lives in
+    the fragment itself so HTMX swap preserves the selection state across
+    re-renders (no out-of-band updates needed).
+    """
     try:
         data = await orchestrator.list_credentials(reveal=reveal)
         credentials = data.get("credentials", [])
@@ -200,6 +265,28 @@ async def credentials_table_fragment(request: Request, reveal: bool = False) -> 
         log.warning("list_credentials failed: %s", e)
         credentials = []
         error = str(e)
+
+    # Annotate each credential with its service group, then filter. We
+    # always annotate (even on the All view) so the template can render
+    # service labels next to each row — operators get a visual cue when
+    # browsing the unfiltered list.
+    for c in credentials:
+        c["service"] = _service_for_credential(c["key"])
+
+    # Distinct services PRESENT in the .env (not every group we know of).
+    # An empty group ("DataHub" when DataHub isn't installed) shouldn't
+    # appear in the dropdown — it'd give the operator the impression that
+    # selecting it would do something.
+    services_present = sorted(
+        {c["service"] for c in credentials},
+        key=lambda s: ([g for g, _ in CREDENTIAL_SERVICE_GROUPS].index(s)
+                       if s in [g for g, _ in CREDENTIAL_SERVICE_GROUPS]
+                       else len(CREDENTIAL_SERVICE_GROUPS)),
+    )
+
+    if service != "All":
+        credentials = [c for c in credentials if c["service"] == service]
+
     return templates.TemplateResponse(
         "_credentials_table_fragment.html",
         {
@@ -207,6 +294,8 @@ async def credentials_table_fragment(request: Request, reveal: bool = False) -> 
             "credentials": credentials,
             "reveal": reveal,
             "error": error,
+            "selected_service": service,
+            "services_present": services_present,
         },
     )
 
@@ -215,9 +304,15 @@ async def credentials_table_fragment(request: Request, reveal: bool = False) -> 
            response_class=HTMLResponse, name="credentials_update_action")
 async def credentials_update_action(
     request: Request, key: str, value: str = Form(...),
+    service: str = Form("All"),
     user=Depends(require_user),
 ) -> HTMLResponse:
-    """Update one .env variable + re-render its table row."""
+    """Update one .env variable + re-render its table row.
+
+    The service filter is threaded through the form so the operator
+    stays on the same filtered view after saving — otherwise an edit
+    on the Metabase filter would jump them back to All.
+    """
     try:
         await orchestrator.update_credential(
             key, value, actor_user_id=user.get("user_id"),
@@ -233,6 +328,16 @@ async def credentials_update_action(
     except (httpx.HTTPError, ValueError) as e:
         credentials = []
         error = str(e)
+    for c in credentials:
+        c["service"] = _service_for_credential(c["key"])
+    services_present = sorted(
+        {c["service"] for c in credentials},
+        key=lambda s: ([g for g, _ in CREDENTIAL_SERVICE_GROUPS].index(s)
+                       if s in [g for g, _ in CREDENTIAL_SERVICE_GROUPS]
+                       else len(CREDENTIAL_SERVICE_GROUPS)),
+    )
+    if service != "All":
+        credentials = [c for c in credentials if c["service"] == service]
     return templates.TemplateResponse(
         "_credentials_table_fragment.html",
         {
@@ -241,6 +346,8 @@ async def credentials_update_action(
             "reveal": False,
             "error": error,
             "updated_key": key,
+            "selected_service": service,
+            "services_present": services_present,
         },
     )
 

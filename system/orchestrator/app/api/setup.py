@@ -128,22 +128,42 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             db_exists = await conn.fetchval(
                 "SELECT 1 FROM pg_database WHERE datname = $1", name,
             )
-            if db_exists:
-                raise HTTPException(
-                    409,
-                    f"pipeline database {name!r} already exists. M2 does not "
-                    "auto-drop existing databases; remove it manually or pick a "
-                    "different name and re-submit the wizard.",
-                )
-
             role_exists = await conn.fetchval(
                 "SELECT 1 FROM pg_roles WHERE rolname = $1", user,
             )
-            if not role_exists:
+
+            # IDEMPOTENT semantics — if the pipeline DB + role already exist
+            # from a previous successful deploy, skip the CREATE statements.
+            # This is what makes "+ Configure" on a NEW service card from
+            # the dashboard (re-entering the wizard to add a service) work
+            # without forcing the operator to drop and recreate their
+            # warehouse. Without this, deploy 409s on the existing DB and
+            # the operator can never add a service post-initial-setup.
+            if role_exists and db_exists:
+                # The happy path for adding a service later. We trust that
+                # the operator hasn't manually broken the DB/role state
+                # outside the wizard. If they have, they'll find out on
+                # the next pipeline run; not the wizard's job to detect.
+                pass
+            elif db_exists and not role_exists:
+                # Pathological: someone manually dropped the role but left
+                # the database. Recreate the role and grant ownership.
                 await conn.execute(
                     f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {_quote_literal(password)}'
                 )
-            await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
+                await conn.execute(
+                    f'ALTER DATABASE "{name}" OWNER TO "{user}"'
+                )
+            elif role_exists and not db_exists:
+                # Pathological inverse: role exists but no DB. Create the
+                # DB owned by the existing role.
+                await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
+            else:
+                # Fresh install: create role + database.
+                await conn.execute(
+                    f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {_quote_literal(password)}'
+                )
+                await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
     except HTTPException:
         raise
     except Exception as e:

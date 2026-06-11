@@ -495,10 +495,50 @@
   }
 
   function renderWizard(selections, credentials) {
+    // ==========================================================
+    // Add-mode detection (M3 post-defense polish)
+    //
+    // The dashboard's "+ Configure" badge on UNCONFIGURED service cards
+    // links here with ?service=X&layer=Y. In that case the operator has
+    // ALREADY completed the initial wizard at some prior point — re-
+    // rendering tabs for every other service they previously configured
+    // is (a) redundant (we already have those credentials in .env), and
+    // (b) used to wedge deploy with a 409 on the existing pipeline DB.
+    //
+    // Backend deploy is now idempotent so the 409 won't fire even if
+    // we send everything; but UX-wise the right answer is to ONLY show
+    // the one tab for the new service. The wizard becomes a single-
+    // service form in this mode, which matches operator expectation
+    // ("I clicked + Configure on MinIO, I want to configure MinIO").
+    // ==========================================================
+    const params      = new URLSearchParams(window.location.search);
+    const addService  = params.get('service');
+    const addLayer    = params.get('layer');
+    const isAddMode   = !!(addService && addLayer);
+
+    if (isAddMode) {
+      // Reword the intro to set the expectation: ONE service, not all.
+      const intro = document.getElementById('intro-sub');
+      if (intro) {
+        intro.innerHTML =
+          `You're adding <strong>${escapeHtml(addService)}</strong> to a stack ` +
+          `that's already deployed. Credentials for services you configured ` +
+          `during initial setup are kept as-is. To rotate any of them, ` +
+          `use the <strong>Credentials</strong> page on the dashboard.`;
+      }
+      // Switch the Back link to the dashboard, not the selection page —
+      // the operator came from there and that's where they want to return.
+      const backBtn = document.querySelector('.setup-nav a.btn-ghost');
+      if (backBtn) { backBtn.href = '/app/'; backBtn.textContent = '← Back to dashboard'; }
+    }
+
     const servicesToConfigure = [];
     for (const layer of LAYER_ORDER) {
       const tool = selections[layer];
       if (!tool || tool === 'None') continue;
+      // In add-mode, render ONLY the layer that was requested. Every other
+      // layer was configured in the initial run and lives in .env already.
+      if (isAddMode && layer !== addLayer) continue;
       const form = TOOL_FORMS[tool] || {
         desc: `<strong>${escapeHtml(tool)}</strong> is on our roadmap but isn't wired up in this release.`,
         fields: [],
@@ -632,7 +672,11 @@
         if (inp.name) creds[inp.name] = inp.value;
       });
       const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      state.credentials = creds;
+      // In add-mode, MERGE so we don't wipe credentials from prior services.
+      // In initial-setup mode, replace wholesale (every panel is rendered).
+      state.credentials = isAddMode
+        ? { ...(state.credentials || {}), ...creds }
+        : creds;
       state.onboardingCompleted = false;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       window.location.href = 'deploying.html';

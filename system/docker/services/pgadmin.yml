@@ -41,6 +41,10 @@ services:
       - traefik.enable=true
       - traefik.http.routers.pgadmin.rule=PathPrefix(`/app/pgadmin`)
       - traefik.http.routers.pgadmin.entrypoints=web
+      # Same explicit-priority reasoning as metabase.yml — beats the
+      # dashboard's /app prefix unambiguously, regardless of how Traefik
+      # computes rule-length tiebreakers in this version.
+      - traefik.http.routers.pgadmin.priority=200
       - traefik.http.services.pgadmin.loadbalancer.server.port=80
       - traefik.http.services.pgadmin.loadbalancer.healthcheck.path=/misc/ping
       - traefik.http.services.pgadmin.loadbalancer.healthcheck.interval=10s
