@@ -231,7 +231,23 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     # PIPELINE_DB_PASSWORD is already validated above; everything else
     # in req.credentials is operator-typed and we trust the wizard's
     # client-side validation (#2 from M3 testing feedback).
-    credentials_written = _persist_credentials_to_env(req.credentials)
+    # Wrapped in try/except because credential persistence is a "best
+    # effort" — if the env-file write fails (permissions, missing mount,
+    # filesystem-readonly etc.) we still want the deploy to succeed.
+    # The DB role and installed_services rows are already committed; an
+    # operator with a half-deployed install is worse than one whose
+    # credentials need re-entering via the Credentials page later.
+    credentials_written: list[str] = []
+    credentials_error: str | None = None
+    try:
+        credentials_written = _persist_credentials_to_env(req.credentials)
+    except Exception as e:
+        log.exception("credentials persistence failed (deploy continues)")
+        credentials_error = f"{type(e).__name__}: {e}"
+        await audit.write(
+            "setup_credentials_persist_failed", user_id=user_id,
+            details={"error": credentials_error},
+        )
 
     await audit.write(
         "setup_deploy_complete", user_id=user_id,
@@ -242,6 +258,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             "skipped": skipped,
             # Audit log records the KEYS we wrote, never the values.
             "credentials_written": credentials_written,
+            "credentials_error": credentials_error,
         },
     )
     return {
@@ -251,6 +268,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         "registered_services": registered,
         "skipped_services": skipped,
         "credentials_written": credentials_written,
+        "credentials_error": credentials_error,
     }
 
 
