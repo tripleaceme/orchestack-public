@@ -24,7 +24,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from . import config, db, docker_ops, reconciler
-from .api import audit_api, auth, credentials, pinning, services, sessions, setup as setup_api, users
+from .api import admin, audit_api, auth, credentials, pinning, services, sessions, setup as setup_api, users
 
 # ---------- Logging --------------------------------------------------------
 logging.basicConfig(
@@ -101,6 +101,7 @@ app.include_router(audit_api.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(credentials.router)
+app.include_router(admin.router)
 
 
 @app.get("/api/health")

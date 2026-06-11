@@ -100,6 +100,20 @@ async def require_user(request: Request) -> dict[str, object]:
     return user
 
 
+async def require_admin(request: Request) -> dict[str, object]:
+    """Guard route dependency — require Admin role. Same redirect for not-
+    signed-in users; 403 for signed-in users without the Admin role.
+
+    Used on /app/users + /app/roles routes (the admin surfaces). Non-admin
+    users see a 403 page rather than a redirect so they understand that
+    the page exists but isn't theirs to access.
+    """
+    user = await require_user(request)
+    if "Admin" not in user.get("roles", []):
+        raise HTTPException(403, "Admin role required to access this page.")
+    return user
+
+
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     """Convert 307 login_required exceptions into real RedirectResponses."""
@@ -229,6 +243,262 @@ async def credentials_update_action(
             "updated_key": key,
         },
     )
+
+
+# ===========================================================================
+#  Admin — Users page
+# ===========================================================================
+@app.get("/users", response_class=HTMLResponse, name="users_page")
+async def users_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "users.html",
+        {"request": request, "page_title": "Users", "user": user},
+    )
+
+
+@app.get("/api/dashboard/users/table", response_class=HTMLResponse,
+          name="users_table_fragment")
+async def users_table_fragment(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        users_data = await orchestrator.admin_list_users(cookie)
+        roles_data = await orchestrator.admin_list_roles(cookie)
+        return templates.TemplateResponse(
+            "_users_table_fragment.html",
+            {
+                "request": request,
+                "users": users_data.get("users", []),
+                "roles": roles_data.get("roles", []),
+                "current_user_id": user.get("user_id"),
+                "error": None,
+                "invite_result": request.session.get("invite_result") if hasattr(request, "session") else None,
+            },
+        )
+    except httpx.HTTPError as e:
+        log.warning("users_table_fragment failed: %s", e)
+        return templates.TemplateResponse(
+            "_users_table_fragment.html",
+            {"request": request, "users": [], "roles": [],
+              "current_user_id": user.get("user_id"),
+              "error": str(e), "invite_result": None},
+        )
+
+
+@app.post("/api/dashboard/users/invite", response_class=HTMLResponse,
+           name="users_invite_action")
+async def users_invite_action(
+    request: Request,
+    username: str = Form(...), email: str = Form(...),
+    full_name: str = Form(...),
+    role_id: int | None = Form(None),
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    invite_result = None
+    invite_error = None
+    role_names: list[str] = []
+    if role_id is not None:
+        # Resolve role_id → role name for the orchestrator API (which takes names).
+        try:
+            roles_data = await orchestrator.admin_list_roles(cookie)
+            for r in roles_data.get("roles", []):
+                if r["id"] == role_id:
+                    role_names = [r["name"]]
+                    break
+        except httpx.HTTPError as e:
+            log.warning("role lookup failed during invite: %s", e)
+
+    try:
+        invite_result = await orchestrator.admin_invite_user(
+            cookie, username=username, email=email,
+            full_name=full_name, role_names=role_names,
+        )
+    except httpx.HTTPStatusError as e:
+        try:
+            invite_error = e.response.json().get("detail", str(e))
+        except Exception:
+            invite_error = str(e)
+    except httpx.HTTPError as e:
+        invite_error = str(e)
+
+    # Re-render the table fragment with the invite result for one-time
+    # display of the starter password.
+    try:
+        users_data = await orchestrator.admin_list_users(cookie)
+        roles_data = await orchestrator.admin_list_roles(cookie)
+        users = users_data.get("users", [])
+        roles = roles_data.get("roles", [])
+        error = None
+    except httpx.HTTPError as e:
+        users, roles, error = [], [], str(e)
+
+    return templates.TemplateResponse(
+        "_users_table_fragment.html",
+        {
+            "request": request,
+            "users": users, "roles": roles,
+            "current_user_id": user.get("user_id"),
+            "error": error,
+            "invite_result": invite_result,
+            "invite_error": invite_error,
+        },
+    )
+
+
+@app.post("/api/dashboard/users/{user_id}/toggle",
+           response_class=HTMLResponse, name="users_toggle_action")
+async def users_toggle_action(
+    request: Request, user_id: int,
+    enable: bool = Form(...), user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_toggle_user(cookie, user_id, enable)
+    except httpx.HTTPError as e:
+        log.warning("toggle user %d failed: %s", user_id, e)
+    return await users_table_fragment(request, user)
+
+
+@app.post("/api/dashboard/users/{user_id}/roles",
+           response_class=HTMLResponse, name="users_grant_role_action")
+async def users_grant_role_action(
+    request: Request, user_id: int,
+    role_id: int = Form(...), user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_grant_user_role(cookie, user_id, role_id)
+    except httpx.HTTPError as e:
+        log.warning("grant role %d to user %d failed: %s", role_id, user_id, e)
+    return await users_table_fragment(request, user)
+
+
+@app.delete("/api/dashboard/users/{user_id}/roles/{role_id}",
+             response_class=HTMLResponse, name="users_revoke_role_action")
+async def users_revoke_role_action(
+    request: Request, user_id: int, role_id: int,
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_revoke_user_role(cookie, user_id, role_id)
+    except httpx.HTTPError as e:
+        log.warning("revoke role %d from user %d failed: %s", role_id, user_id, e)
+    return await users_table_fragment(request, user)
+
+
+# ===========================================================================
+#  Admin — Roles page
+# ===========================================================================
+@app.get("/roles", response_class=HTMLResponse, name="roles_page")
+async def roles_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "roles.html",
+        {"request": request, "page_title": "Roles", "user": user},
+    )
+
+
+async def _roles_render_context(request: Request, user: dict) -> dict:
+    """Common context for roles fragment renders."""
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        roles_data = await orchestrator.admin_list_roles(cookie)
+        perms_data = await orchestrator.admin_list_permissions(cookie)
+        services_data = await orchestrator.list_services()
+        error = None
+    except httpx.HTTPError as e:
+        log.warning("roles fragment failed: %s", e)
+        roles_data = {"roles": []}
+        perms_data = {"permissions": []}
+        services_data = {"services": []}
+        error = str(e)
+
+    # Bucket permissions by role for easy template iteration.
+    perms_by_role: dict[int, list[dict]] = {}
+    for p in perms_data.get("permissions", []):
+        perms_by_role.setdefault(p["role_id"], []).append(p)
+
+    return {
+        "request": request,
+        "roles": roles_data.get("roles", []),
+        "perms_by_role": perms_by_role,
+        "services": services_data.get("services", []),
+        "error": error,
+    }
+
+
+@app.get("/api/dashboard/roles/list", response_class=HTMLResponse,
+          name="roles_list_fragment")
+async def roles_list_fragment(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    ctx = await _roles_render_context(request, user)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+@app.post("/api/dashboard/roles/create", response_class=HTMLResponse,
+           name="roles_create_action")
+async def roles_create_action(
+    request: Request, name: str = Form(...),
+    description: str = Form(""), user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_create_role(cookie, name, description or None)
+    except httpx.HTTPError as e:
+        log.warning("create role failed: %s", e)
+    ctx = await _roles_render_context(request, user)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+@app.delete("/api/dashboard/roles/{role_id}", response_class=HTMLResponse,
+             name="roles_delete_action")
+async def roles_delete_action(
+    request: Request, role_id: int, user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_delete_role(cookie, role_id)
+    except httpx.HTTPError as e:
+        log.warning("delete role %d failed: %s", role_id, e)
+    ctx = await _roles_render_context(request, user)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+@app.post("/api/dashboard/roles/{role_id}/permissions",
+           response_class=HTMLResponse, name="roles_grant_permission_action")
+async def roles_grant_permission_action(
+    request: Request, role_id: int,
+    service_name: str = Form(...),
+    can_start: bool = Form(False),
+    can_use: bool = Form(False),
+    can_force_stop: bool = Form(False),
+    can_edit_config: bool = Form(False),
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_grant_permission(
+            cookie, role_id=role_id, service_name=service_name,
+            can_start=can_start, can_use=can_use,
+            can_force_stop=can_force_stop, can_edit_config=can_edit_config,
+        )
+    except httpx.HTTPError as e:
+        log.warning("grant permission failed: %s", e)
+    ctx = await _roles_render_context(request, user)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+@app.delete("/api/dashboard/roles/permissions/{permission_id}",
+             response_class=HTMLResponse, name="roles_revoke_permission_action")
+async def roles_revoke_permission_action(
+    request: Request, permission_id: int, user=Depends(require_admin),
+) -> HTMLResponse:
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        await orchestrator.admin_revoke_permission(cookie, permission_id)
+    except httpx.HTTPError as e:
+        log.warning("revoke permission %d failed: %s", permission_id, e)
+    ctx = await _roles_render_context(request, user)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
 @app.get("/services/{name}", response_class=HTMLResponse, name="service_detail")

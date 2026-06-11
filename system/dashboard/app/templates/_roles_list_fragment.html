@@ -1,0 +1,192 @@
+{#
+  Roles list + per-role permission matrix.
+
+  Each role renders as an expandable card. The expanded view shows existing
+  service-permission grants as a small table, plus an inline "+ Add service
+  permission" form with:
+    - service dropdown (from the orchestrator's catalogue + a '*' wildcard)
+    - four permission checkboxes
+    - submit button
+
+  Posting the form upserts the (role_id, service_name) row — if the role
+  already had permissions on that service, the new values overwrite the
+  old ones (that's the "Update" semantics the operator gets from re-saving).
+#}
+{% if error %}
+  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-4">
+    <strong class="font-semibold">Couldn't load roles.</strong>
+    <span class="text-red-700"> {{ error }}</span>
+  </div>
+{% endif %}
+
+{# --------------------- Create-role form --------------------- #}
+<form hx-post="{{ url_for('roles_create_action') }}"
+      hx-target="#roles-list" hx-swap="innerHTML"
+      class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-6
+             grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">New role name</span>
+    <input type="text" name="name" required minlength="1" maxlength="64"
+           placeholder="e.g. Junior Analyst"
+           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">Description (optional)</span>
+    <input type="text" name="description"
+           placeholder="What this role is for"
+           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
+  </label>
+  <button type="submit"
+          class="text-sm font-medium px-3 py-1.5 rounded
+                 bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
+    + Create role
+  </button>
+</form>
+
+{# --------------------- Role cards --------------------- #}
+<div class="space-y-4">
+  {% for role in roles %}
+    <article class="bg-[var(--surface)] border border-[var(--border)] rounded-lg">
+      <header class="p-4 border-b border-[var(--border)] flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-semibold text-[var(--text)] flex items-center gap-2">
+            {{ role.name }}
+            {% if role.is_system %}
+              <span class="text-[10px] uppercase tracking-wide font-semibold
+                           px-1.5 py-0.5 rounded
+                           bg-slate-100 text-slate-600 border border-slate-200">
+                built-in
+              </span>
+            {% endif %}
+          </h3>
+          {% if role.description %}
+            <p class="text-xs text-[var(--text-2)] mt-0.5">{{ role.description }}</p>
+          {% endif %}
+        </div>
+        {% if not role.is_system %}
+          <button hx-delete="{{ url_for('roles_delete_action', role_id=role.id) }}"
+                  hx-target="#roles-list" hx-swap="innerHTML"
+                  hx-confirm="Delete role '{{ role.name }}'? Users currently assigned this role will lose its permissions immediately."
+                  class="text-xs font-medium text-[var(--text-2)] hover:text-red-700
+                         underline-offset-2 hover:underline flex-shrink-0">
+            Delete role
+          </button>
+        {% endif %}
+      </header>
+
+      <div class="p-4">
+        {# Existing permissions for this role. #}
+        {% set role_perms = perms_by_role.get(role.id, []) %}
+        {% if role_perms %}
+          <p class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide mb-2">
+            Current grants
+          </p>
+          <div class="overflow-x-auto mb-4">
+            <table class="w-full text-xs">
+              <thead class="text-[var(--text-2)]">
+                <tr>
+                  <th class="text-left px-2 py-1 font-medium">Service</th>
+                  <th class="text-center px-2 py-1 font-medium">Start</th>
+                  <th class="text-center px-2 py-1 font-medium">Use</th>
+                  <th class="text-center px-2 py-1 font-medium">Force-stop</th>
+                  <th class="text-center px-2 py-1 font-medium">Edit&nbsp;config</th>
+                  <th class="text-right px-2 py-1 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[var(--border)]">
+                {% for p in role_perms %}
+                  <tr>
+                    <td class="px-2 py-1.5">
+                      {% if p.service_name == '*' %}
+                        <span class="font-mono font-semibold">* (all services)</span>
+                      {% else %}
+                        <span class="font-mono">{{ p.service_name }}</span>
+                      {% endif %}
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      {{ '✓' if p.can_start else '—' }}
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      {{ '✓' if p.can_use else '—' }}
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      {{ '✓' if p.can_force_stop else '—' }}
+                    </td>
+                    <td class="px-2 py-1.5 text-center">
+                      {{ '✓' if p.can_edit_config else '—' }}
+                    </td>
+                    <td class="px-2 py-1.5 text-right">
+                      <button hx-delete="{{ url_for('roles_revoke_permission_action', permission_id=p.id) }}"
+                              hx-target="#roles-list" hx-swap="innerHTML"
+                              hx-confirm="Revoke this permission grant?"
+                              class="text-xs text-[var(--text-2)] hover:text-red-700
+                                     underline-offset-2 hover:underline">
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-xs text-[var(--text-2)] italic mb-4">
+            No service permissions yet. Add one below — without grants this
+            role can sign in but can't start, use, or configure any
+            services.
+          </p>
+        {% endif %}
+
+        {# --------------------- Grant new permission form --------------------- #}
+        <p class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide mb-2">
+          Add service permission
+        </p>
+        <form hx-post="{{ url_for('roles_grant_permission_action', role_id=role.id) }}"
+              hx-target="#roles-list" hx-swap="innerHTML"
+              class="bg-[var(--bg)] border border-[var(--border)] rounded-md p-3
+                     grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
+          <label class="block lg:col-span-2">
+            <span class="text-xs font-medium text-[var(--text-2)]">Service</span>
+            <select name="service_name" required
+                    class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white">
+              <option value="*">* (all services)</option>
+              {% for svc in services %}
+                <option value="{{ svc.name }}">{{ svc.display_name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="can_start" value="true"
+                   class="w-4 h-4 accent-[var(--navy)]">
+            <span>can_start</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="can_use" value="true"
+                   class="w-4 h-4 accent-[var(--navy)]">
+            <span>can_use</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="can_force_stop" value="true"
+                   class="w-4 h-4 accent-[var(--navy)]">
+            <span>can_force_stop</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="can_edit_config" value="true"
+                   class="w-4 h-4 accent-[var(--navy)]">
+            <span>can_edit_config</span>
+          </label>
+          <button type="submit"
+                  class="text-sm font-medium px-3 py-1.5 rounded
+                         bg-[var(--navy)] text-white
+                         hover:bg-[var(--navy-2)] transition-colors lg:col-span-1">
+            Save
+          </button>
+        </form>
+      </div>
+    </article>
+  {% endfor %}
+</div>
+
+<p class="text-xs text-[var(--text-2)] mt-4">
+  {{ roles | length }} role{{ '' if roles | length == 1 else 's' }}.
+</p>

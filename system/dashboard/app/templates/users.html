@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+      Users
+    </h1>
+    <p class="text-sm text-[var(--text-2)] mt-1">
+      Invite new operators, manage roles, and enable or disable accounts.
+      Self-signup is locked to the first install — every subsequent user
+      arrives here. The starter password shown after an invite is
+      revealed exactly once: capture it and pass it to the user
+      out-of-band.
+    </p>
+  </div>
+
+  <section id="users-table"
+           hx-get="{{ url_for('users_table_fragment') }}"
+           hx-trigger="load delay:50ms"
+           hx-swap="innerHTML"
+           class="min-h-[200px]">
+    <div class="text-sm text-[var(--text-2)] italic">Loading users…</div>
+  </section>
+{% endblock %}

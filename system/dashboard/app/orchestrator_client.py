@@ -215,3 +215,130 @@ class OrchestratorClient:
             )
             resp.raise_for_status()
             return resp.json()
+
+    # ---- Admin: users / roles / role-permissions --------------------------
+    def _admin_cookies(self, session_cookie: str | None) -> dict[str, str]:
+        return {"orchestack_session": session_cookie} if session_cookie else {}
+
+    async def admin_list_users(self, session_cookie: str | None) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.get(f"{self.base_url}/api/admin/users")
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_invite_user(
+        self, session_cookie: str | None,
+        username: str, email: str, full_name: str,
+        role_names: list[str] | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.post(
+                f"{self.base_url}/api/admin/users/invite",
+                json={
+                    "username": username, "email": email,
+                    "full_name": full_name,
+                    "role_names": role_names or [],
+                },
+            )
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_toggle_user(
+        self, session_cookie: str | None, user_id: int, enable: bool,
+    ) -> dict:
+        action = "enable" if enable else "disable"
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.post(f"{self.base_url}/api/admin/users/{user_id}/{action}")
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_grant_user_role(
+        self, session_cookie: str | None, user_id: int, role_id: int,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.post(
+                f"{self.base_url}/api/admin/user-roles",
+                json={"user_id": user_id, "role_id": role_id},
+            )
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_revoke_user_role(
+        self, session_cookie: str | None, user_id: int, role_id: int,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.delete(
+                f"{self.base_url}/api/admin/user-roles/{user_id}/{role_id}",
+            )
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_list_roles(self, session_cookie: str | None) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.get(f"{self.base_url}/api/admin/roles")
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_create_role(
+        self, session_cookie: str | None, name: str, description: str | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.post(
+                f"{self.base_url}/api/admin/roles",
+                json={"name": name, "description": description},
+            )
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_delete_role(self, session_cookie: str | None, role_id: int) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.delete(f"{self.base_url}/api/admin/roles/{role_id}")
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_list_permissions(
+        self, session_cookie: str | None, role_id: int | None = None,
+    ) -> dict:
+        params = {"role_id": role_id} if role_id is not None else {}
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.get(f"{self.base_url}/api/admin/role-permissions", params=params)
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_grant_permission(
+        self, session_cookie: str | None, role_id: int, service_name: str,
+        can_start: bool, can_use: bool, can_force_stop: bool, can_edit_config: bool,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.post(
+                f"{self.base_url}/api/admin/role-permissions",
+                json={
+                    "role_id": role_id,
+                    "service_name": service_name,
+                    "can_start": can_start, "can_use": can_use,
+                    "can_force_stop": can_force_stop, "can_edit_config": can_edit_config,
+                },
+            )
+            r.raise_for_status()
+            return r.json()
+
+    async def admin_revoke_permission(
+        self, session_cookie: str | None, permission_id: int,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.delete(
+                f"{self.base_url}/api/admin/role-permissions/{permission_id}",
+            )
+            r.raise_for_status()
+            return r.json()

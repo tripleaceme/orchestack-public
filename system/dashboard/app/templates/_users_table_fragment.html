@@ -1,0 +1,178 @@
+{#
+  Users table fragment. Renders the invite form, a list of every user with
+  their roles + status, and the one-time starter-password reveal when an
+  invite has just succeeded.
+
+  HTMX-driven: all actions (invite, enable/disable, grant/revoke role)
+  re-render this whole fragment so the table always reflects the latest
+  state.
+#}
+{% if error %}
+  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-4">
+    <strong class="font-semibold">Couldn't load users.</strong>
+    <span class="text-red-700"> {{ error }}</span>
+  </div>
+{% endif %}
+
+{% if invite_result %}
+  <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+    <p class="text-sm font-medium text-emerald-900">
+      ✓ Invited <span class="font-mono">{{ invite_result.username }}</span>
+      ({{ invite_result.email }}).
+      {% if invite_result.roles_granted %}
+        Roles granted: {{ invite_result.roles_granted | join(', ') }}.
+      {% endif %}
+    </p>
+    <p class="text-sm text-emerald-800 mt-2">
+      <strong>Starter password (shown only once):</strong>
+      <code class="font-mono text-base bg-white border border-emerald-300 px-2 py-1 rounded ml-2 select-all">{{ invite_result.starter_password }}</code>
+    </p>
+    <p class="text-xs text-emerald-700 mt-2">
+      Pass this to the user out-of-band (Slack DM, signed message). They
+      should change it on first login.
+    </p>
+  </div>
+{% endif %}
+
+{% if invite_error %}
+  <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+    Invite failed: {{ invite_error }}
+  </div>
+{% endif %}
+
+{# --------------------- Invite form --------------------- #}
+<form hx-post="{{ url_for('users_invite_action') }}"
+      hx-target="#users-table"
+      hx-swap="innerHTML"
+      class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-4
+             grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">Username</span>
+    <input type="text" name="username" required minlength="3" maxlength="32"
+           pattern="[a-zA-Z0-9_.\-]+"
+           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">Email</span>
+    <input type="email" name="email" required
+           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">Full name</span>
+    <input type="text" name="full_name" required
+           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
+  </label>
+  <label class="block">
+    <span class="text-xs font-medium text-[var(--text-2)]">Starter role</span>
+    <select name="role_id"
+            class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white">
+      <option value="">No role yet</option>
+      {% for r in roles %}
+        <option value="{{ r.id }}">{{ r.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit"
+          class="text-sm font-medium px-3 py-1.5 rounded
+                 bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
+    + Invite user
+  </button>
+</form>
+
+{# --------------------- Users table --------------------- #}
+<div class="overflow-x-auto bg-[var(--surface)] border border-[var(--border)] rounded-lg">
+  <table class="w-full text-sm">
+    <thead class="bg-[var(--bg)] text-[var(--text-2)] text-xs uppercase tracking-wide">
+      <tr>
+        <th class="text-left px-4 py-2 font-medium">User</th>
+        <th class="text-left px-4 py-2 font-medium">Roles</th>
+        <th class="text-left px-4 py-2 font-medium">Status</th>
+        <th class="text-left px-4 py-2 font-medium">Last login</th>
+        <th class="text-right px-4 py-2 font-medium">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[var(--border)]">
+      {% for u in users %}
+        <tr class="{{ 'opacity-50' if not u.is_active else '' }}">
+          <td class="px-4 py-2 align-top">
+            <div class="font-medium text-[var(--text)]">{{ u.full_name }}</div>
+            <div class="text-xs text-[var(--text-2)] font-mono">
+              {{ u.username }} · {{ u.email }}
+            </div>
+            {% if u.company_name %}
+              <div class="text-xs text-[var(--text-2)] italic">{{ u.company_name }}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 align-top">
+            {% if u.roles %}
+              <div class="flex flex-wrap gap-1 items-center">
+                {% for role_name in u.roles %}
+                  {# Find the role_id by name for the revoke link. #}
+                  {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
+                  <span class="text-[10px] uppercase tracking-wide font-semibold
+                               px-1.5 py-0.5 rounded
+                               bg-emerald-50 text-emerald-700 border border-emerald-200
+                               inline-flex items-center gap-1">
+                    {{ role_name }}
+                    {% if role and not (u.id == current_user_id and role_name == 'Admin') %}
+                      <button hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
+                              hx-target="#users-table" hx-swap="innerHTML"
+                              hx-confirm="Revoke {{ role_name }} from {{ u.username }}?"
+                              title="Revoke {{ role_name }}"
+                              class="hover:text-red-700 leading-none">✕</button>
+                    {% endif %}
+                  </span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <span class="text-xs text-[var(--text-2)] italic">no roles</span>
+            {% endif %}
+            {# Grant-role inline form. #}
+            <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
+                  hx-target="#users-table" hx-swap="innerHTML"
+                  hx-trigger="change from:select"
+                  class="mt-1">
+              <select name="role_id"
+                      class="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white">
+                <option value="">+ Grant role</option>
+                {% for r in roles %}
+                  {% if r.name not in u.roles %}
+                    <option value="{{ r.id }}">{{ r.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td class="px-4 py-2 align-top">
+            {% if u.is_active %}
+              <span class="text-xs font-medium text-emerald-700">● Active</span>
+            {% else %}
+              <span class="text-xs font-medium text-[var(--text-2)]">○ Disabled</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 align-top text-xs text-[var(--text-2)] font-mono">
+            {{ u.last_login_at[:19] if u.last_login_at else 'never' }}
+          </td>
+          <td class="px-4 py-2 align-top text-right">
+            {% if u.id != current_user_id %}
+              <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
+                    hx-target="#users-table" hx-swap="innerHTML" class="inline">
+                <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
+                <button type="submit"
+                        class="text-xs font-medium {{ 'text-red-700 hover:text-red-800' if u.is_active else 'text-emerald-700 hover:text-emerald-800' }} underline-offset-2 hover:underline">
+                  {{ 'Disable' if u.is_active else 'Enable' }}
+                </button>
+              </form>
+            {% else %}
+              <span class="text-xs text-[var(--text-2)] italic">you</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="text-xs text-[var(--text-2)] mt-3">
+  {{ users | length }} user{{ '' if users | length == 1 else 's' }}.
+</p>

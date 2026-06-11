@@ -63,15 +63,29 @@ async def _hash_password(plain: str) -> str:
 
 @router.post("", status_code=201)
 async def signup(req: SignupRequest) -> dict:
-    """Create a platform.users row. Returns the new user's id + username.
+    """Create the FIRST platform user. Gated to first-install only.
 
-    First user gets auto-assigned the built-in Admin role; everyone else
-    gets no roles initially (an Admin must grant them via the dashboard's
-    admin UI in M3.4+).
+    After the first user is created, this endpoint returns 403 to prevent
+    strangers from registering when an OrcheStack instance is exposed
+    publicly. Subsequent users are invited by an Admin via the dashboard
+    Users page (POST /api/users/invite).
+
+    First user gets auto-assigned the built-in Admin role; the invite flow
+    grants other roles explicitly.
 
     Duplicate username/email returns 409, NOT 400 — the schema's UNIQUE
     constraints make this a real conflict, not a validation error.
     """
+    # Block self-signup once a user already exists. Check BEFORE bcrypt
+    # so we don't waste 100ms hashing a password the caller can't use.
+    pre_count = await db.fetchrow("SELECT count(*) AS n FROM platform.users")
+    if pre_count and pre_count["n"] > 0:
+        raise HTTPException(
+            403,
+            "Self-signup is disabled. Ask an administrator to invite you via "
+            "the dashboard Users page.",
+        )
+
     password_hash = await _hash_password(req.password)
 
     try:

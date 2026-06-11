@@ -112,43 +112,47 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Get started</a> › Configure services</div>
     <h1>Step 3 — Configure services</h1>
-    <p class="lede">Pick one tool per pipeline layer, provide credentials, and OrcheStack pulls the Docker images you chose — writing a generated <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code> under the hood.</p>
+    <p class="lede">Pick one tool per pipeline layer, provide credentials, and OrcheStack pulls the Docker images you chose while writing a <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code> under the hood.</p>
 
 <h2 id="pick-tools">Pick your tools</h2>
 <p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a dropdown with a tested default and documented alternatives:</p>
 <ul>
-  <li><strong>Ingestion</strong> — Airbyte <em>(recommended)</em>, Custom Python, None</li>
-  <li><strong>Orchestration</strong> — Apache Airflow (core, always-on)</li>
-  <li><strong>Warehouse</strong> — PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
-  <li><strong>Data lake</strong> — MinIO (core)</li>
-  <li><strong>Transformation</strong> — dbt Core <em>(recommended)</em>, SQLMesh</li>
-  <li><strong>Data quality</strong> — Great Expectations <em>(recommended)</em>, Soda Core, None</li>
-  <li><strong>Governance</strong> — OpenMetadata <em>(recommended)</em>, DataHub, None</li>
-  <li><strong>BI</strong> — Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
-  <li><strong>Database admin UI</strong> — pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
+  <li><strong>Ingestion:</strong> Airbyte <em>(recommended)</em>, Custom Python, None</li>
+  <li><strong>Orchestration:</strong> Apache Airflow (core, always-on)</li>
+  <li><strong>Warehouse:</strong> PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
+  <li><strong>Data lake:</strong> MinIO (core)</li>
+  <li><strong>Transformation:</strong> dbt Core <em>(recommended)</em>, SQLMesh</li>
+  <li><strong>Data quality:</strong> Great Expectations <em>(recommended)</em>, Soda Core, None</li>
+  <li><strong>Governance:</strong> OpenMetadata <em>(recommended)</em>, DataHub, None</li>
+  <li><strong>BI:</strong> Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
+  <li><strong>Database admin UI:</strong> pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
 </ul>
-<p>Pick the defaults if you're unsure — they're the ones OrcheStack tests end-to-end.</p>
+<p>Mix and match as you like, OrcheStack's modular design supports any combo. Recommended defaults are a great starting point if you're unsure.</p>
+<p>Don't worry about making the "wrong" choice. You can change services later from the
+admin dashboard, and OrcheStack handles the heavy lifting of reconfiguring and restarting containers for you.</p>
 
 <h2 id="enter-credentials">Enter credentials</h2>
-<p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool — for example, OpenMetadata asks for:</p>
+<p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool. For example, OpenMetadata asks for:</p>
 <ul>
   <li>Admin email and password</li>
   <li>JWT secret (32+ characters)</li>
   <li>PostgreSQL backend details (host, port, database, user, password)</li>
 </ul>
-<p>OrcheStack runs a live connection test against every backend before allowing you to proceed. Invalid credentials fail fast — no container rebuilds burning time.</p>
+<p>OrcheStack runs a live connection test against every backend before allowing you to proceed. Invalid credentials fail fast, so no container rebuilds.</p>
 <div class="callout">
-  <p><strong>Where credentials go.</strong> OrcheStack writes them to a file at <code class="inline">./config/.env</code> on the host, <code class="inline">chmod 600</code>-protected. Your <code class="inline">docker-compose.yml</code> references them via <code class="inline">${VAR}</code> placeholders. <strong>Add <code class="inline">./config</code> to your <code class="inline">.gitignore</code></strong> before committing anything — you don't want credentials in source control.</p>
+  <p><strong>Where credentials go:</strong> OrcheStack writes them to a file at <code class="inline">./config/.env</code> on the host, with <code class="inline">chmod 600</code>-protected. 
+    The <code class="inline">docker-compose.yml</code> references them via <code class="inline">${VAR}</code> placeholders. 
+    <strong>Add <code class="inline">./config</code> to your <code class="inline">.gitignore</code></strong> before committing anything.</p>
 </div>
 
 <h2 id="pull-and-start">Pull and start</h2>
 <p>Once you click <strong>Save &amp; deploy</strong>, OrcheStack does three things:</p>
 <ol>
   <li>Regenerates <code class="inline">docker-compose.yml</code> with just the services you picked.</li>
-  <li>Pulls each service's Docker image (first time only — cached after).</li>
+  <li>Pulls each service's Docker image (first time only and cached after).</li>
   <li>Runs <code class="inline">docker compose up -d</code> to start hot-tier services and register cold-tier services with the orchestrator.</li>
 </ol>
-<p>Expect the first-time pull to take 2–5 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
+<p>Expect the first-time pull to take 20–35 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
 
 <h2 id="editing-later">Editing credentials later</h2>
 <p>From the OrcheStack admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
