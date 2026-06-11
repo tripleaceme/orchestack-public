@@ -294,8 +294,19 @@ section { padding: 80px 0; }
 .docs-main pre { margin: 16px 0 24px; }
 .docs-main .callout { border-left: 4px solid var(--navy); background: var(--navy-100); padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 20px 0; }
 .docs-main .callout.warn { border-color: var(--accent); background: var(--accent-100); }
+.docs-main .callout.info { border-color: var(--navy); background: var(--navy-100); }
 .docs-main .callout p { margin: 0; }
 .docs-main .callout strong { color: var(--navy); }
+
+/* Keyboard chip — small monospace pill used in body copy to denote a
+   shortcut (`<span class="kbd">g</span> <span class="kbd">c</span>`).
+   The docs-search-scoped .kbd above is for the ⌘K hint in the header;
+   this is the general-purpose variant for inline prose. */
+.docs-main .kbd { display: inline-block; min-width: 18px; text-align: center; font-size: 12px; color: var(--text); background: #fff; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; font-family: 'JetBrains Mono', monospace; font-weight: 600; vertical-align: 1px; }
+
+/* Inline shell-comment styling inside <pre> blocks — used in the
+   configure docs to annotate command sequences. */
+.docs-main pre .comment { color: #7a8a99; }
 .docs-main .next-prev { display: flex; justify-content: space-between; gap: 16px; margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); }
 .docs-main .next-prev a { display: block; padding: 16px 20px; border: 1px solid var(--border); border-radius: 10px; flex: 1; }
 .docs-main .next-prev a:hover { border-color: var(--navy); text-decoration: none; }
