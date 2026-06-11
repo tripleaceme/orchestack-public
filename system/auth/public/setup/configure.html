@@ -323,8 +323,10 @@
     "OpenMetadata": {
       desc: "Governance and column-level lineage. Admin credentials plus a long JWT secret for internal auth.",
       fields: [
-        { name: "OPENMETADATA_ADMIN_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
-          hint: "Email to log into OpenMetadata's UI. Can differ from your OrcheStack platform login — OpenMetadata has its own user system." },
+        { name: "OPENMETADATA_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
+          autoDefault: "admin@${company}.local",
+          required: true,
+          hint: "OpenMetadata's login identifier. Must look like an email; never used to send mail. Default is derived from your company name." },
         { name: "OPENMETADATA_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "OpenMetadata admin password. Min 12 characters recommended." },
         { name: "OPENMETADATA_JWT_SECRET", label: "JWT secret", type: "password", placeholder: "Click Generate to create a 64-char hex secret", required: true,
@@ -344,10 +346,12 @@
 
     // ------- BI -------
     "Metabase": {
-      desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself.",
+      desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself. Metabase uses an email-shaped identifier as the login — no mail is ever sent unless you configure SMTP yourself.",
       fields: [
-        { name: "METABASE_ADMIN_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
-          hint: "Email for the first Metabase admin account. This is what you'll use to log into Metabase and create dashboards." },
+        { name: "METABASE_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
+          autoDefault: "admin@${company}.local",
+          required: true,
+          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. Default is derived from your company name — change it to any valid email if you prefer." },
         { name: "METABASE_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "Metabase admin password. Can differ from your OrcheStack platform login." },
       ],
@@ -379,12 +383,14 @@
 
     // ------- Admin UI -------
     "pgAdmin": {
-      desc: "Credentials are only for the pgAdmin UI login itself.",
+      desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username — no mail is ever sent to it. Anything that looks like an email works.",
       fields: [
-        { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin email", type: "email", placeholder: "admin@acme.ng", required: true,
-          hint: "Email to log into pgAdmin's own UI, not your PostgreSQL user. pgAdmin connects to PostgreSQL separately using the warehouse credentials." },
+        { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin login (email format)", type: "email",
+          autoDefault: "admin@${company}.local",
+          required: true,
+          hint: "pgAdmin's login identifier. Must look like an email (the app refuses to start if it doesn't), but it's never used to send mail. Default is derived from your company name — change it to any valid email if you prefer." },
         { name: "PGADMIN_DEFAULT_PASSWORD", label: "Admin password", type: "password", required: true,
-          hint: "pgAdmin login password." },
+          hint: "pgAdmin login password. Min 12 characters recommended." },
       ],
     },
     "Adminer": {
@@ -768,7 +774,16 @@
       // render so the user can just submit. The Generate button stays as a
       // "regenerate" affordance. Without this the user would have to click
       // Generate manually, which adds an avoidable step to the happy path.
+      //
+      // For autoDefault fields (admin emails), substitute ${company} with
+      // a slugified version of the company name captured at signup. pgAdmin,
+      // Metabase, and OpenMetadata refuse to start without an email-shaped
+      // value; pre-filling one means the operator can hit Next without
+      // having to invent an address for a tool that won't send mail anyway.
       let savedValue = credentials[field.name] ?? field.default ?? '';
+      if (!savedValue && field.autoDefault) {
+        savedValue = field.autoDefault.replace('${company}', _companySlug());
+      }
       if (!savedValue && field.generate) {
         savedValue = field.generate === 'fernet-key'
           ? generateFernetKey()
@@ -849,6 +864,24 @@
     }[c]));
   }
   function escapeAttr(s) { return escapeHtml(s); }
+
+  // Slugify the company name from the signup profile so we can produce
+  // sensible default admin logins like admin@<company>.local. Falls back
+  // to "orchestack" if the operator skipped the company field at signup
+  // (the form makes it optional). Lowercase, ASCII alnum + dash, max 32.
+  function _companySlug() {
+    let raw = '';
+    try {
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      raw = (state.profile && state.profile.company_name) || '';
+    } catch (_) {}
+    const slug = raw.toLowerCase()
+      .normalize('NFKD').replace(/[̀-ͯ]/g, '')   // strip accents
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 32);
+    return slug || 'orchestack';
+  }
 
   // 64-character hex string from 32 cryptographically random bytes.
   // Equivalent to `openssl rand -hex 32`. Used for JWT secrets and any other

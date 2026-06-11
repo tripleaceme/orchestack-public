@@ -51,6 +51,51 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         log.error("startup: DB pool init failed — running in degraded mode: %s", e)
 
+    # Auto-heal orphaned first-admin assignment.
+    #
+    # Earlier signups (commits before 601b06f) counted the seeded system
+    # row when deciding whether the new user was the "first" user, so
+    # is_first was always False and the Admin role was never granted.
+    # Operators on those installs end up locked out of /app/users and
+    # /app/roles even though they ARE the only real user. On startup,
+    # detect "exactly one non-system user with zero roles" and grant
+    # them Admin so they recover without losing data.
+    #
+    # Guarded by user-count == 1: we never silently elevate a user in a
+    # multi-user install. Idempotent ON CONFLICT DO NOTHING so repeat
+    # startups don't double-grant.
+    if pool_ready:
+        try:
+            row = await db.fetchrow(
+                """
+                SELECT u.id
+                FROM platform.users u
+                LEFT JOIN platform.user_roles ur ON ur.user_id = u.id
+                WHERE u.username != 'system'
+                GROUP BY u.id
+                HAVING count(ur.role_id) = 0
+                """,
+            )
+            user_count = await db.fetchval(
+                "SELECT count(*) FROM platform.users WHERE username != 'system'"
+            )
+            if row and user_count == 1:
+                await db.execute(
+                    """
+                    INSERT INTO platform.user_roles (user_id, role_id)
+                    SELECT $1, id FROM platform.roles WHERE name = 'Admin'
+                    ON CONFLICT DO NOTHING
+                    """,
+                    row["id"],
+                )
+                log.warning(
+                    "startup: auto-healed missing Admin role for user_id=%s "
+                    "(only real user, had no roles)", row["id"],
+                )
+        except Exception as e:
+            # Heal-on-startup is best-effort — never block app start on it.
+            log.warning("startup: admin auto-heal skipped: %s", e)
+
     stop_event = asyncio.Event()
     reconciler_task: asyncio.Task | None = None
     if pool_ready:

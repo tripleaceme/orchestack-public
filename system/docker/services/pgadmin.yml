@@ -29,8 +29,15 @@ services:
     # initialised — typically ~10–15s from container start. Without this
     # healthcheck Traefik routes requests at the container immediately
     # and the operator sees a 502 Bad Gateway during that window.
+    # NOTE: the healthcheck URL MUST start with SCRIPT_NAME (/app/pgadmin).
+    # pgAdmin enforces that every request path begin with SCRIPT_NAME and
+    # returns gunicorn's ConfigurationProblem (500) for anything else,
+    # including in-container healthcheck probes calling localhost:80. A
+    # bare /misc/ping crashes the worker, the container goes unhealthy,
+    # and Traefik falls back to the dashboard's /app prefix — symptom is
+    # the operator clicking Open and seeing the dashboard's FastAPI 404.
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/misc/ping || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/app/pgadmin/misc/ping || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

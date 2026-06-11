@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="max-w-xl mx-auto py-12 text-center">
+    <div class="text-6xl font-bold text-[var(--text-2)] mb-2">{{ status_code }}</div>
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)] mb-4">
+      {{ title }}
+    </h1>
+    <p class="text-sm text-[var(--text-2)] mb-6">{{ message }}</p>
+    {% if back_url %}
+      <a href="{{ back_url }}"
+         class="inline-block text-sm font-medium px-4 py-2 rounded
+                bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
+        {{ back_label or 'Back' }}
+      </a>
+    {% endif %}
+  </div>
+{% endblock %}

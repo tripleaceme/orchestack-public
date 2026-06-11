@@ -342,3 +342,38 @@ class OrchestratorClient:
             )
             r.raise_for_status()
             return r.json()
+
+    # ------------------------------------------------------------------
+    # Self-service profile (works for any signed-in user, not just Admin).
+    # ------------------------------------------------------------------
+    async def get_my_profile(self, session_cookie: str | None) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.get(f"{self.base_url}/api/users/me")
+            r.raise_for_status()
+            return r.json()
+
+    async def update_my_profile(
+        self, session_cookie: str | None,
+        full_name: str | None = None,
+        email: str | None = None,
+        company_name: str | None = None,
+        current_password: str | None = None,
+        new_password: str | None = None,
+    ) -> dict:
+        # Build the payload to only include keys the operator wants to
+        # change — the backend treats missing keys as "no change," and
+        # we don't want to overwrite (e.g.) email with empty string just
+        # because the form left it blank.
+        payload: dict[str, str] = {}
+        if full_name is not None:    payload["full_name"]    = full_name
+        if email is not None:        payload["email"]        = email
+        if company_name is not None: payload["company_name"] = company_name
+        if current_password is not None and new_password is not None:
+            payload["current_password"] = current_password
+            payload["new_password"]     = new_password
+        async with httpx.AsyncClient(timeout=10.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.patch(f"{self.base_url}/api/users/me", json=payload)
+            r.raise_for_status()
+            return r.json()

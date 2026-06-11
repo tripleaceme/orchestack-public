@@ -122,6 +122,10 @@
           <a href="{{ url_for('roles_page') }}"
              class="nav-link {{ 'active' if path == '/roles' else '' }}">Roles</a>
         {% endif %}
+        {% if user %}
+          <a href="{{ url_for('profile_page') }}"
+             class="nav-link {{ 'active' if path == '/profile' else '' }}">Profile</a>
+        {% endif %}
       </nav>
 
       <div class="flex items-center gap-4 text-sm text-[var(--text-2)]">
@@ -269,6 +273,7 @@
           else if (e.key === 'c') go('/credentials');
           else if (e.key === 'u') go('/users');
           else if (e.key === 'r') go('/roles');
+          else if (e.key === 'p') go('/profile');
           return;
         }
         if (e.key === 'g') {
@@ -285,6 +290,7 @@
             "  g c    Go to Credentials\n" +
             "  g u    Go to Users (admin only)\n" +
             "  g r    Go to Roles (admin only)\n" +
+            "  g p    Go to Profile\n" +
             "  ?      Show this help"
           );
         }

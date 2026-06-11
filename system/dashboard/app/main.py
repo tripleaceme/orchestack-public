@@ -116,9 +116,31 @@ async def require_admin(request: Request) -> dict[str, object]:
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
-    """Convert 307 login_required exceptions into real RedirectResponses."""
+    """Convert 307 login_required exceptions into real RedirectResponses.
+
+    For 403 raised on HTML page routes (everything NOT under /api/), render
+    an HTML error page rather than raw JSON — operators who typed a URL
+    directly should land on a readable page that tells them what's wrong
+    and how to get back, not a wall of {"detail": "..."}.
+    """
     if exc.status_code == 307 and exc.detail == "login_required":
         return RedirectResponse(url=exc.headers["Location"], status_code=307)
+    is_api = request.url.path.startswith("/api/")
+    if exc.status_code == 403 and not is_api:
+        return templates.TemplateResponse(
+            "error.html",
+            {
+                "request": request,
+                "page_title": "Access denied",
+                "user": None,
+                "status_code": 403,
+                "title": "Access denied",
+                "message": exc.detail or "You don't have permission for that page.",
+                "back_url": ROOT_PATH or "/",
+                "back_label": "Back to dashboard",
+            },
+            status_code=403,
+        )
     # Fall through to FastAPI's default JSON response for everything else.
     return JSONResponse(
         status_code=exc.status_code,
@@ -349,6 +371,88 @@ async def credentials_update_action(
             "selected_service": service,
             "services_present": services_present,
         },
+    )
+
+
+# ===========================================================================
+#  Self-service Profile — every signed-in user
+# ===========================================================================
+@app.get("/profile", response_class=HTMLResponse, name="profile_page")
+async def profile_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """`/app/profile` — edit your own full name, email, company, password."""
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        profile = await orchestrator.get_my_profile(cookie)
+        error = None
+    except httpx.HTTPError as e:
+        log.warning("get_my_profile failed: %s", e)
+        profile = {}
+        error = str(e)
+    return templates.TemplateResponse(
+        "profile.html",
+        {"request": request, "page_title": "Profile",
+          "user": user, "profile": profile, "error": error,
+          "saved": False, "save_error": None},
+    )
+
+
+@app.post("/profile", response_class=HTMLResponse, name="profile_save_action")
+async def profile_save_action(
+    request: Request,
+    full_name:        str = Form(""),
+    email:            str = Form(""),
+    company_name:     str = Form(""),
+    current_password: str = Form(""),
+    new_password:     str = Form(""),
+    user=Depends(require_user),
+) -> HTMLResponse:
+    """Save profile changes. Renders the page back with a success/error banner.
+
+    Only sends fields the operator actually changed — passing every form
+    field unconditionally would overwrite e.g. company_name with the empty
+    string when they only meant to update full_name.
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    save_error = None
+    saved = False
+    try:
+        current = await orchestrator.get_my_profile(cookie)
+        # Only send fields the operator actually changed.
+        kwargs: dict = {}
+        if full_name and full_name != current.get("full_name"):
+            kwargs["full_name"] = full_name
+        if email and email != current.get("email"):
+            kwargs["email"] = email
+        if company_name != (current.get("company_name") or ""):
+            kwargs["company_name"] = company_name
+        if new_password:
+            kwargs["current_password"] = current_password
+            kwargs["new_password"]     = new_password
+
+        if kwargs:
+            await orchestrator.update_my_profile(cookie, **kwargs)
+            saved = True
+    except httpx.HTTPStatusError as e:
+        try:
+            save_error = e.response.json().get("detail") or str(e)
+        except Exception:
+            save_error = str(e)
+    except httpx.HTTPError as e:
+        save_error = str(e)
+
+    # Re-fetch the profile so the form shows the latest persisted state.
+    try:
+        profile = await orchestrator.get_my_profile(cookie)
+        error = None
+    except httpx.HTTPError as e:
+        profile = {}
+        error = str(e)
+
+    return templates.TemplateResponse(
+        "profile.html",
+        {"request": request, "page_title": "Profile",
+          "user": user, "profile": profile, "error": error,
+          "saved": saved, "save_error": save_error},
     )
 
 
