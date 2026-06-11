@@ -136,12 +136,38 @@ async def start_service(service: str) -> CommandResult:
     Nigerian-affordable VPS with a ~10 Mbps link, a 200 MB image takes
     160 seconds just to pull. Subsequent starts are sub-second once the
     image is cached, so the bigger timeout is paid only on cold cache.
+
+    Self-heal on name conflict: when a previous bundle install left a
+    container with the same name behind (typically because the operator
+    re-extracted the bundle into a new directory), `docker compose up -d`
+    fails with "container name '/orchestack-X' is already in use by
+    container 'abc...'". Detect that specific error, `docker rm -f` the
+    orphan, retry. Anything else returns the original error.
     """
-    return await asyncio.to_thread(
-        _run_sync,
-        _service_compose_args(service) + ["up", "-d", "--remove-orphans"],
-        300,
+    up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
+    res = await asyncio.to_thread(_run_sync, up_args, 300)
+
+    if res.ok or "is already in use by container" not in res.stderr:
+        return res
+
+    # Orphan-container conflict — clean up + retry once.
+    container_name = f"orchestack-{service}"
+    log.warning(
+        "name conflict starting %s — removing orphan container %s and retrying",
+        service, container_name,
     )
+    rm_res = await asyncio.to_thread(
+        _run_sync, ["docker", "rm", "-f", container_name], 30,
+    )
+    if not rm_res.ok:
+        log.warning(
+            "could not remove orphan %s: %s — returning original up failure",
+            container_name, rm_res.short_stderr,
+        )
+        return res
+
+    # Retry the up. Same timeout as the first attempt.
+    return await asyncio.to_thread(_run_sync, up_args, 300)
 
 
 async def stop_service(service: str) -> CommandResult:

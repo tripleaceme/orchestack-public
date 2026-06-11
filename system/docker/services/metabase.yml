@@ -33,6 +33,19 @@ services:
       MB_SITE_URL: http://localhost/app/metabase
     networks:
       - orchestack-net
+    # Metabase serves on port 3000 once its internal schema bootstrap
+    # completes. First-start takes 30–60s; subsequent starts ~10s. Without
+    # this healthcheck Traefik happily routes requests at the container
+    # the instant compose says "running" and the operator sees a 502 Bad
+    # Gateway until the JVM finishes warming up. The traefik
+    # loadbalancer.healthcheck labels below pair with this to make Traefik
+    # respect the readiness signal.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18           # 18 * 10s = 3 min before declared unhealthy
+      start_period: 30s     # Don't count failures during the first 30s
     labels:
       # Reconciler tags — these are what the orchestrator's docker_ops
       # filters on. Don't change without also updating SERVICE_CATALOGUE
@@ -47,6 +60,12 @@ services:
       - traefik.http.middlewares.metabase-strip.stripprefix.prefixes=/app/metabase
       - traefik.http.routers.metabase.middlewares=metabase-strip@docker
       - traefik.http.services.metabase.loadbalancer.server.port=3000
+      # Loadbalancer healthcheck — Traefik polls this; while it returns
+      # non-2xx, Traefik returns 503 to clients instead of routing them
+      # to an un-ready Metabase. Pairs with the container healthcheck above.
+      - traefik.http.services.metabase.loadbalancer.healthcheck.path=/api/health
+      - traefik.http.services.metabase.loadbalancer.healthcheck.interval=10s
+      - traefik.http.services.metabase.loadbalancer.healthcheck.timeout=5s
 
 networks:
   orchestack-net:
