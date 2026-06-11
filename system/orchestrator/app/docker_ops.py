@@ -128,6 +128,54 @@ async def ping() -> bool:
     return res.ok
 
 
+# ===========================================================================
+#  Pre-start hooks
+#
+# Some managed services depend on a sidecar Postgres database that must
+# already exist before the container boots. Metabase v0.50+ is the example
+# that surfaced in M3 testing — it stopped auto-creating its own DB and
+# now hard-errors with FATAL: database "metabase" does not exist, falling
+# into a restart loop. Each hook is best-effort + idempotent: CREATE
+# DATABASE IF NOT EXISTS pattern via pg_database lookup, run once per
+# start_service call. Add new managed services to PRE_START_HOOKS as
+# M4 brings them online (airflow, airbyte_internal, openmetadata).
+#
+# Why hook in the orchestrator vs adding a postgres-init/*.sql file:
+# postgres-init runs ONLY on first volume initialisation. Operators with
+# an existing platform volume (every M3 tester) would need to manually
+# drop the volume — which is a destructive ask. The orchestrator hook
+# fixes both fresh installs AND existing volumes on the next start
+# attempt, no operator action required.
+# ===========================================================================
+async def _ensure_metabase_database() -> None:
+    """Create the `metabase` database in platform postgres if it doesn't exist.
+
+    Metabase connects with the orchestack platform user (per the env vars
+    in services/metabase.yml: MB_DB_USER / MB_DB_PASS = ORCHESTACK_DB_*).
+    The DB is owned by that user; this matches what Metabase expects on
+    its own first-run migration.
+    """
+    from . import db  # local import — avoids circular import at module load
+    pool = db.get_pool()
+    async with pool.acquire() as conn:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = 'metabase'",
+        )
+        if exists:
+            return
+        # CREATE DATABASE can't run inside a transaction. asyncpg auto-wraps
+        # execute() in one — but pg accepts the statement at top level
+        # outside the implicit txn for this specific command. The owner
+        # matches the user Metabase connects as.
+        log.info("pre-start hook: creating 'metabase' database")
+        await conn.execute('CREATE DATABASE "metabase"')
+
+
+PRE_START_HOOKS = {
+    "metabase": _ensure_metabase_database,
+}
+
+
 async def start_service(service: str) -> CommandResult:
     """Bring a cold-tier service up. Idempotent — `up -d` no-ops if already running.
 
@@ -137,6 +185,12 @@ async def start_service(service: str) -> CommandResult:
     160 seconds just to pull. Subsequent starts are sub-second once the
     image is cached, so the bigger timeout is paid only on cold cache.
 
+    Pre-start hook: for services that need a sidecar database to exist
+    BEFORE the container boots (Metabase, Airflow when M4 lands, etc),
+    the registered hook in PRE_START_HOOKS runs first. Hook failures are
+    logged but don't block the start — the container's own startup will
+    surface a clearer error message than the hook could.
+
     Self-heal on name conflict: when a previous bundle install left a
     container with the same name behind (typically because the operator
     re-extracted the bundle into a new directory), `docker compose up -d`
@@ -144,6 +198,15 @@ async def start_service(service: str) -> CommandResult:
     container 'abc...'". Detect that specific error, `docker rm -f` the
     orphan, retry. Anything else returns the original error.
     """
+    hook = PRE_START_HOOKS.get(service)
+    if hook is not None:
+        try:
+            await hook()
+        except Exception as e:
+            # Best-effort. If the hook fails (e.g., DB pool not ready),
+            # the container's own start will report a clearer error.
+            log.warning("pre-start hook for %s failed: %s", service, e)
+
     up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
     res = await asyncio.to_thread(_run_sync, up_args, 300)
 
