@@ -76,9 +76,16 @@ async def signup(req: SignupRequest) -> dict:
     Duplicate username/email returns 409, NOT 400 — the schema's UNIQUE
     constraints make this a real conflict, not a validation error.
     """
-    # Block self-signup once a user already exists. Check BEFORE bcrypt
-    # so we don't waste 100ms hashing a password the caller can't use.
-    pre_count = await db.fetchrow("SELECT count(*) AS n FROM platform.users")
+    # Block self-signup once a REAL user already exists. The platform DB
+    # is seeded with a non-loginable system row (id=1, username='system')
+    # at init time so FK constraints on audit/sessions/etc are satisfied
+    # before the first real user signs up — see
+    # postgres-init/20-seed-default-user.sql for the rationale. Counting
+    # that row would make the gate fire on every fresh install. Filter
+    # it out by username so this stays robust if id=1 ever shifts.
+    pre_count = await db.fetchrow(
+        "SELECT count(*) AS n FROM platform.users WHERE username != 'system'"
+    )
     if pre_count and pre_count["n"] > 0:
         raise HTTPException(
             403,
@@ -109,8 +116,11 @@ async def signup(req: SignupRequest) -> dict:
             detail = "That email is already registered."
         raise HTTPException(409, detail)
 
-    # Is this the first user? Auto-promote to Admin.
-    count_row = await db.fetchrow("SELECT count(*) AS n FROM platform.users")
+    # Is this the first REAL user? Auto-promote to Admin. Same filter as
+    # the gate above — the seeded system row doesn't count as a real user.
+    count_row = await db.fetchrow(
+        "SELECT count(*) AS n FROM platform.users WHERE username != 'system'"
+    )
     is_first = count_row["n"] == 1
     if is_first:
         await db.execute(

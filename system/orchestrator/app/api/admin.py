@@ -116,6 +116,7 @@ async def list_users(admin: dict = Depends(_require_admin)) -> dict:
         FROM platform.users u
         LEFT JOIN platform.user_roles ur ON ur.user_id = u.id
         LEFT JOIN platform.roles r       ON r.id       = ur.role_id
+        WHERE u.username != 'system'
         GROUP BY u.id
         ORDER BY u.created_at ASC
         """
