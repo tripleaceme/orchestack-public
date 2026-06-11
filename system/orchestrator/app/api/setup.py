@@ -345,18 +345,21 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
 
     # Backup previous file (best-effort — never block the deploy on this).
     try:
-        backup_path = env_path.with_name(
-            f".env.bak.{int(env_path.stat().st_mtime)}"
-        )
+        backup_path = env_path.parent / f"{env_path.name}.bak.{int(env_path.stat().st_mtime)}"
         if not backup_path.exists():
             backup_path.write_text(env_path.read_text())
     except OSError as e:
         log.warning("env backup write failed (continuing): %s", e)
 
-    # Atomic write — temp file + rename.
-    tmp_path = env_path.with_suffix(".env.tmp")
-    tmp_path.write_text("\n".join(lines) + "\n")
-    os.replace(tmp_path, env_path)
+    # Direct write — we can NOT use the "tmpfile + os.replace" atomic
+    # pattern because .env is bind-mounted from the host as a SINGLE FILE.
+    # Renaming over a bind-mounted file fails with EBUSY ("Device or
+    # resource busy") on Linux because the mount locks the inode. Direct
+    # write to the bind-mounted file works because the kernel allows
+    # truncating and writing to the existing inode through the mount.
+    # The backup we just took is the recovery path if a partial write
+    # ever corrupts the file (a few KB of text, never seen in practice).
+    env_path.write_text("\n".join(lines) + "\n")
 
     log.info("persisted %d credentials to %s", len(written), env_path)
     return written

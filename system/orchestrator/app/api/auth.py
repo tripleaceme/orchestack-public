@@ -59,12 +59,40 @@ COOKIE_NAME = "orchestack_session"
 SESSION_TTL = timedelta(hours=12)
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
+# Pre-computed at module load so the login endpoint's constant-time-ish
+# bcrypt-verify path has a REAL bcrypt hash to verify against when the
+# operator types an unknown username (timing-attack mitigation). Using a
+# hardcoded string here previously triggered ValueError: Invalid salt
+# inside bcrypt.checkpw — the dummy needs to be a real bcrypt encoding,
+# just one that won't match any password an attacker might supply.
+# Cost factor matches the real-user path so the timing matches.
+_DUMMY_HASH = bcrypt.hashpw(
+    b"\x00not-a-real-user-password\x00", bcrypt.gensalt(rounds=12),
+).decode("utf-8")
+
 
 # ---------- Helpers --------------------------------------------------------
+def _checkpw(plain: bytes, hashed: bytes) -> bool:
+    """bcrypt.checkpw wrapped to swallow ValueError ('Invalid salt').
+
+    The dummy hash we use for unknown-username timing-attack mitigation
+    needs to be a valid bcrypt encoding, but at any point in the future a
+    malformed value could land in platform.users.password_hash (corrupted
+    row, manual SQL edit, etc.). A ValueError there would otherwise 500
+    the login request rather than just rejecting credentials. Both the
+    real-user-with-bad-hash case and the dummy-hash case resolve to "this
+    is not a valid login" — which is exactly what `return False` means.
+    """
+    try:
+        return bcrypt.checkpw(plain, hashed)
+    except (ValueError, TypeError):
+        return False
+
+
 async def _verify_password(plain: str, hashed: str) -> bool:
-    """bcrypt verify off the event loop."""
+    """bcrypt verify off the event loop. False on malformed hash, never raises."""
     return await asyncio.to_thread(
-        bcrypt.checkpw, plain.encode("utf-8"), hashed.encode("utf-8"),
+        _checkpw, plain.encode("utf-8"), hashed.encode("utf-8"),
     )
 
 
@@ -165,8 +193,7 @@ async def login(req: LoginRequest, request: Request, response: Response) -> dict
     # hash even when the user doesn't exist, so the response time doesn't
     # leak username existence. (A real attacker can still distinguish by
     # other means, but this removes the cheap timing oracle.)
-    DUMMY_HASH = "$2b$12$" + "x" * 53  # well-formed bcrypt hash that won't verify
-    target_hash = user["password_hash"] if user else DUMMY_HASH
+    target_hash = user["password_hash"] if user else _DUMMY_HASH
     valid = await _verify_password(req.password, target_hash)
 
     if not user or not valid or not user["is_active"]:
