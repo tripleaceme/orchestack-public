@@ -668,6 +668,34 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const creds = {};
+
+      // Validate type=email fields BEFORE collecting credentials.
+      //
+      // The <form> carries `novalidate` (see the form tag in the static
+      // HTML) so that browser-level validation doesn't block submit on
+      // empty fields inside non-visible tabs. The trade-off: type=email
+      // inputs lose their built-in format check, and an operator can
+      // submit "Admin_pg" as a pgAdmin email — which then crashes
+      // pgAdmin on startup ("'Admin_pg' does not appear to be a valid
+      // email address"). We re-instate the check here, surfacing the
+      // bad field by jumping to its tab + focusing it.
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const badEmail = Array.from(form.querySelectorAll('input[type=email]'))
+        .find(inp => inp.name && inp.value && !EMAIL_RE.test(inp.value.trim()));
+      if (badEmail) {
+        const panelIdx = parseInt(
+          badEmail.closest('.svc-panel')?.dataset.idx ?? '0', 10);
+        if (window.__setupShow) window.__setupShow(panelIdx);
+        badEmail.focus();
+        badEmail.select?.();
+        alert(
+          `"${badEmail.value}" isn't a valid email address. ` +
+          `pgAdmin, Metabase, and OpenMetadata refuse to start when ` +
+          `their admin email field doesn't look like an email — please ` +
+          `fix it before continuing.`);
+        return;
+      }
+
       form.querySelectorAll('input').forEach(inp => {
         if (inp.name) creds[inp.name] = inp.value;
       });

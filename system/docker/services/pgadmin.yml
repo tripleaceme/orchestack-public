@@ -46,9 +46,13 @@ services:
       # computes rule-length tiebreakers in this version.
       - traefik.http.routers.pgadmin.priority=200
       - traefik.http.services.pgadmin.loadbalancer.server.port=80
-      - traefik.http.services.pgadmin.loadbalancer.healthcheck.path=/misc/ping
-      - traefik.http.services.pgadmin.loadbalancer.healthcheck.interval=10s
-      - traefik.http.services.pgadmin.loadbalancer.healthcheck.timeout=5s
+      # No Traefik loadbalancer healthcheck — see the note in metabase.yml
+      # for the full reasoning. The container healthcheck above with
+      # start_period: 15s is the single source of truth for "is pgAdmin
+      # ready." A Traefik-level check would create a second probe with
+      # different failure semantics, which previously caused /app/pgadmin
+      # to fall through to the dashboard's /app prefix and serve a
+      # FastAPI 404 instead of the pgAdmin UI.
 
 networks:
   orchestack-net:

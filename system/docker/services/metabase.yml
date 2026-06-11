@@ -34,12 +34,13 @@ services:
     networks:
       - orchestack-net
     # Metabase serves on port 3000 once its internal schema bootstrap
-    # completes. First-start takes 30–60s; subsequent starts ~10s. Without
-    # this healthcheck Traefik happily routes requests at the container
-    # the instant compose says "running" and the operator sees a 502 Bad
-    # Gateway until the JVM finishes warming up. The traefik
-    # loadbalancer.healthcheck labels below pair with this to make Traefik
-    # respect the readiness signal.
+    # completes. First-start takes 30–60s (JVM warm + Liquibase migration);
+    # subsequent starts ~10s. Traefik respects Docker's container health
+    # status by default — while this check is in the start_period grace
+    # window or actively failing, Traefik excludes the container from
+    # its loadbalancer pool. Once the container goes healthy, traffic
+    # flows. No Traefik-level healthcheck label needed (see the labels
+    # block below for the cautionary note).
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null || exit 1"]
       interval: 10s
@@ -69,12 +70,23 @@ services:
       - traefik.http.middlewares.metabase-strip.stripprefix.prefixes=/app/metabase
       - traefik.http.routers.metabase.middlewares=metabase-strip@docker
       - traefik.http.services.metabase.loadbalancer.server.port=3000
-      # Loadbalancer healthcheck — Traefik polls this; while it returns
-      # non-2xx, Traefik returns 503 to clients instead of routing them
-      # to an un-ready Metabase. Pairs with the container healthcheck above.
-      - traefik.http.services.metabase.loadbalancer.healthcheck.path=/api/health
-      - traefik.http.services.metabase.loadbalancer.healthcheck.interval=10s
-      - traefik.http.services.metabase.loadbalancer.healthcheck.timeout=5s
+      # No Traefik loadbalancer healthcheck — we rely on the Docker
+      # container healthcheck above. Metabase's /api/health returns 503
+      # during the 60-90s init phase (Jetty up but Liquibase migration
+      # still running), and a Traefik-level check would mark the backend
+      # down for that entire window. With no healthcheck loop reaches
+      # `/app/metabase` are routed straight at the container; the
+      # browser may see Metabase's own "Please wait..." page until init
+      # finishes, which is the correct UX for a slow-starting service.
+
+  # ===================================================================
+  # IF YOU ARE TEMPTED TO RE-ADD A LOADBALANCER HEALTHCHECK HERE: the
+  # symptom you're trying to fix (502 Bad Gateway during the init
+  # window) is downstream of `start_period` on the container check.
+  # Bump `start_period` instead. A duplicate Traefik check just causes
+  # /app/metabase to fall through to /app (the dashboard's PathPrefix)
+  # which serves a FastAPI 404 — the bug shipped in commit cef353c.
+  # ===================================================================
 
 networks:
   orchestack-net:
