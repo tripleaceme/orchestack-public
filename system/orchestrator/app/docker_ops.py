@@ -502,74 +502,174 @@ async def _bootstrap_metabase() -> None:
             log.info("metabase bootstrap: no setup-token observed (already configured or timeout)")
             return
 
-        # Build the warehouse-database payload only if we have all three
-        # pipeline creds. Skipping the database block is legal — Metabase
-        # will let the operator add it themselves later.
-        database_block: dict | None = None
-        if pipeline_name and pipeline_user and pipeline_pass:
-            database_block = {
-                "engine": "postgres",
-                "name":   "Pipeline warehouse",
-                "details": {
-                    "host":              "orchestack-postgres",
-                    "port":              5432,
-                    "dbname":            pipeline_name,
-                    "user":              pipeline_user,
-                    "password":          pipeline_pass,
-                    "ssl":               False,
-                    "tunnel-enabled":    False,
-                    "advanced-options":  False,
-                },
-                "is_full_sync": True,
-            }
-
-        payload = {
+        # Step 1: complete first-run setup with the MINIMUM REQUIRED
+        # payload. Metabase 0.51 has a strict schema for /api/setup —
+        # extra fields can produce a 400 with a generic "Unable to set
+        # up Metabase" message that gives no clue what's wrong. The
+        # previous payload included `user.site_name` (which the schema
+        # rejects) and an inline `database` block (engine-specific keys
+        # tripped schema validation in some Metabase patch versions).
+        # Cleaner separation: (a) setup with `database: null`,
+        # (b) authenticate, (c) POST /api/database to register the
+        # warehouse. Each step is independently observable in the audit
+        # log so a partial failure is debuggable.
+        setup_payload = {
             "token": setup_token,
             "user": {
-                "first_name": admin_email.split("@", 1)[0][:64] or "Admin",
+                "first_name": "Admin",
                 "last_name":  "User",
                 "email":      admin_email,
                 "password":   admin_password,
-                "site_name":  site_name,
             },
             "prefs": {
                 "site_name":      site_name,
                 "allow_tracking": False,
             },
+            # Explicit null — tells Metabase "no warehouse to add right
+            # now" so it doesn't sit waiting for a database step.
+            "database": None,
         }
-        if database_block is not None:
-            payload["database"] = database_block
 
         try:
-            r = await client.post(f"{base}/api/setup", json=payload, timeout=60.0)
-            if r.status_code in (200, 201, 204):
-                log.info("metabase bootstrap: /api/setup succeeded")
-                await audit.write(
-                    "metabase_bootstrapped",
-                    service_name="metabase",
-                    user_id=None,
-                    details={
-                        "site_name":       site_name,
-                        "warehouse_added": database_block is not None,
-                    },
-                )
-            else:
-                log.warning(
-                    "metabase bootstrap: /api/setup returned %d: %s",
-                    r.status_code, r.text[:300],
-                )
-                await audit.write(
-                    "metabase_bootstrap_failed",
-                    service_name="metabase",
-                    user_id=None,
-                    details={"status": r.status_code, "body": r.text[:300]},
-                )
+            r = await client.post(f"{base}/api/setup", json=setup_payload, timeout=60.0)
         except httpx.HTTPError as e:
-            log.warning("metabase bootstrap: POST /api/setup failed: %s", e)
+            log.warning("metabase bootstrap: POST /api/setup raised: %s", e)
             await audit.write(
                 "metabase_bootstrap_failed",
+                service_name="metabase",
                 user_id=None,
-                details={"error": str(e)},
+                details={"phase": "setup", "error": str(e)},
+            )
+            return
+
+        if r.status_code not in (200, 201, 204):
+            # Surface the FULL response body in the audit log — that's
+            # how an operator finds out their password failed a Metabase
+            # rule (length/complexity) without needing docker logs.
+            log.warning(
+                "metabase bootstrap: /api/setup returned %d: %s",
+                r.status_code, r.text[:500],
+            )
+            await audit.write(
+                "metabase_bootstrap_failed",
+                service_name="metabase",
+                user_id=None,
+                details={
+                    "phase":  "setup",
+                    "status": r.status_code,
+                    "body":   r.text[:500],
+                },
+            )
+            return
+
+        log.info("metabase bootstrap: /api/setup succeeded (status %d)", r.status_code)
+        await audit.write(
+            "metabase_bootstrapped",
+            service_name="metabase",
+            user_id=None,
+            details={"site_name": site_name, "setup_status_code": r.status_code},
+        )
+
+        # Step 2: warehouse registration. Best-effort — failure here
+        # doesn't undo step 1's progress; operator can add the warehouse
+        # by hand from Metabase Admin → Databases.
+        if not (pipeline_name and pipeline_user and pipeline_pass):
+            log.info(
+                "metabase bootstrap: no PIPELINE_DB_* in .env; skipping "
+                "warehouse register"
+            )
+            return
+
+        # Sign in to get a session cookie for /api/database. POST /api/setup
+        # returns the admin user id but no session token in some Metabase
+        # versions, so re-authenticating is the portable path.
+        try:
+            session_resp = await client.post(
+                f"{base}/api/session",
+                json={"username": admin_email, "password": admin_password},
+                timeout=30.0,
+            )
+        except httpx.HTTPError as e:
+            log.warning("metabase bootstrap: /api/session login raised: %s", e)
+            return
+
+        if session_resp.status_code != 200:
+            log.warning(
+                "metabase bootstrap: /api/session login failed (%d): %s",
+                session_resp.status_code, session_resp.text[:300],
+            )
+            await audit.write(
+                "metabase_bootstrap_failed",
+                service_name="metabase",
+                user_id=None,
+                details={
+                    "phase":  "warehouse_login",
+                    "status": session_resp.status_code,
+                    "body":   session_resp.text[:300],
+                },
+            )
+            return
+
+        session_id = session_resp.json().get("id")
+
+        db_payload = {
+            "engine": "postgres",
+            "name":   "Pipeline warehouse",
+            "details": {
+                "host":     "orchestack-postgres",
+                "port":     5432,
+                "dbname":   pipeline_name,
+                "user":     pipeline_user,
+                "password": pipeline_pass,
+                "ssl":      False,
+            },
+            "is_on_demand":     False,
+            "is_full_sync":     True,
+            "is_sample":        False,
+            "auto_run_queries": True,
+        }
+        try:
+            db_resp = await client.post(
+                f"{base}/api/database",
+                json=db_payload,
+                headers={"X-Metabase-Session": session_id} if session_id else {},
+                timeout=30.0,
+            )
+        except httpx.HTTPError as e:
+            log.warning("metabase bootstrap: warehouse register raised: %s", e)
+            await audit.write(
+                "metabase_bootstrap_failed",
+                service_name="metabase",
+                user_id=None,
+                details={"phase": "warehouse_register", "error": str(e)},
+            )
+            return
+
+        if db_resp.status_code in (200, 201, 204):
+            log.info(
+                "metabase bootstrap: warehouse registered (status %d)",
+                db_resp.status_code,
+            )
+            await audit.write(
+                "metabase_warehouse_registered",
+                service_name="metabase",
+                user_id=None,
+                details={"name": "Pipeline warehouse", "dbname": pipeline_name},
+            )
+        else:
+            log.warning(
+                "metabase bootstrap: warehouse register returned %d: %s",
+                db_resp.status_code, db_resp.text[:500],
+            )
+            await audit.write(
+                "metabase_bootstrap_failed",
+                service_name="metabase",
+                user_id=None,
+                details={
+                    "phase":  "warehouse_register",
+                    "status": db_resp.status_code,
+                    "body":   db_resp.text[:500],
+                },
             )
 
 

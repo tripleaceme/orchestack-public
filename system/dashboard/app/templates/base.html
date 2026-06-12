@@ -180,9 +180,36 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="max-w-6xl mx-auto px-6 py-6 text-xs text-[var(--text-2)] flex items-center justify-between">
+  {# Build info row. Each chunk maps to one piece of "which version am I
+     running?" the operator needs when filing a bug or verifying a fix:
+       - phase            (which milestone the dashboard tracks to)
+       - version          (the FastAPI app's `version` constant from main.py)
+       - bundle           (the runtime bundle's VERSION file — set by
+                           the docker-compose mount; "unknown" when the
+                           dashboard is run locally without the bundle)
+       - dashboard sha    (BUILD_SHA env var set at image build by CI;
+                           "dev" when running a locally-built image)
+       - orchestrator sha (queried from /orchestrator/api/health at
+                           render time — small overhead, big payoff for
+                           "which fix do I have?" debugging)
+     #}
+  <footer class="max-w-6xl mx-auto px-6 py-6 text-xs text-[var(--text-2)]
+                  flex flex-wrap items-center justify-between gap-2">
     <span>OrcheStack dashboard · phase 3.6</span>
-    <span class="font-mono">{{ request.app.version }}</span>
+    <span class="font-mono">
+      v{{ request.app.version }}
+      {% if build_info %}
+        {% if build_info.bundle_version %}
+          · bundle <span class="text-[var(--text)]">{{ build_info.bundle_version }}</span>
+        {% endif %}
+        {% if build_info.dashboard_sha %}
+          · dashboard <span class="text-[var(--text)]">{{ build_info.dashboard_sha[:8] }}</span>
+        {% endif %}
+        {% if build_info.orchestrator_sha %}
+          · orchestrator <span class="text-[var(--text)]">{{ build_info.orchestrator_sha[:8] }}</span>
+        {% endif %}
+      {% endif %}
+    </span>
   </footer>
 
   {# Toast tray for non-blocking status messages (Open flow uses it). #}

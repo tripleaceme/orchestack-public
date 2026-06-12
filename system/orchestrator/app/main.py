@@ -51,6 +51,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         log.error("startup: DB pool init failed — running in degraded mode: %s", e)
 
+    # .env readability check.
+    #
+    # The bind-mount-as-empty-directory trap has bitten three subsystems
+    # so far (stop_service, /api/credentials, the Metabase bootstrap
+    # hook). Catch the trap ONCE at startup and surface it as an audit
+    # event so the operator sees the cause on /app/audit rather than
+    # being puzzled by silently-broken downstream features.
+    if pool_ready:
+        try:
+            import os as _os
+            env_path = config.ENV_FILE
+            env_ok = _os.path.isfile(env_path) and _os.access(env_path, _os.R_OK)
+            if not env_ok:
+                # Treat this as an audit event (visible on /app/audit)
+                # and a loud log line. Don't fail startup — degraded
+                # mode is more useful than a crash loop.
+                from . import audit
+                kind = (
+                    "directory" if _os.path.isdir(env_path)
+                    else "missing" if not _os.path.exists(env_path)
+                    else "unreadable"
+                )
+                log.error(
+                    "startup: env-file at %s is %s. Credentials writes, "
+                    "stop_service env interpolation, and the Metabase "
+                    "bootstrap will all silently misbehave. Re-extract "
+                    "the bundle, restore ./.env on the host, and "
+                    "`docker compose up -d` to re-mount.",
+                    env_path, kind,
+                )
+                await audit.write(
+                    "env_file_unreadable",
+                    user_id=None,
+                    details={"path": env_path, "kind": kind},
+                )
+        except Exception as e:
+            log.warning("startup: env-file check raised: %s", e)
+
     # Auto-heal orphaned first-admin assignment.
     #
     # Earlier signups (commits before 601b06f) counted the seeded system

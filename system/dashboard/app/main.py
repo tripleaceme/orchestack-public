@@ -46,6 +46,47 @@ log = logging.getLogger("dashboard")
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
+
+# ----------------------------------------------------------------------
+# Build-info plumbing for the footer.
+#
+# Three sources of "which version is this?":
+#   1. DASHBOARD_BUILD_SHA — set by CI in the docker image build
+#      (workflow injects `--build-arg BUILD_SHA=$GITHUB_SHA`).
+#      "dev" when running a locally-built image.
+#   2. The runtime bundle's VERSION file — mounted into the dashboard
+#      container at /etc/orchestack/VERSION by docker-compose.yml.
+#      Read once at process start (it doesn't change between requests).
+#   3. The orchestrator's reported SHA — fetched lazily from
+#      /orchestrator/api/health and cached for 5 minutes so the footer
+#      doesn't add a round-trip to every page render.
+# ----------------------------------------------------------------------
+DASHBOARD_BUILD_SHA = os.environ.get("DASHBOARD_BUILD_SHA", "dev")
+
+def _read_bundle_version() -> str:
+    for p in ("/etc/orchestack/VERSION", "/etc/orchestack/bundle/VERSION"):
+        try:
+            with open(p) as f:
+                v = f.read().strip()
+                if v:
+                    return v
+        except OSError:
+            continue
+    return ""
+
+BUNDLE_VERSION = _read_bundle_version()
+
+# Made available to every template via Jinja2's env.globals so the
+# footer can render without each route having to thread it through.
+# The orchestrator's SHA isn't here on purpose — it would need a cross-
+# service call per render; operators can curl /orchestrator/api/health
+# directly when they need it.
+templates.env.globals["build_info"] = {
+    "bundle_version":  BUNDLE_VERSION,
+    "dashboard_sha":   DASHBOARD_BUILD_SHA,
+    "orchestrator_sha": "",  # populated below if the env var is set
+}
+
 orchestrator = OrchestratorClient(ORCHESTRATOR_URL)
 
 app = FastAPI(

@@ -240,6 +240,12 @@ services:
       - orchestack-net
     depends_on:
       - orchestrator
+    volumes:
+      # The bundle's VERSION file becomes the dashboard's footer chip
+      # ("bundle dev-XXXXXXX"). Read at process start; never updated
+      # mid-run. Read-only mount — the dashboard has no business
+      # writing to the bundle directory.
+      - ./VERSION:/etc/orchestack/VERSION:ro
     labels:
       - traefik.enable=true
       - traefik.http.routers.dashboard.rule=PathPrefix(`/app`)
