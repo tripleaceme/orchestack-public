@@ -25,15 +25,20 @@ services:
       MB_DB_TYPE: postgres
       MB_DB_HOST: orchestack-postgres
       MB_DB_PORT: 5432
-      # Per-service role + scoped DB ownership (M4 multi-DB plan, see
-      # design/m4-multi-db.md §1-2). The orchestrator's pre-start hook
-      # _ensure_metabase_database creates the `metabase` PostgreSQL
-      # role with login + password (from METABASE_DB_PASSWORD, or a
-      # deterministic fallback derived from ORCHESTACK_DB_PASSWORD for
-      # M3 testers who haven't re-deployed) and owns the metabase DB.
-      # Previously Metabase connected as the platform admin which gave
-      # it implicit access to platform.users and every other DB on the
-      # server — now it's scoped to just its own database.
+      # Per-service PostgreSQL role + dedicated database. Architecture
+      # (design/m4-multi-db.md):
+      #   - `orchestack`     platform internals (users, audit)
+      #   - `data_warehouse` operator's analytical data
+      #   - `metabase`       Metabase's own state — DEDICATED DB
+      #   - `services`       shared DB with schemas for tools that DO
+      #                      honor a configurable schema (Airflow,
+      #                      OpenMetadata when M4 lands)
+      # Metabase gets its OWN database (not a schema in `services`)
+      # because Metabase 0.51's initialization migration HARDCODES
+      # `public.<tablename>` in every CREATE TABLE statement —
+      # MB_DB_SCHEMA is honored only for runtime queries, not for the
+      # first-boot Liquibase migration. Tested empirically June 12; see
+      # design/m4-multi-db.md §1 for the diagnostic that surfaced this.
       MB_DB_USER: metabase
       MB_DB_PASS: ${METABASE_DB_PASSWORD:-}
       MB_DB_DBNAME: metabase

@@ -1,6 +1,40 @@
 # M4 — Multi-database architecture for managed services
 
-Status: **design accepted, implementation phased through M4.**
+Status: **per-service DB+role shipped (Metabase, June 2026). Per-schema
+isolation tested + rejected for Metabase due to upstream constraint.
+Remaining M4 services land incrementally.**
+
+## §1. The schema-isolation experiment that failed
+
+Original plan after operator review: one `services` database with one
+schema per tool, each schema owned by a scoped PG role. This works in
+principle but **fails for Metabase 0.51 specifically** because Metabase's
+first-boot Liquibase changeset `v00.00-000` runs
+`resources/migrations/initialization/metabase_postgres.sql` which
+hardcodes `public.<tablename>` in every CREATE statement:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS citext WITH SCHEMA public;
+CREATE TABLE public.activity (...);
+CREATE TABLE public.activity_id_seq (...);
+```
+
+`MB_DB_SCHEMA` is honored for runtime queries but ignored by the
+initialization migration. With Metabase pointed at
+`services.metabase`, the migration tries to write to
+`services.public.<tablename>` and fails with `permission denied for
+schema public` regardless of grant configuration. **Verified
+end-to-end June 12 — search_path was set correctly, citext was
+pre-installed by the platform admin, schema ownership was clean. The
+migration still fails because it explicitly targets `public`, not
+search_path[0].**
+
+Architectural lesson: tools that hardcode their schema in SQL DDL
+cannot live inside a shared per-tool-schema DB. The schema-aware
+contract is: the tool must respect a configurable schema across ALL
+its DDL, not just runtime queries.
+
+## §2. Revised layout
 
 ## Why
 
@@ -25,18 +59,25 @@ DB-level RBAC for OrcheStack roles (Admin / Engineer / Analyst seeing
 different sets of databases via pgAdmin) is **deferred to M5** pending
 a design call on the pgAdmin-roles question (see §3 below).
 
-## 1. Database layout (target)
+## §2. Revised layout (target)
 
-| Database | Owner role | Used by | Notes |
+| Database | Owner role | Used by | Why dedicated vs shared |
 |---|---|---|---|
-| `orchestack` | `orchestack` | orchestrator | platform.users, audit_log, sessions. **Admin-only visibility in pgAdmin (M5).** |
-| `${PIPELINE_DB_NAME}` (operator-named) | `${PIPELINE_DB_USER}` | dbt writes, Metabase reads | The operator's warehouse. Renamed in docs from "Pipeline warehouse" to "Company database" per the M3 testing review. |
-| `metabase` | `metabase` | Metabase | application state |
-| `airbyte` | `airbyte` | Airbyte | sync state, connector configs |
-| `airflow` | `airflow` | Airflow | DAG metadata, run history |
-| `openmetadata` | `openmetadata` | OpenMetadata | catalogue + lineage |
-| `ge` | `ge` | Great Expectations | checkpoint history |
-| `minio` | n/a — uses filesystem | MinIO | no DB |
+| `orchestack` | `orchestack` | orchestrator | Platform internals (platform.users, audit_log, sessions). Always isolated. |
+| `${PIPELINE_DB_NAME}` (operator-named) | `${PIPELINE_DB_USER}` | dbt writes, Metabase reads | The operator's analytical data. Always isolated. |
+| `metabase` | `metabase` | Metabase | **Dedicated DB** — Metabase 0.51 hardcodes `public.<table>` in init migration; cannot live in a shared `services` DB (see §1). |
+| `services` | `orchestack` | shared by schema-aware tools | New: one DB, many schemas, each schema owned by its scoped role. M4 services that honor a configurable schema for ALL their DDL live here. |
+| → `services.airflow` | `airflow` | Airflow | DAG metadata, run history. Schema-aware via `[core] sql_alchemy_schema` — verify M4.5. |
+| → `services.openmetadata` | `openmetadata` | OpenMetadata | Catalogue + lineage. Verify schema-aware in M4.6. |
+| → `services.airbyte` | `airbyte` | Airbyte | Sync state + connector configs. Verify schema-aware in M4.4. |
+| `ge` | `ge` | Great Expectations | TBD — pure-filesystem state per existing GE config. May not need a DB at all. |
+| `minio` | n/a — uses filesystem | MinIO | No DB. |
+
+**Schema-aware verification before landing in `services`**: each M4
+tool's compose snippet PR must include a test that creates a schema
+in a shared DB, points the tool at it, and confirms a fresh init
+populates the target schema (not `public` or anything else). Tools
+that fail the test get a dedicated DB instead.
 
 `dbt` does NOT get its own DB — dbt writes to the warehouse
 (`${PIPELINE_DB_NAME}`) under the `dbt_user` role. dbt's own

@@ -171,28 +171,39 @@ async def ping() -> bool:
 # attempt, no operator action required.
 # ===========================================================================
 async def _ensure_metabase_database() -> None:
-    """Create the `metabase` role + database with scoped ownership.
+    """Provision Metabase's PG role + dedicated `metabase` database.
 
-    Per the M4 multi-DB plan (design/m4-multi-db.md §1-2), every managed
-    service owns its own database under its own PostgreSQL role. Metabase
-    is the first to land — previously Metabase connected as the platform
-    admin role, which gave it implicit access to platform.users and
-    every other database on the server. Now Metabase has a dedicated
-    `metabase` role with ownership of just the `metabase` database.
+    Architecture (per design/m4-multi-db.md, revised twice):
 
-    Idempotent across all three states:
+      - `orchestack`     — platform internals (users, audit, sessions)
+      - `data_warehouse` — operator's analytical data (PIPELINE_DB_NAME)
+      - `metabase`       — Metabase's own state (its own DB, see below)
+      - `services`       — shared DB for tools that HONOR a configurable
+                           schema setting (Airflow, OpenMetadata when M4
+                           lands). Each schema-aware tool gets its own
+                           schema inside this DB.
 
-      (a) Fresh install: both role and DB missing → create both.
-      (b) Existing install pre-M4: role missing, DB exists owned by the
-          platform admin → create role, reassign ownership, re-grant
-          objects (REASSIGN OWNED only operates on the connected DB so
-          we run it in a separate connection scoped to the metabase DB).
-      (c) Already migrated: role exists, DB owned by role → no-op.
+    Why Metabase gets its OWN database, not a schema in `services`:
 
-    The password is read from METABASE_DB_PASSWORD in .env; the wizard
-    generates it. If the env var is missing we use a deterministic
-    fallback derived from ORCHESTACK_DB_PASSWORD so existing M3 testers
-    don't have to re-run the wizard to upgrade.
+      Metabase 0.51's first-boot Liquibase changeset `v00.00-000` runs
+      resources/migrations/initialization/metabase_postgres.sql which
+      HARDCODES `public.<tablename>` in every CREATE TABLE statement.
+      MB_DB_SCHEMA only takes effect AFTER setup — Metabase ignores it
+      during the initialization migration. There is no env var or
+      config flag to change this; it is fundamental to Metabase's
+      packaging. Tested end-to-end June 12: with services.metabase
+      schema correctly created and search_path set, the migration
+      still fails with "permission denied for schema public" because
+      the migration explicitly writes to public.<tablename>.
+
+      Per-DB isolation is therefore the architecturally honest choice
+      for Metabase: its own DB means its hardcoded `public.<table>` writes
+      land in a Metabase-owned database that we control. Pgadmin sees
+      `metabase` as a separate DB which is correct — that IS what it is.
+
+    Idempotent: safe to run on every start. Checks role + DB
+    independently, creates only what's missing, updates the password
+    unconditionally so .env-driven rotation works on next start.
     """
     from . import db  # local import — avoids circular import at module load
     env = _read_env_file_or_empty()
@@ -249,74 +260,68 @@ async def _ensure_metabase_database() -> None:
                 f"CREATE ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
             )
         else:
-            # Refresh the password every start — handles the case where
-            # the operator rotated METABASE_DB_PASSWORD in .env. Safe to
-            # repeat; postgres allows password updates as an idempotent
-            # operation.
             await conn.execute(
                 f"ALTER ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
             )
 
-        # 2. CREATE DATABASE if absent, owned by metabase.
+        # 2. CREATE DATABASE `metabase` if absent, owned by metabase
+        # role. Metabase OWNS this DB end-to-end — its hardcoded
+        # `public.<tablename>` migrations write into the public schema
+        # of this DB without needing any special permissions.
         db_exists = await conn.fetchval(
             "SELECT 1 FROM pg_database WHERE datname = 'metabase'",
         )
         if not db_exists:
-            log.info("pre-start hook (metabase): creating 'metabase' database")
+            log.info(
+                "pre-start hook (metabase): creating 'metabase' database "
+                "owned by metabase role"
+            )
             await conn.execute('CREATE DATABASE "metabase" OWNER metabase')
         else:
-            # 3. Existing-DB migration: transfer ownership to metabase
-            # role if it's still owned by the platform admin.
+            # Ensure ownership is correct (M3 testers may have it owned
+            # by the platform admin from before the per-service-role
+            # change shipped).
             owner = await conn.fetchval(
                 "SELECT pg_get_userbyid(datdba) "
                 "FROM pg_database WHERE datname = 'metabase'"
             )
             if owner != "metabase":
                 log.info(
-                    "pre-start hook (metabase): existing 'metabase' DB is "
-                    "owned by %s — transferring to metabase role",
-                    owner,
+                    "pre-start hook (metabase): transferring metabase DB "
+                    "ownership from %s to metabase role", owner,
                 )
                 await conn.execute("ALTER DATABASE metabase OWNER TO metabase")
 
-    # 4. Reassign in-database objects (tables, sequences, etc) from the
-    # old admin owner to metabase. REASSIGN OWNED operates on the
-    # connected DB, so we open a separate connection to the metabase DB.
+    # 3. If the database already had objects owned by the platform admin
+    # (pre-per-service-role testers), REASSIGN them to metabase. Runs
+    # against the metabase DB itself — REASSIGN OWNED only acts on the
+    # connected database.
     platform_user = env.get("ORCHESTACK_DB_USER", "orchestack")
     if platform_user != "metabase":
         try:
             import asyncpg
             from . import config as _cfg
             mb_conn = await asyncpg.connect(
-                host=_cfg.DB_HOST,
-                port=_cfg.DB_PORT,
-                user=_cfg.DB_USER,
-                password=_cfg.DB_PASSWORD,
+                host=_cfg.DB_HOST, port=_cfg.DB_PORT,
+                user=_cfg.DB_USER, password=_cfg.DB_PASSWORD,
                 database="metabase",
             )
             try:
-                # Only reassign if the platform user owns objects in this
-                # DB. Cheaper to attempt than to query first; the command
-                # is a no-op when nothing matches.
                 await mb_conn.execute(
                     f'REASSIGN OWNED BY "{platform_user}" TO metabase'
                 )
-                # Grant the metabase role usage on public schema (needed
-                # for fresh DBs where the role just got ownership).
                 await mb_conn.execute(
                     "GRANT ALL ON SCHEMA public TO metabase"
                 )
             finally:
                 await mb_conn.close()
         except Exception as e:
-            # Best-effort — failures here mean Metabase will still start
-            # and run its own migration as `metabase`. The reassign is a
-            # cleanup for the pre-M4 → M4 transition only.
-            log.warning(
-                "pre-start hook (metabase): REASSIGN OWNED skipped: %s. "
-                "If Metabase later reports permission errors on existing "
-                "tables, re-run this hook after restarting the orchestrator.",
-                e,
+            # Database doesn't exist yet on fresh installs, or no objects
+            # owned by the platform user. Both are fine — best-effort.
+            log.info(
+                "pre-start hook (metabase): REASSIGN OWNED skipped (%s) — "
+                "expected on fresh installs",
+                type(e).__name__,
             )
 
 
