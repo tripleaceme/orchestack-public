@@ -470,6 +470,18 @@ async def users_page(request: Request, user=Depends(require_admin)) -> HTMLRespo
 @app.get("/api/dashboard/users/table", response_class=HTMLResponse,
           name="users_table_fragment")
 async def users_table_fragment(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    """HTMX fragment for the Users table.
+
+    invite_result is intentionally None on plain loads — the only path
+    that carries an invite_result is the invite POST handler, which
+    renders this same template directly with the result in context. We
+    used to read request.session.get(...) here as a defensive cross-tab
+    handoff, but SessionMiddleware isn't installed (cookies + the
+    orchestrator are the source of truth, not server-side session state),
+    so the access raised AssertionError and the fragment 500'd. The
+    handler's catch was scoped to httpx.HTTPError, so the 500 surfaced as
+    "Loading users…" forever in the browser.
+    """
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         users_data = await orchestrator.admin_list_users(cookie)
@@ -482,7 +494,7 @@ async def users_table_fragment(request: Request, user=Depends(require_admin)) ->
                 "roles": roles_data.get("roles", []),
                 "current_user_id": user.get("user_id"),
                 "error": None,
-                "invite_result": request.session.get("invite_result") if hasattr(request, "session") else None,
+                "invite_result": None,
             },
         )
     except httpx.HTTPError as e:
@@ -710,6 +722,162 @@ async def roles_revoke_permission_action(
         log.warning("revoke permission %d failed: %s", permission_id, e)
     ctx = await _roles_render_context(request, user)
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+# ----------------------------------------------------------------------
+# Mapping from orchestrator service-catalogue keys to the operator-facing
+# group name used in CREDENTIAL_SERVICE_GROUPS. The catalogue uses short
+# slugs ("metabase", "pgadmin") while the credentials page groups by
+# display name ("Metabase", "pgAdmin"). This is the bridge for the
+# per-service Edit-config view: given a service slug, show ONLY that
+# service's keys plus the pipeline-warehouse keys (so Postgres-backed
+# services show the warehouse creds they actually use to connect).
+# ----------------------------------------------------------------------
+SERVICE_CREDENTIAL_GROUPS: dict[str, list[str]] = {
+    "metabase":     ["Metabase"],
+    "pgadmin":      ["pgAdmin"],
+    "airbyte":      ["Airbyte"],
+    "airflow":      ["Apache Airflow"],
+    "dbt":          ["dbt Core"],
+    "minio":        ["MinIO"],
+    "openmetadata": ["OpenMetadata"],
+    "ge":           ["Great Expectations"],
+    "postgresql":   ["Pipeline warehouse"],
+    "clickhouse":   ["ClickHouse"],
+    "duckdb":       ["DuckDB"],
+    "superset":     ["Apache Superset"],
+    "lightdash":    ["Lightdash"],
+    "sqlmesh":      ["SQLMesh"],
+    "soda":         ["Soda Core"],
+    "adminer":      ["Adminer"],
+    "pgweb":        ["pgweb"],
+    "datahub":      ["DataHub"],
+}
+
+
+@app.get("/services/{name}/config", response_class=HTMLResponse,
+          name="service_config_page")
+async def service_config_page(
+    request: Request, name: str, user=Depends(require_user)
+) -> HTMLResponse:
+    """`/app/services/{name}/config` — per-service credentials editor.
+
+    The docs' workflow says "click the service tile → Edit config." This
+    is the destination. Renders ONLY the .env keys grouped under this
+    service's CREDENTIAL_SERVICE_GROUPS bucket — no fishing through the
+    global flat list to find METABASE_*. Save writes back via the same
+    update_credential path the global page uses.
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    try:
+        svc = await orchestrator.get_service(name)
+    except httpx.HTTPError:
+        svc = None
+    try:
+        data = await orchestrator.list_credentials(reveal=False)
+        all_creds = data.get("credentials", [])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("service_config_page list_credentials failed: %s", e)
+        all_creds = []
+
+    # Annotate, then filter to this service's group(s).
+    groups_for_service = SERVICE_CREDENTIAL_GROUPS.get(name, [])
+    for c in all_creds:
+        c["service"] = _service_for_credential(c["key"])
+    creds = [c for c in all_creds if c["service"] in groups_for_service]
+
+    display_name = (svc or {}).get("display_name", name)
+    return templates.TemplateResponse(
+        "service_config.html",
+        {
+            "request": request,
+            "page_title": f"Edit config · {display_name}",
+            "user": user,
+            "service": svc,
+            "service_name": name,
+            "display_name": display_name,
+            "credentials": creds,
+            "is_running": (svc or {}).get("state") == "running",
+            "saved_keys": [],
+            "save_error": None,
+        },
+    )
+
+
+@app.post("/services/{name}/config", response_class=HTMLResponse,
+           name="service_config_save")
+async def service_config_save(
+    request: Request, name: str, user=Depends(require_user)
+) -> HTMLResponse:
+    """Save the per-service config form.
+
+    Form is keyed by ENV_VAR_NAME → new value. Skips read-only keys and
+    skips keys whose value didn't change (so the audit log doesn't see
+    spurious updates). Returns the same page with a summary banner.
+    """
+    form = await request.form()
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+
+    try:
+        existing = (await orchestrator.list_credentials(reveal=True)).get("credentials", [])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("service_config_save couldn't fetch existing: %s", e)
+        existing = []
+    by_key = {c["key"]: c for c in existing}
+
+    saved_keys: list[str] = []
+    save_error: str | None = None
+    for raw_key, raw_val in form.items():
+        if not raw_key or raw_key.startswith("__"):
+            continue
+        if raw_key not in by_key:
+            continue                    # don't accept new keys from the form
+        cur = by_key[raw_key]
+        if cur.get("is_readonly"):
+            continue
+        if cur.get("value", "") == raw_val:
+            continue                    # no change → no write
+        try:
+            await orchestrator.update_credential(
+                raw_key, raw_val, actor_user_id=user.get("user_id"),
+            )
+            saved_keys.append(raw_key)
+        except httpx.HTTPError as e:
+            log.warning("update_credential %s failed: %s", raw_key, e)
+            save_error = str(e)
+            break
+
+    # Re-render with the latest values + summary banner.
+    try:
+        svc = await orchestrator.get_service(name)
+    except httpx.HTTPError:
+        svc = None
+    try:
+        data = await orchestrator.list_credentials(reveal=False)
+        all_creds = data.get("credentials", [])
+    except (httpx.HTTPError, ValueError) as e:
+        all_creds = []
+    groups_for_service = SERVICE_CREDENTIAL_GROUPS.get(name, [])
+    for c in all_creds:
+        c["service"] = _service_for_credential(c["key"])
+    creds = [c for c in all_creds if c["service"] in groups_for_service]
+
+    display_name = (svc or {}).get("display_name", name)
+    return templates.TemplateResponse(
+        "service_config.html",
+        {
+            "request": request,
+            "page_title": f"Edit config · {display_name}",
+            "user": user,
+            "service": svc,
+            "service_name": name,
+            "display_name": display_name,
+            "credentials": creds,
+            "is_running": (svc or {}).get("state") == "running",
+            "saved_keys": saved_keys,
+            "save_error": save_error,
+        },
+    )
 
 
 @app.get("/services/{name}", response_class=HTMLResponse, name="service_detail")

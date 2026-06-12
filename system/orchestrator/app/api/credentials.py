@@ -76,11 +76,25 @@ def _is_sensitive(key: str) -> bool:
 
 
 def _iter_env_lines() -> Iterator[tuple[int, str]]:
-    """Yield (line_no, raw_line) for the operator's .env, 1-indexed."""
+    """Yield (line_no, raw_line) for the operator's .env, 1-indexed.
+
+    Defensive against the bind-mount-as-empty-directory trap: if the
+    operator's .env didn't exist on the host when the orchestrator
+    started, Docker silently created a directory at the bind-mount
+    target instead of failing. Path.exists() returns True for that
+    directory, then read_text() raises IsADirectoryError and 500s the
+    credentials page. Treat missing OR not-a-file as "no .env" — the
+    credentials page then renders an empty list cleanly, and the
+    operator can see the orchestrator's warning logs to understand why.
+    """
     p = Path(config.ENV_FILE)
-    if not p.exists():
+    if not p.is_file():
         return
-    for i, line in enumerate(p.read_text().splitlines(), start=1):
+    try:
+        text = p.read_text()
+    except OSError:
+        return
+    for i, line in enumerate(text.splitlines(), start=1):
         yield i, line
 
 

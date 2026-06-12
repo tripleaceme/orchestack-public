@@ -301,6 +301,190 @@ PRE_START_HOOKS = {
 }
 
 
+# ===========================================================================
+#  Post-start hooks
+#
+# Pre-start hooks handle prerequisites for the CONTAINER (sidecar DBs,
+# pre-loaded config files). Post-start hooks handle prerequisites for the
+# APPLICATION inside the container — first-run setup, admin user
+# creation, default workspace provisioning. Things that can only happen
+# after the app is actually listening.
+#
+# Why this is its own framework rather than a continuation of
+# start_service: post-start hooks need to poll for the app to be ready
+# (Metabase's Liquibase migration can take 90+ seconds), and the user
+# who clicked Open shouldn't be blocked while that runs. Each post-start
+# hook runs in the background via asyncio.create_task; the start_service
+# call returns as soon as compose is done so the dashboard's session
+# heartbeat can begin immediately.
+#
+# Hook contract:
+#   async def hook(): ...
+#     - MUST be idempotent — if the app is already configured, return
+#       without raising. Operators clicking Open multiple times must not
+#       re-bootstrap.
+#     - MUST log success / failure via the audit log so the operator can
+#       see what happened on the dashboard's audit page.
+#     - MUST NOT exceed POST_START_HOOK_TIMEOUT (5 minutes) — orphaned
+#       hooks accumulate as zombie tasks otherwise.
+# ===========================================================================
+POST_START_HOOK_TIMEOUT = 300
+
+
+async def _bootstrap_metabase() -> None:
+    """Complete Metabase's first-run setup via /api/setup.
+
+    Metabase exposes a one-time setup-token at /api/session/properties
+    while it's unconfigured. We poll for that, then POST /api/setup with
+    the credentials the operator entered in the wizard PLUS the pipeline
+    warehouse details so Metabase opens with the warehouse already
+    connected.
+
+    If Metabase is already configured, /api/session/properties returns
+    setup-token=null. We exit without acting — the hook is idempotent
+    across repeated Open clicks.
+    """
+    import httpx  # local import: only loaded when this hook runs
+    from . import audit, db as _db  # local imports avoid cycle at load
+
+    env = _read_env_file_or_empty()
+    admin_email    = env.get("METABASE_ADMIN_EMAIL", "").strip()
+    admin_password = env.get("METABASE_ADMIN_PASSWORD", "").strip()
+    if not (admin_email and admin_password):
+        log.info("metabase bootstrap: no METABASE_ADMIN_* in .env; skipping")
+        return
+
+    pipeline_name = env.get("PIPELINE_DB_NAME")
+    pipeline_user = env.get("PIPELINE_DB_USER")
+    pipeline_pass = env.get("PIPELINE_DB_PASSWORD")
+
+    site_name = "OrcheStack"
+    try:
+        async with _db.get_pool().acquire() as conn:
+            company = await conn.fetchval(
+                "SELECT company_name FROM platform.users "
+                "WHERE username != 'system' "
+                "ORDER BY created_at ASC LIMIT 1",
+            )
+            if company:
+                site_name = company
+    except Exception:
+        pass  # default to "OrcheStack"
+
+    base = "http://orchestack-metabase:3000"
+    setup_token: str | None = None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Poll up to ~3 minutes for Metabase's setup page to come online.
+        for attempt in range(90):
+            try:
+                r = await client.get(f"{base}/api/session/properties")
+                if r.status_code == 200:
+                    setup_token = r.json().get("setup-token")
+                    break
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(2)
+
+        if setup_token is None:
+            log.info("metabase bootstrap: no setup-token observed (already configured)")
+            return
+
+        # Build the warehouse-database payload only if we have all three
+        # pipeline creds. Skipping the database block is legal — Metabase
+        # will let the operator add it themselves later.
+        database_block: dict | None = None
+        if pipeline_name and pipeline_user and pipeline_pass:
+            database_block = {
+                "engine": "postgres",
+                "name":   "Pipeline warehouse",
+                "details": {
+                    "host":              "orchestack-postgres",
+                    "port":              5432,
+                    "dbname":            pipeline_name,
+                    "user":              pipeline_user,
+                    "password":          pipeline_pass,
+                    "ssl":               False,
+                    "tunnel-enabled":    False,
+                    "advanced-options":  False,
+                },
+                "is_full_sync": True,
+            }
+
+        payload = {
+            "token": setup_token,
+            "user": {
+                "first_name": admin_email.split("@", 1)[0][:64] or "Admin",
+                "last_name":  "User",
+                "email":      admin_email,
+                "password":   admin_password,
+                "site_name":  site_name,
+            },
+            "prefs": {
+                "site_name":      site_name,
+                "allow_tracking": False,
+            },
+        }
+        if database_block is not None:
+            payload["database"] = database_block
+
+        try:
+            r = await client.post(f"{base}/api/setup", json=payload, timeout=60.0)
+            if r.status_code in (200, 201, 204):
+                log.info("metabase bootstrap: /api/setup succeeded")
+                await audit.write(
+                    "metabase_bootstrapped",
+                    user_id=None,
+                    details={
+                        "site_name":       site_name,
+                        "warehouse_added": database_block is not None,
+                    },
+                )
+            else:
+                log.warning(
+                    "metabase bootstrap: /api/setup returned %d: %s",
+                    r.status_code, r.text[:300],
+                )
+                await audit.write(
+                    "metabase_bootstrap_failed",
+                    user_id=None,
+                    details={"status": r.status_code, "body": r.text[:300]},
+                )
+        except httpx.HTTPError as e:
+            log.warning("metabase bootstrap: POST /api/setup failed: %s", e)
+            await audit.write(
+                "metabase_bootstrap_failed",
+                user_id=None,
+                details={"error": str(e)},
+            )
+
+
+POST_START_HOOKS = {
+    "metabase": _bootstrap_metabase,
+}
+
+
+def _schedule_post_start_hook(service: str) -> None:
+    """Fire-and-forget post-start hook. Bounded by POST_START_HOOK_TIMEOUT
+    so a stuck hook can't accumulate as a zombie task forever."""
+    hook = POST_START_HOOKS.get(service)
+    if hook is None:
+        return
+
+    async def _run() -> None:
+        try:
+            await asyncio.wait_for(hook(), timeout=POST_START_HOOK_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(
+                "post-start hook for %s timed out after %ds",
+                service, POST_START_HOOK_TIMEOUT,
+            )
+        except Exception as e:
+            log.warning("post-start hook for %s raised: %s", service, e)
+
+    # Name the task so it surfaces in `asyncio` debugging output.
+    asyncio.create_task(_run(), name=f"post-start:{service}")
+
+
 async def start_service(service: str) -> CommandResult:
     """Bring a cold-tier service up. Idempotent — `up -d` no-ops if already running.
 
@@ -335,7 +519,12 @@ async def start_service(service: str) -> CommandResult:
     up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
     res = await asyncio.to_thread(_run_sync, up_args, 300)
 
-    if res.ok or "is already in use by container" not in res.stderr:
+    if res.ok:
+        # Post-start hook runs in background — doesn't block the caller.
+        _schedule_post_start_hook(service)
+        return res
+
+    if "is already in use by container" not in res.stderr:
         return res
 
     # Orphan-container conflict — clean up + retry once.
@@ -355,7 +544,10 @@ async def start_service(service: str) -> CommandResult:
         return res
 
     # Retry the up. Same timeout as the first attempt.
-    return await asyncio.to_thread(_run_sync, up_args, 300)
+    retry = await asyncio.to_thread(_run_sync, up_args, 300)
+    if retry.ok:
+        _schedule_post_start_hook(service)
+    return retry
 
 
 async def stop_service(service: str) -> CommandResult:

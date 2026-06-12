@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="mb-6">
+    <div class="text-xs text-[var(--text-2)] mb-1">
+      <a href="{{ url_for('home') }}" class="hover:text-[var(--navy)] underline-offset-2 hover:underline">
+        ← Back to Services
+      </a>
+    </div>
+    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
+      Edit config · {{ display_name }}
+    </h1>
+    <p class="text-sm text-[var(--text-2)] mt-1">
+      Change credentials for <strong>{{ display_name }}</strong>. Values are
+      written to <code class="font-mono">.env</code> immediately. Services
+      that are currently running need a Stop → Start cycle from the
+      <a href="{{ url_for('home') }}" class="underline">Services page</a>
+      to pick up the new values.
+    </p>
+  </div>
+
+  {% if saved_keys %}
+    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 mb-4">
+      ✓ Saved {{ saved_keys|length }} change{{ '' if saved_keys|length == 1 else 's' }}:
+      <span class="font-mono">{{ saved_keys|join(', ') }}</span>.
+      {% if is_running %}
+        Stop and start <strong>{{ display_name }}</strong> to apply.
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if save_error %}
+    <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+      Save failed: {{ save_error }}
+    </div>
+  {% endif %}
+
+  {% if credentials|length == 0 %}
+    <div class="bg-[var(--bg)] border border-dashed border-[var(--border)] rounded-lg
+                p-6 text-center text-sm text-[var(--text-2)]">
+      No editable credentials for <strong>{{ display_name }}</strong> in the
+      operator's <code class="font-mono">.env</code> yet. Configure this
+      service first from the
+      <a href="{{ url_for('home') }}" class="underline">Services page</a>.
+    </div>
+  {% else %}
+    <form method="post" action="{{ url_for('service_config_save', name=service_name) }}"
+          class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6
+                 space-y-4">
+      {% for c in credentials %}
+        <label class="block">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono font-semibold text-[var(--text)]">
+              {{ c.key }}
+            </span>
+            {% if c.is_sensitive %}
+              <span class="text-[10px] uppercase tracking-wide font-semibold
+                           px-1.5 py-0.5 rounded
+                           bg-amber-50 text-amber-700 border border-amber-200">
+                sensitive
+              </span>
+            {% endif %}
+            {% if c.is_readonly %}
+              <span class="text-[10px] uppercase tracking-wide font-semibold
+                           px-1.5 py-0.5 rounded
+                           bg-slate-100 text-slate-600 border border-slate-200">
+                read-only
+              </span>
+            {% endif %}
+          </div>
+          {% if c.is_readonly %}
+            <input type="text" value="{{ c.value }}" readonly disabled
+                   class="mt-1 w-full font-mono text-xs px-2 py-1.5 rounded
+                          border border-[var(--border)] bg-[var(--bg)]
+                          text-[var(--text-2)] cursor-not-allowed" />
+          {% else %}
+            <input type="{{ 'password' if c.is_sensitive else 'text' }}"
+                   name="{{ c.key }}"
+                   value="{{ c.value }}"
+                   autocomplete="off"
+                   class="mt-1 w-full font-mono text-xs px-2 py-1.5 rounded
+                          border border-[var(--border)] bg-white" />
+            {% if c.is_sensitive %}
+              <span class="text-[11px] text-[var(--text-2)] italic">
+                Currently masked. Type a new value to replace; leave the
+                dots to keep the existing value.
+              </span>
+            {% endif %}
+          {% endif %}
+        </label>
+      {% endfor %}
+
+      <div class="pt-2 flex items-center justify-between border-t border-[var(--border)]">
+        <p class="text-xs text-[var(--text-2)]">
+          {{ credentials|length }} variable{{ '' if credentials|length == 1 else 's' }} for {{ display_name }}.
+        </p>
+        <div class="flex items-center gap-2">
+          <a href="{{ url_for('home') }}"
+             class="text-sm font-medium px-3 py-1.5 rounded border
+                    border-[var(--border)] text-[var(--text-2)] bg-white
+                    hover:text-[var(--text)] transition-colors">
+            Cancel
+          </a>
+          <button type="submit"
+                  class="text-sm font-medium px-4 py-1.5 rounded
+                         bg-[var(--navy)] text-white hover:bg-[var(--navy-2)]
+                         transition-colors">
+            Save changes
+          </button>
+        </div>
+      </div>
+    </form>
+  {% endif %}
+{% endblock %}

@@ -137,12 +137,26 @@
         Start
       </button>
     {% endif %}
-    {# Tertiary action: link to the detail page. Always present so users
-       can pin or see activity even for stopped/unmanaged services. #}
-    <a href="{{ url_for('service_detail', name=service.name) }}"
-       class="block text-center text-xs text-[var(--text-2)]
-              hover:text-[var(--navy)] underline-offset-2 hover:underline">
-      Details · pin · activity
-    </a>
+    {# Tertiary actions. Edit config is split out so the operator can
+       find it without drilling into details first — the docs flow says
+       "click the service tile → Edit config" so we honour that path.
+       Both links are present for configured services; unconfigured
+       services hide Edit config (there's nothing to edit yet — they
+       use the +Configure wizard above instead). #}
+    <div class="flex items-center justify-between gap-2 text-xs text-[var(--text-2)]">
+      {% if service.configured %}
+        <a href="{{ url_for('service_config_page', name=service.name) }}"
+           title="Edit {{ service.display_name }} credentials and config"
+           class="hover:text-[var(--navy)] underline-offset-2 hover:underline">
+          Edit config
+        </a>
+      {% else %}
+        <span></span>
+      {% endif %}
+      <a href="{{ url_for('service_detail', name=service.name) }}"
+         class="hover:text-[var(--navy)] underline-offset-2 hover:underline">
+        Details · pin · activity
+      </a>
+    </div>
   </div>
 </article>
