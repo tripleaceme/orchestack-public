@@ -142,9 +142,9 @@
            class="nav-link {{ 'active' if path == '/sessions' else '' }}">Sessions</a>
         <a href="{{ url_for('audit_page') }}"
            class="nav-link {{ 'active' if path == '/audit' else '' }}">Audit</a>
-        <a href="{{ url_for('credentials_page') }}"
-           class="nav-link {{ 'active' if path == '/credentials' else '' }}">Credentials</a>
         {% if user and 'Admin' in (user.roles or []) %}
+          <a href="{{ url_for('credentials_page') }}"
+             class="nav-link {{ 'active' if path == '/credentials' else '' }}">Credentials</a>
           <a href="{{ url_for('users_page') }}"
              class="nav-link {{ 'active' if path == '/users' else '' }}">Users</a>
           <a href="{{ url_for('roles_page') }}"

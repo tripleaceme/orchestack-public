@@ -237,7 +237,7 @@ async def audit_page(request: Request, user=Depends(require_user)) -> HTMLRespon
 
 
 @app.get("/credentials", response_class=HTMLResponse, name="credentials_page")
-async def credentials_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+async def credentials_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
     """`/app/credentials` — admin view for reading + updating .env variables.
 
     Sensitive values (passwords, secrets, tokens, keys) are masked until
@@ -312,6 +312,7 @@ async def credentials_table_fragment(
     request: Request,
     reveal: bool = False,
     service: str = "All",
+    user=Depends(require_admin),
 ) -> HTMLResponse:
     """HTMX fragment — the credentials table, optionally filtered by service.
 
@@ -368,7 +369,7 @@ async def credentials_table_fragment(
 async def credentials_update_action(
     request: Request, key: str, value: str = Form(...),
     service: str = Form("All"),
-    user=Depends(require_user),
+    user=Depends(require_admin),
 ) -> HTMLResponse:
     """Update one .env variable + re-render its table row.
 
@@ -554,19 +555,31 @@ async def users_invite_action(
     request: Request,
     username: str = Form(...), email: str = Form(...),
     full_name: str = Form(...),
-    role_id: int | None = Form(None),
+    # Accept role_id as a str so the "No role yet" option (sends "")
+    # doesn't trigger FastAPI's int parser and 422 the request — that
+    # 422 was what was flipping the connection indicator to "disconnected"
+    # in red on every invite click that didn't pick a starter role.
+    role_id: str = Form(""),
     user=Depends(require_admin),
 ) -> HTMLResponse:
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     invite_result = None
     invite_error = None
     role_names: list[str] = []
-    if role_id is not None:
+    # Coerce role_id from string here so empty string becomes None
+    # without FastAPI rejecting the request.
+    role_id_int: int | None = None
+    if role_id.strip():
+        try:
+            role_id_int = int(role_id)
+        except ValueError:
+            invite_error = f"Invalid role id: {role_id!r}"
+    if role_id_int is not None:
         # Resolve role_id → role name for the orchestrator API (which takes names).
         try:
             roles_data = await orchestrator.admin_list_roles(cookie)
             for r in roles_data.get("roles", []):
-                if r["id"] == role_id:
+                if r["id"] == role_id_int:
                     role_names = [r["name"]]
                     break
         except httpx.HTTPError as e:

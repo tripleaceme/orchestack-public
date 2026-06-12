@@ -346,12 +346,12 @@
 
     // ------- BI -------
     "Metabase": {
-      desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself. Metabase uses an email-shaped identifier as the login — no mail is ever sent unless you configure SMTP yourself.",
+      desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself. Metabase uses an email-shaped identifier as the login, no mail is ever sent unless you configure SMTP yourself.",
       fields: [
         { name: "METABASE_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
           autoDefault: "admin@${company}.local",
           required: true,
-          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. Default is derived from your company name — change it to any valid email if you prefer." },
+          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. Default is derived from your company name, change it to any valid email if you prefer." },
         { name: "METABASE_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "Metabase admin password. Can differ from your OrcheStack platform login." },
       ],
@@ -383,7 +383,7 @@
 
     // ------- Admin UI -------
     "pgAdmin": {
-      desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username — no mail is ever sent to it. Anything that looks like an email works.",
+      desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username, no mail is ever sent to it. Anything that looks like an email works.",
       fields: [
         { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin login (email format)", type: "email",
           autoDefault: "admin@${company}.local",

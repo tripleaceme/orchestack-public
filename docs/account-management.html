@@ -198,36 +198,28 @@
   <li>Click the gear icon (top right) → <strong>Admin settings</strong> → <strong>People</strong> → <strong>Invite someone</strong>.</li>
   <li>Fill in the analyst's name and email. Optionally assign them to a Group. Metabase Groups are how you scope dashboard access (e.g. a <strong>Marketing</strong> group can only see marketing dashboards).</li>
   <li>Metabase generates a temp password they'll change on first login.</li>
-  <li>Send them the URL <code class="inline">http://your-host/app/metabase</code> and the temp password. They sign into Metabase directly — they do <em>not</em> need an OrcheStack account.</li>
+  <li>Send them the URL <code class="inline">http://your-host/app/metabase</code> and the temp password. They sign into Metabase directly. They do <em>not</em> need an OrcheStack account.</li>
 </ol>
 
 <h3 id="onboarding-engineer-airbyte">Onboarding a data engineer (Airbyte ingestion)</h3>
 <ol>
   <li>Sign into Airbyte as the admin.</li>
   <li><strong>Settings</strong> → <strong>Users</strong> → <strong>Invite</strong>.</li>
-  <li>Assign them the relevant workspace role — <strong>Workspace Admin</strong> can create new connectors; <strong>Workspace Editor</strong> can configure existing ones.</li>
+  <li>Assign them the relevant workspace role. <strong>Workspace Admin</strong> can create new connectors; <strong>Workspace Editor</strong> can configure existing ones.</li>
   <li>They sign into Airbyte at <code class="inline">http://your-host/app/airbyte</code>.</li>
 </ol>
 
 <h3 id="onboarding-warehouse-sql">Onboarding anyone querying the warehouse directly (pgAdmin / SQL access)</h3>
 <p>If a person needs raw SQL access to the warehouse (not via Metabase), you have two paths.</p>
-<p><strong>Option A — pgAdmin only:</strong></p>
-<ol>
-  <li>They get an OrcheStack account so they can sign into the dashboard and click <strong>Open</strong> on pgAdmin.</li>
-  <li>They connect using the <code class="inline">warehouse_user</code> credentials in the operator's <code class="inline">.env</code>. Note that this means they have full warehouse write access; only do this for trusted engineers.</li>
-</ol>
-<p><strong>Option B — Scoped per-user warehouse access (preferred):</strong></p>
+<p><strong>Scoped per-user warehouse access:</strong></p>
 <ol>
   <li>As the OrcheStack admin, open pgAdmin (or run <code class="inline">psql</code> against the warehouse).</li>
   <li>Create a per-user PostgreSQL role: <code class="inline">CREATE ROLE alice WITH LOGIN PASSWORD '...';</code></li>
   <li>Grant scoped privileges: <code class="inline">GRANT CONNECT ON DATABASE data_warehouse TO alice; GRANT USAGE ON SCHEMA marts TO alice; GRANT SELECT ON ALL TABLES IN SCHEMA marts TO alice;</code></li>
-  <li>Give them the credentials. They connect with a standalone SQL client (DBeaver, psql, etc.) — no OrcheStack account needed.</li>
+  <li>Give them the credentials. They connect with a standalone SQL client (DBeaver, psql, etc.). No OrcheStack account needed.</li>
 </ol>
 
 <h3 id="onboarding-minio">Onboarding a data scientist or ML engineer (MinIO / data lake access)</h3>
-<div class="callout">
-  <p>M4.1 work.</p>
-</div>
 <ol>
   <li>Sign into the MinIO console at <code class="inline">http://your-host/app/minio</code>.</li>
   <li><strong>Identity</strong> → <strong>Users</strong> → <strong>Create user</strong>.</li>
@@ -236,9 +228,6 @@
 </ol>
 
 <h3 id="onboarding-openmetadata">Onboarding anyone for OpenMetadata (observability + lineage)</h3>
-<div class="callout">
-  <p>M4.6 work.</p>
-</div>
 <ol>
   <li>Sign into OpenMetadata.</li>
   <li><strong>Settings</strong> → <strong>Users</strong> → <strong>Invite</strong>.</li>

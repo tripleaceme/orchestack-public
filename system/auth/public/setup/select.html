@@ -39,12 +39,26 @@
       </span>
     </div>
 
-    <h1>Pick your tools</h1>
-    <p class="sub">
-      Choose one tool per pipeline layer. Defaults are battle-tested. Options marked 
+    <h1 id="page-title">Pick your tools</h1>
+    <p class="sub" id="page-sub">
+      Choose one tool per pipeline layer. Defaults are battle-tested. Options marked
       <strong style="color:var(--accent)">(coming soon)</strong> are on our roadmap but
       not supported in this release.
     </p>
+
+    <div id="add-mode-banner"
+         hidden
+         style="display:none; margin: 0 0 16px;
+                background: var(--accent-100); border: 1px solid var(--accent);
+                border-radius: 8px; padding: 12px 14px;">
+      <strong style="color:var(--accent)">Adding a service.</strong>
+      <span style="color:var(--text-2)">
+        Pick a tool for ONE of the layers you haven't configured yet — the
+        ones already deployed are locked. The next page will collect
+        credentials for just that new service, then deploy it alongside
+        your existing stack.
+      </span>
+    </div>
 
     <form id="picker-form" action="configure.html" method="GET" novalidate>
       <div class="picker">
@@ -187,6 +201,61 @@
 
   const form = document.getElementById('picker-form');
   const summary = document.getElementById('summary-text');
+
+  // ============================================================
+  // Add-mode setup: when ?mode=add is in the URL, the operator is
+  // extending an existing deployment. Lock the dropdowns for layers
+  // they ALREADY configured (so they can't accidentally swap their
+  // running Metabase for Superset by re-running the wizard), show
+  // the "Adding a service" banner, and only allow them to pick a
+  // tool for ONE previously-empty layer.
+  // ============================================================
+  (function setupAddMode() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') !== 'add') return;
+
+    const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const prior = state.selections || {};
+
+    // Show banner + reword the page title
+    const banner = document.getElementById('add-mode-banner');
+    if (banner) { banner.hidden = false; banner.style.display = 'block'; }
+    const title = document.getElementById('page-title');
+    if (title)  title.textContent = 'Add another service';
+    const sub   = document.getElementById('page-sub');
+    if (sub)    sub.textContent =
+      'Pick a tool for a layer you skipped during initial setup.';
+
+    // Lock dropdowns for layers that already have a concrete (non-None)
+    // selection. Visual cue: dropdown disabled + small "already deployed"
+    // label appended to the row.
+    document.querySelectorAll('.picker-row').forEach(row => {
+      const sel = row.querySelector('select');
+      if (!sel || !sel.name) return;
+      const priorPick = prior[sel.name];
+      if (priorPick && priorPick !== 'None') {
+        // Pre-select the prior choice so the form still includes it
+        for (const opt of sel.options) {
+          if (cleanName(opt.textContent) === priorPick) {
+            sel.value = opt.value;
+            break;
+          }
+        }
+        sel.disabled = true;
+        sel.style.opacity = '0.55';
+        sel.style.cursor = 'not-allowed';
+        const tag = document.createElement('span');
+        tag.textContent = ' already deployed';
+        tag.style.cssText = 'margin-left:8px; font-size:11px; ' +
+          'color: var(--text-2); font-style: italic;';
+        const labelEl = row.querySelector('.label');
+        if (labelEl && !labelEl.querySelector('.add-mode-tag')) {
+          tag.classList.add('add-mode-tag');
+          labelEl.appendChild(tag);
+        }
+      }
+    });
+  })();
 
   // Strip "(recommended)", "(core)", "(coming soon)" etc. from option text.
   // Regex handles single OR double space before the parenthesis — more
@@ -359,9 +428,46 @@
       selections[s.name] = cleanName(s.value);
     });
     const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+
+    // Add-mode detection: when the operator landed here via the
+    // dashboard's "Configure another service" link
+    // (/setup/select.html?mode=add), they're EXTENDING an already-
+    // deployed stack, not running first-install setup. In that case
+    // we need to figure out WHICH layer is new (different from what
+    // was previously deployed) and forward configure.html the
+    // ?service=X&layer=Y deep-link so it renders ONLY that one tab —
+    // matches the existing add-mode behaviour for the per-card
+    // "+ Configure" badges on the dashboard's unconfigured tiles.
+    const params = new URLSearchParams(window.location.search);
+    const isAddMode = params.get('mode') === 'add';
+
+    let addLayer = null;
+    let addService = null;
+    if (isAddMode) {
+      const prior = existing.selections || {};
+      // Look for a layer whose selection is now a real tool but was
+      // previously absent OR "None". That's the operator's pick.
+      for (const [layer, tool] of Object.entries(selections)) {
+        const before = prior[layer];
+        if (tool && tool !== 'None' && (!before || before === 'None')) {
+          addLayer   = layer;
+          addService = tool;
+          break;
+        }
+      }
+    }
+
     existing.selections = selections;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    window.location.href = 'configure.html';
+
+    if (isAddMode && addLayer && addService) {
+      // Configure page renders ONLY this one new tab in add-mode.
+      const qs = `?service=${encodeURIComponent(addService)}` +
+                 `&layer=${encodeURIComponent(addLayer)}`;
+      window.location.href = `configure.html${qs}`;
+    } else {
+      window.location.href = 'configure.html';
+    }
   });
 
   // ============================================================

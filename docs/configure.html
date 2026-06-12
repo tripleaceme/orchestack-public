@@ -155,23 +155,21 @@ admin dashboard, and OrcheStack handles the heavy lifting of reconfiguring and r
 <p>Expect the first-time pull to take 20–35 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
 
 <h2 id="editing-later">Editing credentials later</h2>
-<p>Every variable the setup wizard collected, plus the OrcheStack platform DB credentials, image tags, 
+<p>Every variable the setup wizard collected, plus the OrcheStack platform DB credentials, image tags,
   and anything else you've manually added lives in a single source of truth: the <code class="inline">.env</code> file on the host. The orchestrator bind-mounts that file read-write into its own container at <code class="inline">/etc/orchestack/.env</code>; per-service Docker Compose snippets interpolate <code class="inline">${VAR}</code> references against the same file on every <code class="inline">docker compose up -d</code>.</p>
 
-<p>There are two equally valid ways to change a credential after the install:</p>
-
-<h3 id="editing-via-dashboard">Via the Credentials page</h3>
-<p>Sign in as an Admin and visit <strong><code class="inline">/app/credentials</code></strong> (or press <span class="kbd">g</span> <span class="kbd">c</span>). Every variable in <code class="inline">.env</code> appears as a row. Sensitive variables (anything matching <code class="inline">*_PASSWORD</code>, <code class="inline">*_SECRET</code>, <code class="inline">*_KEY</code>, <code class="inline">*_TOKEN</code>) are masked by default. Click <strong>Reveal</strong> on a row to see and edit one, or <strong>Reveal all</strong> to expose every sensitive value at once. 
-  Type the new value and click <strong>Save</strong>.</p>
-<p>Saving immediately writes back to <code class="inline">.env</code>. Image tags (<code class="inline">AUTH_TAG</code>, <code class="inline">ORCHESTRATOR_TAG</code>, <code class="inline">DASHBOARD_TAG</code>) and the platform DB password (<code class="inline">ORCHESTACK_DB_PASSWORD</code>) are rendered read-only.</p>
-<p>The audit log records that the variable was updated and by whom, but never the value itself, so credentials never leak through audit history.</p>
+<h3 id="editing-via-edit-config">Via the service's Edit config page</h3>
+<p>Each service has its own Edit config page reachable from its tile on the dashboard. Click the service, then click <strong>Edit config</strong>. The form shows just that service's variables, runs a live connection test on database-typed fields, and writes valid values back to <code class="inline">.env</code>.</p>
+<p>Admins also have a global view at <strong><code class="inline">/app/credentials</code></strong> that shows every <code class="inline">.env</code> variable in one table with a per-service filter. Use this when you want to scan across services or rotate shared variables. Non-admin users don't see this page; their per-service Edit config form is the supported path.</p>
+<p>(The legacy "Click Services &rarr; Edit config" workflow described in earlier docs is what you're using now. Both paths converge on the same <code class="inline">.env</code> file with the same validation.)</p>
+<p>Saving immediately writes back to <code class="inline">.env</code>. Image tags (<code class="inline">AUTH_TAG</code>, <code class="inline">ORCHESTRATOR_TAG</code>, <code class="inline">DASHBOARD_TAG</code>) and the platform DB password (<code class="inline">ORCHESTACK_DB_PASSWORD</code>) are rendered read-only. The audit log records that the variable was updated and by whom, but never the value itself, so credentials never leak through audit history.</p>
 
 <h3 id="editing-via-env">Direct .env edit</h3>
 <p>Stop the stack, edit <code class="inline">.env</code> in your editor of choice, and bring the stack back up:</p>
 <pre>cd orchestack-runtime-*
 nano .env             <span class="comment"># change whatever you need</span>
 docker compose up -d  <span class="comment"># picks up the new values on next start</span></pre>
-<p>This is the right tool for bulk rotations (e.g. rotating every per-service admin password in one editor session) or for variables not yet surfaced on the Credentials page. The Credentials page reads the same file, so whatever you change here appears there immediately on the next refresh.</p>
+<p>This is the right tool for bulk rotations (e.g. rotating every per-service admin password in one editor session) or for variables not yet surfaced in any dashboard form. The Edit config and Credentials pages read the same file, so whatever you change here appears there immediately on the next refresh.</p>
 
 <h3 id="picking-up-changes">Picking up the change in the running services</h3>
 <p>Editing <code class="inline">.env</code>through either path updates the file but does <strong>not</strong> automatically restart services that are already running. Container env vars are read at start time; running containers keep the values they were started with.</p>
@@ -212,7 +210,7 @@ docker compose up -d  <span class="comment"># picks up the new values on next st
       <li>
         <a href="#editing-later">Editing credentials later</a>
         <ul>
-          <li><a href="#editing-via-dashboard">Via the Credentials page</a></li>
+          <li><a href="#editing-via-edit-config">Via the service's Edit config page</a></li>
           <li><a href="#editing-via-env">Direct .env edit</a></li>
           <li><a href="#picking-up-changes">Picking up the change</a></li>
         </ul>
