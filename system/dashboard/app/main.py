@@ -1093,11 +1093,29 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
         return JSONResponse({"ready": False, "phase": "starting"})
 
     # Container is running. For Metabase, additionally check setup
-    # completion — even after Liquibase finishes, the bootstrap hook
-    # needs another second or two to POST /api/setup.
+    # completion. Three distinct sub-phases reported up to the JS so the
+    # operator sees what's actually happening during the long first boot:
+    #
+    #   "migrating"     — /api/health returns 503 {"status": "initializing"}.
+    #                     Liquibase is running its 420 changesets against
+    #                     the empty `metabase` database. 4-5 minutes on
+    #                     Docker Desktop for macOS.
+    #   "bootstrapping" — /api/health is 200, /api/session/properties has
+    #                     setup-token. Migration done; orchestrator's
+    #                     post-start hook is about to POST /api/setup.
+    #                     Brief — usually under 5 seconds.
+    #   ready=true      — setup-token is null. Operator can sign in.
     if name == "metabase":
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
+                h = await client.get("http://orchestack-metabase:3000/api/health")
+                if h.status_code != 200:
+                    # 503 during init; surface as "migrating" so the JS
+                    # can show the long-wait copy instead of the short
+                    # "starting" copy.
+                    return JSONResponse(
+                        {"ready": False, "phase": "migrating"},
+                    )
                 r = await client.get(
                     "http://orchestack-metabase:3000/api/session/properties",
                 )
@@ -1107,13 +1125,9 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
                     )
                 token = r.json().get("setup-token")
                 if token is not None:
-                    # Setup-token is non-null → Metabase has NOT been
-                    # configured yet. Bootstrap is either still running
-                    # in the background or hasn't started yet.
                     return JSONResponse(
                         {"ready": False, "phase": "bootstrapping"},
                     )
-                # Setup-token gone → Metabase is configured.
                 return JSONResponse({"ready": True})
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})

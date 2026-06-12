@@ -273,14 +273,21 @@
     // canonical example. The phase strings come from the /ready endpoint.
     const SLOW_BOOTSTRAP = {
       metabase: {
-        starting:      "Starting Metabase — first start can take ~90s while the JVM warms up.",
-        bootstrapping: "Metabase is initialising your warehouse connection. Hang on…",
+        starting:      "Starting Metabase. First start can take ~90s while the JVM warms up.",
+        migrating:     "Metabase is running its first-boot database migration. This takes 4-5 minutes once per stack, then never again. Hang on…",
+        bootstrapping: "Metabase finished migrating. OrcheStack is now wiring up your warehouse connection. Almost there…",
         copy_done:     "Metabase is ready",
       },
     };
     const READY_POLL_MS    = 2000;
-    const READY_TIMEOUT_MS = 180_000;  // 3 minutes — covers Metabase cold start
-    const FAST_TIMEOUT_MS  =  45_000;  // for services not in SLOW_BOOTSTRAP
+    const READY_TIMEOUT_MS = 420_000;  // 7 minutes; matches POST_START_HOOK_TIMEOUT
+    const FAST_TIMEOUT_MS  =  60_000;  // for services not in SLOW_BOOTSTRAP
+
+    // Inflight-click guard. Metabase's wait is long enough that
+    // operators double-click Open, which used to stack duplicate toasts
+    // and start overlapping poll loops. Reject re-entrant clicks for
+    // the same service while one is in flight.
+    const _openingNow = new Set();
 
     async function waitForReady(serviceName, statusToast) {
       const slow = SLOW_BOOTSTRAP[serviceName];
@@ -310,6 +317,21 @@
 
     // Triggered by the per-card "Open" button (see _service_card_fragment).
     window.orchestackOpenService = async function(serviceName) {
+      if (_openingNow.has(serviceName)) {
+        showToast(
+          `<div><strong>${serviceName}</strong><br>` +
+          `Already opening. Check the existing notification at the ` +
+          `bottom-right for progress.</div>`,
+          'info', 4000,
+        );
+        return;
+      }
+      _openingNow.add(serviceName);
+      // Single exit point clears the in-flight set — wrap the rest of
+      // the body in try/finally so a thrown error doesn't leave the
+      // service permanently "already opening."
+      try {
+
       const slow = SLOW_BOOTSTRAP[serviceName];
       const initialCopy = slow
         ? slow.starting
@@ -378,6 +400,10 @@
       );
       if (openBody && openBody.tool_url) {
         window.open(openBody.tool_url, '_blank', 'noopener,noreferrer');
+      }
+
+      } finally {
+        _openingNow.delete(serviceName);
       }
     };
 

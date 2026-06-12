@@ -247,35 +247,37 @@ async def _ensure_pgadmin_servers_json() -> None:
     by_idx = servers["Servers"]
     assert isinstance(by_idx, dict)
 
-    # OrcheStack platform DB — always present (the orchestrator's own
-    # internal database). Useful for advanced operators inspecting
-    # platform.users, platform.audit_log, etc.
-    by_idx["1"] = {
-        "Name":          "OrcheStack platform",
-        "Group":         "OrcheStack",
-        "Host":          "orchestack-postgres",
-        "Port":          5432,
-        "MaintenanceDB": env.get("ORCHESTACK_DB_NAME", "orchestack"),
-        "Username":      env.get("ORCHESTACK_DB_USER", "orchestack"),
-        "SSLMode":       "prefer",
-        "Comment":       "OrcheStack's internal database — platform.users, "
-                          "sessions, audit log. Read-only inspection only.",
-    }
-
-    # Pipeline warehouse — present once the operator completes the wizard.
+    # Pipeline warehouse — the only server we pre-load by default.
+    #
+    # We deliberately do NOT pre-load the OrcheStack platform DB
+    # (platform.users, platform.audit_log, etc). Day-2 admin access to
+    # that DB is intentionally friction-laden: surfacing it in every
+    # operator's pgAdmin navigator implies "this is for you to query,"
+    # which it isn't — the platform schema is OrcheStack's own private
+    # state, mutated through the dashboard's typed APIs, not by hand-
+    # written UPDATEs. Admins who need direct access can add the
+    # connection manually.
+    #
+    # The connection name is the actual database name (e.g.
+    # "data_warehouse") rather than a friendly label like "Pipeline
+    # warehouse" so operators don't conflate the pgAdmin connection
+    # display name with a real PostgreSQL database name — surfacing the
+    # actual name removes that ambiguity at the cost of a slightly less
+    # operator-friendly label.
     pipeline_db   = env.get("PIPELINE_DB_NAME")
     pipeline_user = env.get("PIPELINE_DB_USER")
     if pipeline_db and pipeline_user:
-        by_idx["2"] = {
-            "Name":          "Pipeline warehouse",
+        by_idx["1"] = {
+            "Name":          pipeline_db,
             "Group":         "OrcheStack",
             "Host":          "orchestack-postgres",
             "Port":          5432,
             "MaintenanceDB": pipeline_db,
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
-            "Comment":       "Your pipeline marts. dbt writes here; "
-                              "Metabase reads here.",
+            "Comment":       "Your pipeline warehouse. dbt writes here; "
+                              "Metabase reads here. Password prompts on first "
+                              "connect; pgAdmin remembers it for the session.",
         }
 
     target = _PGADMIN_SERVERS_JSON
@@ -328,7 +330,7 @@ PRE_START_HOOKS = {
 #     - MUST NOT exceed POST_START_HOOK_TIMEOUT (5 minutes) — orphaned
 #       hooks accumulate as zombie tasks otherwise.
 # ===========================================================================
-POST_START_HOOK_TIMEOUT = 300
+POST_START_HOOK_TIMEOUT = 420  # 7 minutes; matches the slowest bootstrap (Metabase).
 
 
 async def _bootstrap_metabase() -> None:
@@ -374,8 +376,18 @@ async def _bootstrap_metabase() -> None:
     base = "http://orchestack-metabase:3000"
     setup_token: str | None = None
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Poll up to ~3 minutes for Metabase's setup page to come online.
-        for attempt in range(90):
+        # Poll up to ~6 minutes for Metabase's setup page to come online.
+        # Metabase's first-boot Liquibase migration runs ~420 changesets
+        # against an empty postgres; on Docker Desktop's macOS file-system
+        # layer that consistently takes 4-5 minutes (single-digit seconds
+        # on bare-metal Linux). Three minutes wasn't enough — the hook
+        # would time out before /api/setup became available, leaving
+        # Metabase showing its built-in setup wizard instead of being
+        # auto-configured.
+        #
+        # Match the POST_START_HOOK_TIMEOUT (300s) too — this 360s loop
+        # would otherwise be cut off by the outer asyncio.wait_for.
+        for attempt in range(180):
             try:
                 r = await client.get(f"{base}/api/session/properties")
                 if r.status_code == 200:
