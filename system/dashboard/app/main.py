@@ -1181,9 +1181,31 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
-    # Default for other services: running container == ready. pgAdmin's
-    # own healthcheck has already gated this point (it's our Docker
-    # healthcheck on the container).
+    # pgAdmin: same pattern as Metabase. The Docker container healthcheck
+    # already gates state==running on /misc/ping returning 200, but
+    # there's a 5-10s window between gunicorn starting and the first
+    # successful ping where the container reports "starting" health
+    # status — and Traefik happily routes during that window, the user
+    # sees a 502 Bad Gateway or the dashboard's FastAPI 404 in the new
+    # tab. Probe /misc/ping ourselves so the dashboard waits until
+    # pgAdmin can actually serve requests before opening the tab.
+    if name == "pgadmin":
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                # /misc/ping must include the SCRIPT_NAME prefix because
+                # pgAdmin rejects any path that doesn't start with it.
+                r = await client.get(
+                    "http://orchestack-pgadmin:80/app/pgadmin/misc/ping",
+                )
+                if r.status_code == 200:
+                    return JSONResponse({"ready": True})
+                return JSONResponse({"ready": False, "phase": "starting"})
+        except httpx.HTTPError:
+            return JSONResponse({"ready": False, "phase": "starting"})
+
+    # Default for any other managed service: state==running is the signal.
+    # When M4 lands more managed services, each should add its own probe
+    # branch above with a service-specific readiness check.
     return JSONResponse({"ready": True})
 
 

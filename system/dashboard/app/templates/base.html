@@ -305,6 +305,10 @@
         bootstrapping: "Metabase finished migrating. OrcheStack is now wiring up your warehouse connection. Almost there…",
         copy_done:     "Metabase is ready",
       },
+      pgadmin: {
+        starting:      "Starting pgAdmin. First boot takes ~15s while gunicorn warms up.",
+        copy_done:     "pgAdmin is ready",
+      },
     };
     const READY_POLL_MS    = 2000;
     const READY_TIMEOUT_MS = 420_000;  // 7 minutes; matches POST_START_HOOK_TIMEOUT

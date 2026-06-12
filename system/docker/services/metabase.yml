@@ -25,8 +25,17 @@ services:
       MB_DB_TYPE: postgres
       MB_DB_HOST: orchestack-postgres
       MB_DB_PORT: 5432
-      MB_DB_USER: ${ORCHESTACK_DB_USER:-orchestack}
-      MB_DB_PASS: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
+      # Per-service role + scoped DB ownership (M4 multi-DB plan, see
+      # design/m4-multi-db.md §1-2). The orchestrator's pre-start hook
+      # _ensure_metabase_database creates the `metabase` PostgreSQL
+      # role with login + password (from METABASE_DB_PASSWORD, or a
+      # deterministic fallback derived from ORCHESTACK_DB_PASSWORD for
+      # M3 testers who haven't re-deployed) and owns the metabase DB.
+      # Previously Metabase connected as the platform admin which gave
+      # it implicit access to platform.users and every other DB on the
+      # server — now it's scoped to just its own database.
+      MB_DB_USER: metabase
+      MB_DB_PASS: ${METABASE_DB_PASSWORD:-}
       MB_DB_DBNAME: metabase
       # Subpath deployment — Metabase is served at /app/metabase/ via Traefik
       # so it shares the same host as the rest of OrcheStack.

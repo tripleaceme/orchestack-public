@@ -171,27 +171,153 @@ async def ping() -> bool:
 # attempt, no operator action required.
 # ===========================================================================
 async def _ensure_metabase_database() -> None:
-    """Create the `metabase` database in platform postgres if it doesn't exist.
+    """Create the `metabase` role + database with scoped ownership.
 
-    Metabase connects with the orchestack platform user (per the env vars
-    in services/metabase.yml: MB_DB_USER / MB_DB_PASS = ORCHESTACK_DB_*).
-    The DB is owned by that user; this matches what Metabase expects on
-    its own first-run migration.
+    Per the M4 multi-DB plan (design/m4-multi-db.md §1-2), every managed
+    service owns its own database under its own PostgreSQL role. Metabase
+    is the first to land — previously Metabase connected as the platform
+    admin role, which gave it implicit access to platform.users and
+    every other database on the server. Now Metabase has a dedicated
+    `metabase` role with ownership of just the `metabase` database.
+
+    Idempotent across all three states:
+
+      (a) Fresh install: both role and DB missing → create both.
+      (b) Existing install pre-M4: role missing, DB exists owned by the
+          platform admin → create role, reassign ownership, re-grant
+          objects (REASSIGN OWNED only operates on the connected DB so
+          we run it in a separate connection scoped to the metabase DB).
+      (c) Already migrated: role exists, DB owned by role → no-op.
+
+    The password is read from METABASE_DB_PASSWORD in .env; the wizard
+    generates it. If the env var is missing we use a deterministic
+    fallback derived from ORCHESTACK_DB_PASSWORD so existing M3 testers
+    don't have to re-run the wizard to upgrade.
     """
     from . import db  # local import — avoids circular import at module load
+    env = _read_env_file_or_empty()
+    password = env.get("METABASE_DB_PASSWORD", "").strip()
+    if not password:
+        # Fallback: derive a stable per-service password. M3 testers
+        # upgrading to per-service DBs don't have to re-deploy.
+        platform_pw = env.get("ORCHESTACK_DB_PASSWORD", "")
+        if not platform_pw:
+            log.warning(
+                "metabase pre-start: no METABASE_DB_PASSWORD and no "
+                "ORCHESTACK_DB_PASSWORD to derive from; skipping role/DB "
+                "setup. Run the wizard or set METABASE_DB_PASSWORD in .env."
+            )
+            return
+        # Deterministic seed — same input always produces the same hash.
+        # This is intentional so subsequent restarts use the same password
+        # without rewriting .env.
+        import hashlib
+        password = hashlib.sha256(
+            f"metabase:{platform_pw}".encode("utf-8")
+        ).hexdigest()[:32]
+        # Persist back to .env so the metabase container sees it on next
+        # `docker compose up` (the compose file reads MB_DB_PASS via
+        # ${METABASE_DB_PASSWORD}). Without this the role exists with the
+        # derived password but the container has MB_DB_PASS="" and login
+        # fails. Best-effort — failures here are noisy in logs but don't
+        # break this hook's main job.
+        try:
+            _append_or_update_env_key("METABASE_DB_PASSWORD", password)
+            log.info(
+                "metabase pre-start: derived METABASE_DB_PASSWORD and "
+                "wrote it to .env for future container starts"
+            )
+        except Exception as e:
+            log.warning(
+                "metabase pre-start: couldn't persist derived password to "
+                ".env (%s); metabase container will fail to connect until "
+                "METABASE_DB_PASSWORD is set manually",
+                e,
+            )
+
     pool = db.get_pool()
+    quoted_pw = password.replace("'", "''")
+
     async with pool.acquire() as conn:
-        exists = await conn.fetchval(
+        # 1. CREATE ROLE if absent (login + the chosen password).
+        role_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'metabase'",
+        )
+        if not role_exists:
+            log.info("pre-start hook (metabase): creating 'metabase' role")
+            await conn.execute(
+                f"CREATE ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
+            )
+        else:
+            # Refresh the password every start — handles the case where
+            # the operator rotated METABASE_DB_PASSWORD in .env. Safe to
+            # repeat; postgres allows password updates as an idempotent
+            # operation.
+            await conn.execute(
+                f"ALTER ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
+            )
+
+        # 2. CREATE DATABASE if absent, owned by metabase.
+        db_exists = await conn.fetchval(
             "SELECT 1 FROM pg_database WHERE datname = 'metabase'",
         )
-        if exists:
-            return
-        # CREATE DATABASE can't run inside a transaction. asyncpg auto-wraps
-        # execute() in one — but pg accepts the statement at top level
-        # outside the implicit txn for this specific command. The owner
-        # matches the user Metabase connects as.
-        log.info("pre-start hook: creating 'metabase' database")
-        await conn.execute('CREATE DATABASE "metabase"')
+        if not db_exists:
+            log.info("pre-start hook (metabase): creating 'metabase' database")
+            await conn.execute('CREATE DATABASE "metabase" OWNER metabase')
+        else:
+            # 3. Existing-DB migration: transfer ownership to metabase
+            # role if it's still owned by the platform admin.
+            owner = await conn.fetchval(
+                "SELECT pg_get_userbyid(datdba) "
+                "FROM pg_database WHERE datname = 'metabase'"
+            )
+            if owner != "metabase":
+                log.info(
+                    "pre-start hook (metabase): existing 'metabase' DB is "
+                    "owned by %s — transferring to metabase role",
+                    owner,
+                )
+                await conn.execute("ALTER DATABASE metabase OWNER TO metabase")
+
+    # 4. Reassign in-database objects (tables, sequences, etc) from the
+    # old admin owner to metabase. REASSIGN OWNED operates on the
+    # connected DB, so we open a separate connection to the metabase DB.
+    platform_user = env.get("ORCHESTACK_DB_USER", "orchestack")
+    if platform_user != "metabase":
+        try:
+            import asyncpg
+            from . import config as _cfg
+            mb_conn = await asyncpg.connect(
+                host=_cfg.DB_HOST,
+                port=_cfg.DB_PORT,
+                user=_cfg.DB_USER,
+                password=_cfg.DB_PASSWORD,
+                database="metabase",
+            )
+            try:
+                # Only reassign if the platform user owns objects in this
+                # DB. Cheaper to attempt than to query first; the command
+                # is a no-op when nothing matches.
+                await mb_conn.execute(
+                    f'REASSIGN OWNED BY "{platform_user}" TO metabase'
+                )
+                # Grant the metabase role usage on public schema (needed
+                # for fresh DBs where the role just got ownership).
+                await mb_conn.execute(
+                    "GRANT ALL ON SCHEMA public TO metabase"
+                )
+            finally:
+                await mb_conn.close()
+        except Exception as e:
+            # Best-effort — failures here mean Metabase will still start
+            # and run its own migration as `metabase`. The reassign is a
+            # cleanup for the pre-M4 → M4 transition only.
+            log.warning(
+                "pre-start hook (metabase): REASSIGN OWNED skipped: %s. "
+                "If Metabase later reports permission errors on existing "
+                "tables, re-run this hook after restarting the orchestrator.",
+                e,
+            )
 
 
 # Where the orchestrator drops pgadmin's pre-loaded servers.json. The
@@ -211,6 +337,35 @@ _PGADMIN_CONTAINER_GID = 5050
 # matching `volumes:` directive in services/pgadmin.yml mounts
 # `orchestack_config:/etc/orchestack/conf:ro`).
 _PGADMIN_INNER_CONF_DIR = "/etc/orchestack/conf"
+
+
+def _append_or_update_env_key(key: str, value: str) -> None:
+    """Write `KEY=value` into the operator's .env. Replaces in place
+    if the key already exists; appends to the end otherwise.
+
+    Same line-preserving semantics as _persist_credentials_to_env in
+    api/setup.py — comments and blank lines stay verbatim. We deliberately
+    don't reuse that helper here because this hook needs to work from
+    docker_ops (no API session, no audit-log dependencies).
+    """
+    path = config.ENV_FILE
+    if not (os.path.isfile(path) and os.access(path, os.W_OK)):
+        raise OSError(f".env at {path} is not a writable file")
+    lines = open(path).read().splitlines(True)  # keepends
+    prefix = f"{key}="
+    new_line = f"{key}={value}\n"
+    found = False
+    for i, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[i] = new_line
+            found = True
+            break
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines.append("\n")
+        lines.append(new_line)
+    with open(path, "w") as f:
+        f.writelines(lines)
 
 
 def _read_env_file_or_empty() -> dict[str, str]:
