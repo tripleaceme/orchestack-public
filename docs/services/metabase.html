@@ -112,32 +112,50 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Services</a> › Metabase</div>
     <h1>Metabase</h1>
-    <p class="lede">The BI layer of OrcheStack. Dashboards for stakeholders, SQL workbench for power users — all querying the marts schema directly.</p>
+    <p class="lede">The BI layer of OrcheStack. Dashboards for stakeholders, SQL workbench for power users, all querying the marts schema directly.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Hot.</strong> Metabase stays running whenever it's enabled. Stakeholders need to open dashboards at any time — business hours, board meetings, ad-hoc exploration. Memory: ~1–1.5 GB.</p>
+<p><strong>Hot.</strong> Metabase stays running whenever it's enabled. Stakeholders need to open dashboards at any time, business hours, board meetings, ad-hoc exploration. Memory: ~1–1.5 GB.</p>
 
 <h2 id="role">Role</h2>
-<p>Metabase reads from the <code class="inline">marts</code> schema in PostgreSQL — the curated output of dbt. It does not read from <code class="inline">raw</code> (that's dbt's job) and it doesn't write anywhere.</p>
+<p>Metabase reads from the <code class="inline">marts</code> schema in PostgreSQL, the curated output of dbt. It does not read from <code class="inline">raw</code> (that's dbt's job) and it doesn't write anywhere.</p>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
-  <li><strong>Admin email</strong> — the first Metabase user you create on its own first-run wizard.</li>
-  <li><strong>Admin password</strong> — set during first-run setup.</li>
-  <li><strong>Warehouse connection</strong> — OrcheStack pre-populates this with the PostgreSQL details and a scoped <code class="inline">metabase</code> user that has read-only access to <code class="inline">marts</code>.</li>
+  <li><strong>Admin email:</strong> the first Metabase user you create on its own first-run wizard.</li>
+  <li><strong>Admin password:</strong> set during first-run setup.</li>
+  <li><strong>Warehouse connection:</strong> OrcheStack pre-populates this with the PostgreSQL details and a scoped <code class="inline">metabase</code> user that has read-only access to <code class="inline">marts</code>.</li>
 </ul>
 <div class="callout">
   <p><strong>Note.</strong> Metabase maintains its own internal application database separate from your warehouse PostgreSQL. OrcheStack stores Metabase's internal state in PostgreSQL too, under the <code class="inline">metabase_app</code> schema, so your backups cover it.</p>
 </div>
 
 <h2 id="first-dashboard">Your first dashboard</h2>
-<p>Open Metabase from the dashboard. After the first-run wizard completes:</p>
+<p>Open Metabase from the OrcheStack dashboard. OrcheStack auto-completes the Metabase setup wizard for you — you land directly on the Metabase login. Sign in with the <code class="inline">METABASE_ADMIN_EMAIL</code> and <code class="inline">METABASE_ADMIN_PASSWORD</code> you entered during the OrcheStack wizard. Your pipeline warehouse is already registered as a data source.</p>
 <ol>
-  <li>Click <strong>Browse data</strong> → your warehouse → <code class="inline">marts</code> schema.</li>
+  <li>Click <strong>Browse data</strong> → <strong>Pipeline warehouse</strong> → <code class="inline">marts</code> schema.</li>
   <li>Pick a table (e.g. <code class="inline">fct_sales</code>).</li>
   <li>Use the query builder or SQL editor to explore.</li>
   <li>Save the question, add it to a dashboard.</li>
 </ol>
+
+<h2 id="adding-stakeholders">Adding stakeholders to your dashboards</h2>
+<p>When a stakeholder (a sales manager, a finance lead, an executive) wants to view dashboards, you add them as a <strong>Metabase user</strong>, not as an OrcheStack user. OrcheStack manages who can administer the platform; Metabase manages who can view dashboards. The two user systems are independent today.</p>
+<p>To invite a stakeholder:</p>
+<ol>
+  <li>Open Metabase from the OrcheStack dashboard.</li>
+  <li>Click the gear icon (top-right) → <strong>Admin settings</strong>.</li>
+  <li>Go to <strong>People</strong> → <strong>Invite someone</strong>.</li>
+  <li>Fill in the stakeholder's name and email, optionally assign them to a Group.</li>
+  <li>Metabase generates a temporary password (and emails them an invite link if SMTP is configured). Send the temporary password out-of-band if SMTP isn't set up.</li>
+</ol>
+<p>The stakeholder logs in at <code class="inline">http://&lt;your-host&gt;/app/metabase</code> with the credentials you sent them. They do <strong>not</strong> need an OrcheStack account — Metabase has its own login, and Traefik routes them to Metabase regardless of whether they have an OrcheStack session.</p>
+<div class="callout">
+  <p><strong>Permissions.</strong> By default Metabase groups have access to every dashboard. To limit what each group sees, use Metabase's <strong>Admin → Permissions</strong> screen. Common pattern: create a "Marketing" group with access only to the marketing collection, an "Executives" group with read access to everything but no edit rights, etc. Per-stakeholder permission tuning is Metabase's job, not OrcheStack's.</p>
+</div>
+<div class="callout">
+  <p><strong>Future work.</strong> Unified single sign-on across managed tools (Metabase + Airflow + OpenMetadata) lands in M5. When it ships, inviting a user from the OrcheStack dashboard will provision them into every tool they need access to in one step. Until then, each tool keeps its own user list.</p>
+</div>
 
     <div class="next-prev">
       <a href="minio.html">
@@ -158,6 +176,7 @@
       <li><a href="#role">Role</a></li>
       <li><a href="#configuration">Configuration</a></li>
       <li><a href="#first-dashboard">Your first dashboard</a></li>
+      <li><a href="#adding-stakeholders">Adding stakeholders</a></li>
     </ul>
   </aside>
 

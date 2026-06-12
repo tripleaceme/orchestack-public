@@ -112,7 +112,7 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Concepts</a> › Account management</div>
     <h1>Managing your account</h1>
-    <p class="lede">Change your password, email, or username from the OrcheStack dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.</p>
+    <p class="lede">Change your password, email, or username from the OrcheStack dashboard. No SQL, no command-line tools. Admins have extra controls for managing other users.</p>
 
 <h2 id="where-creds-live">Where your credentials live</h2>
 <p>Every OrcheStack user account is a row in the <code class="inline">platform.users</code> table inside the base-install PostgreSQL. The schema looks roughly like:</p>
@@ -129,9 +129,9 @@
 │ last_login_at    │ timestamptz                                │
 │ is_active        │ boolean default true                       │
 └──────────────────┴───────────────────────────────────────────┘</pre>
-<p>Passwords are <strong>never stored in plain text</strong>. OrcheStack hashes them with bcrypt before writing to the database; the original is not recoverable. If you forget your password, it must be reset — not retrieved.</p>
+<p>Passwords are <strong>never stored in plain text</strong>. OrcheStack hashes them with bcrypt before writing to the database; the original is not recoverable. If you forget your password, it must be reset, not retrieved.</p>
 <div class="callout">
-  <p><strong>You don't need to touch this table directly.</strong> Every field you'd want to change has a UI for it. Going into pgAdmin and running <code class="inline">UPDATE platform.users SET password_hash = ...</code> is unsupported and likely to break things (wrong hash format, stale session cookies, no audit log entry).</p>
+  <p><strong>You don't need to touch this table directly.</strong> Every field you'd want to change has a UI for it. Going into pgAdmin and running <code class="inline">UPDATE platform.users SET password_hash = ...</code> is unsupported and likely to break things.</p>
 </div>
 
 <h2 id="change-your-own">Change your own password, email, or username</h2>
@@ -148,7 +148,7 @@
 </ol>
 
 <h3 id="change-email">Change email</h3>
-<p>Enter your new email and confirm your password. The change is immediate — your next login can use either the old or new email for one hour (grace window), then only the new one.</p>
+<p>Enter your new email and confirm your password. The change is immediate, your next login can use either the old or new email for one hour (grace window), then only the new one.</p>
 
 <h3 id="change-username">Change username</h3>
 <p>Enter the new username. OrcheStack checks uniqueness against the <code class="inline">platform.users</code> table. On success, the change is immediate.</p>
@@ -168,16 +168,25 @@
 <h2 id="admin-actions">What Admins can do</h2>
 <p>From <strong>Users</strong> in the admin dashboard, an Admin can:</p>
 <ul>
-  <li><strong>Add a new user</strong> — provide name, email, username, role, and a temporary password. The user is required to change it on first login.</li>
-  <li><strong>Reset another user's password</strong> — overrides the bcrypt hash with a new value. Writes an audit entry.</li>
-  <li><strong>Change another user's role</strong> — use the dropdown on their row.</li>
-  <li><strong>Deactivate a user</strong> — sets <code class="inline">is_active=false</code>. They can no longer log in, but their historical activity and audit trail are preserved.</li>
-  <li><strong>Reactivate a user</strong> — the reverse.</li>
-  <li><strong>Delete a user</strong> — hard delete. <strong>Prefer deactivate</strong> unless you have a compliance reason to fully remove.</li>
+  <li><strong>Add a new user:</strong> provide name, email, username, role, and a temporary password. The user is required to change it on first login.</li>
+  <li><strong>Reset another user's password:</strong> overrides the bcrypt hash with a new value. Writes an audit entry.</li>
+  <li><strong>Change another user's role:</strong> use the dropdown on their row.</li>
+  <li><strong>Deactivate a user:</strong> sets <code class="inline">is_active=false</code>. They can no longer log in, but their historical activity and audit trail are preserved.</li>
+  <li><strong>Reactivate a user:</strong> the reverse.</li>
+  <li><strong>Delete a user:</strong> hard delete. <strong>Prefer deactivate</strong> unless you have a compliance reason to fully remove.</li>
 </ul>
 
 <h2 id="deleting-account">Deleting an account</h2>
-<p>Regular users cannot delete their own account — only an Admin can. This is intentional to protect against accidental deletion and to ensure the audit trail stays coherent. If you want your account removed, ask your Admin.</p>
+<p>Regular users cannot delete their own account, only an Admin can. This is intentional to protect against accidental deletion and to ensure the audit trail stays coherent. If you want your account removed, ask your Admin.</p>
+
+<h2 id="tool-user-vs-platform-user">OrcheStack users vs tool users</h2>
+<p>OrcheStack and the tools it manages keep <strong>independent user systems</strong>:</p>
+<ul>
+  <li><strong>OrcheStack users</strong> sign in at <code class="inline">/app/</code> and administer the platform — start and stop services, edit credentials, invite other operators, see the audit log. They're stored in <code class="inline">platform.users</code> in OrcheStack's internal database. Manage them on the <code class="inline">/app/users</code> page.</li>
+  <li><strong>Tool users</strong> sign into each managed tool separately — Metabase at <code class="inline">/app/metabase</code>, OpenMetadata at <code class="inline">/app/openmetadata</code> when M4 lands, etc. Each tool maintains its own user list inside its own database. You invite these users from the tool's own admin interface, not from OrcheStack.</li>
+</ul>
+<p>A stakeholder who just wants to view dashboards typically only needs a <strong>tool user</strong>, not an OrcheStack user. See each service's documentation for how to invite tool users — e.g. <a href="services/metabase.html#adding-stakeholders">Adding stakeholders</a> on the Metabase page.</p>
+<p>Unified single sign-on across both systems is roadmapped for M5. Until then, two user lists is the correct mental model.</p>
 
     <div class="next-prev">
       <a href="sessions.html">
@@ -199,6 +208,7 @@
       <li><a href="#forgot-password">Forgot password</a></li>
       <li><a href="#admin-actions">What Admins can do</a></li>
       <li><a href="#deleting-account">Deleting an account</a></li>
+      <li><a href="#tool-user-vs-platform-user">OrcheStack users vs tool users</a></li>
     </ul>
   </aside>
 
