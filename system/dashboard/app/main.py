@@ -1062,6 +1062,68 @@ async def open_service_session(name: str) -> JSONResponse:
     })
 
 
+# Services with extra-long first-run setup (Metabase's Liquibase migration
+# is the canonical case). The JS poller waits longer + shows specific copy
+# for these so the operator doesn't think the system is stuck.
+SLOW_BOOTSTRAP_SERVICES = {"metabase"}
+
+
+@app.get("/api/dashboard/services/{name}/ready", name="service_ready_probe")
+async def service_ready_probe(request: Request, name: str) -> JSONResponse:
+    """Service readiness check the dashboard's Open button polls.
+
+    Returns:
+      {"ready": true}                                   service serves requests
+      {"ready": false, "phase": "starting"}             container not yet healthy
+      {"ready": false, "phase": "bootstrapping"}        container healthy, app still setting up
+      {"ready": false, "phase": "unknown"}              we can't tell — operator should refresh
+
+    The dashboard's open flow polls this endpoint instead of trying to
+    hit the tool URL directly because cross-origin redirects from the
+    tools (Metabase's first-run wizard 302s to /setup) confuse browser
+    fetch readiness checks.
+    """
+    try:
+        svc = await orchestrator.get_service(name)
+    except httpx.HTTPError as e:
+        return JSONResponse({"ready": False, "phase": "unknown",
+                              "detail": str(e)}, status_code=502)
+
+    if not svc or svc.get("state") != "running":
+        return JSONResponse({"ready": False, "phase": "starting"})
+
+    # Container is running. For Metabase, additionally check setup
+    # completion — even after Liquibase finishes, the bootstrap hook
+    # needs another second or two to POST /api/setup.
+    if name == "metabase":
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(
+                    "http://orchestack-metabase:3000/api/session/properties",
+                )
+                if r.status_code != 200:
+                    return JSONResponse(
+                        {"ready": False, "phase": "starting"},
+                    )
+                token = r.json().get("setup-token")
+                if token is not None:
+                    # Setup-token is non-null → Metabase has NOT been
+                    # configured yet. Bootstrap is either still running
+                    # in the background or hasn't started yet.
+                    return JSONResponse(
+                        {"ready": False, "phase": "bootstrapping"},
+                    )
+                # Setup-token gone → Metabase is configured.
+                return JSONResponse({"ready": True})
+        except httpx.HTTPError:
+            return JSONResponse({"ready": False, "phase": "starting"})
+
+    # Default for other services: running container == ready. pgAdmin's
+    # own healthcheck has already gated this point (it's our Docker
+    # healthcheck on the container).
+    return JSONResponse({"ready": True})
+
+
 @app.post("/api/dashboard/sessions/{token}/heartbeat",
            name="session_heartbeat")
 async def session_heartbeat(token: str) -> JSONResponse:

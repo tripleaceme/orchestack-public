@@ -20,6 +20,14 @@ services:
       # Disable the multi-user "server mode" — for a single-tenant install,
       # the auth layer is OrcheStack itself, not pgAdmin's own user table.
       PGADMIN_CONFIG_SERVER_MODE: 'False'
+      # Skip the master-password prompt on first connect. The master
+      # password is pgAdmin's local-disk encryption for stored DB
+      # passwords; in OrcheStack the operator's pipeline-DB password
+      # already lives in our own .env (under the orchestack_config
+      # volume scoped to this container), so the extra encryption layer
+      # only adds a confusing prompt without protecting anything new.
+      # See pgAdmin docs: /app/pgadmin/help/help/master_password.html
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
       # Subpath deployment: served at /app/pgadmin/ via Traefik. pgAdmin
       # respects SCRIPT_NAME — Traefik passes the prefix in the header.
       SCRIPT_NAME: /app/pgadmin

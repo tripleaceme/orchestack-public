@@ -433,6 +433,7 @@ async def _bootstrap_metabase() -> None:
                 log.info("metabase bootstrap: /api/setup succeeded")
                 await audit.write(
                     "metabase_bootstrapped",
+                    service_name="metabase",
                     user_id=None,
                     details={
                         "site_name":       site_name,
@@ -446,6 +447,7 @@ async def _bootstrap_metabase() -> None:
                 )
                 await audit.write(
                     "metabase_bootstrap_failed",
+                    service_name="metabase",
                     user_id=None,
                     details={"status": r.status_code, "body": r.text[:300]},
                 )

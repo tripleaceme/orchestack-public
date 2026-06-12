@@ -90,6 +90,34 @@
       border-radius: 4px; font-size: 11px; padding: 0 5px;
       color: var(--text-2); font-family: 'JetBrains Mono', monospace;
     }
+
+    /* Toast notifications — used by the Open flow to show "Starting…"
+       / "Setting up Metabase…" / "Opened" rather than alert(). Stack
+       in the bottom-right; each toast carries its own auto-dismiss. */
+    #toast-tray {
+      position: fixed; right: 16px; bottom: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+      z-index: 9999; pointer-events: none;
+      max-width: min(420px, calc(100vw - 32px));
+    }
+    .toast {
+      pointer-events: auto;
+      background: white; color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(15, 42, 68, 0.08);
+      padding: 10px 14px; font-size: 13px; line-height: 1.45;
+      display: flex; align-items: flex-start; gap: 10px;
+      animation: toast-in 160ms ease-out;
+    }
+    .toast strong { color: var(--navy); font-weight: 600; }
+    .toast.toast-info  { border-left: 3px solid #0ea5e9; }
+    .toast.toast-warn  { border-left: 3px solid #d97706; }
+    .toast.toast-error { border-left: 3px solid #dc2626; }
+    .toast.toast-ok    { border-left: 3px solid #16a34a; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
   </style>
 
   {% block head_extra %}{% endblock %}
@@ -157,6 +185,9 @@
     <span class="font-mono">{{ request.app.version }}</span>
   </footer>
 
+  {# Toast tray for non-blocking status messages (Open flow uses it). #}
+  <div id="toast-tray" aria-live="polite" aria-atomic="false"></div>
+
   {# ---------------- Connection-indicator wiring (existing) ---------- #}
   <script>
     document.addEventListener('htmx:sendError', () => {
@@ -197,24 +228,156 @@
       localStorage.removeItem(SESSION_KEY_PREFIX + service);
     }
 
-    // Open a service: POST to dashboard /open endpoint, store token,
-    // open tool URL in a new tab. Triggered by the per-card "Open" button.
+    // ----- Toast helpers ----------------------------------------------
+    // Light-weight non-blocking notifications. Replaces alert() in the
+    // Open flow so the operator can keep working in the dashboard while
+    // a slow service comes up.
+    function showToast(message, variant = 'info', timeoutMs = 4500) {
+      const tray = document.getElementById('toast-tray');
+      if (!tray) return null;
+      const el = document.createElement('div');
+      el.className = `toast toast-${variant}`;
+      // message can include simple <strong> tags from the caller — we
+      // trust callers because all message strings are static literals
+      // assembled in JS, not pulled from user input.
+      el.innerHTML = message;
+      tray.appendChild(el);
+      if (timeoutMs > 0) {
+        setTimeout(() => {
+          el.style.transition = 'opacity 200ms ease-in';
+          el.style.opacity = '0';
+          setTimeout(() => el.remove(), 220);
+        }, timeoutMs);
+      }
+      return el;
+    }
+    function dismissToast(el) {
+      if (el && el.remove) el.remove();
+    }
+
+    // ----- Open a service ---------------------------------------------
+    // The full lifecycle of a click on "Open":
+    //   1. POST /open — orchestrator records session + schedules container
+    //      start. Returns immediately (start is in flight).
+    //   2. Toast: "Starting <service>…" so the operator knows we got the
+    //      click and the system is working.
+    //   3. Poll /api/dashboard/services/<name>/ready until the service is
+    //      actually serving (or we hit the timeout). For Metabase this
+    //      blocks ~60-90s while bootstrap runs; pgAdmin is typically <15s.
+    //   4. Open the tool URL in a new tab and toast "Opened in new tab".
+    //   5. On timeout: keep the dashboard tab usable; tell the operator
+    //      to wait + retry rather than opening into a half-baked tool.
+    //
+    // SLOW_BOOTSTRAP carries display copy for services that take notably
+    // longer than the others — Metabase's Liquibase migration is the
+    // canonical example. The phase strings come from the /ready endpoint.
+    const SLOW_BOOTSTRAP = {
+      metabase: {
+        starting:      "Starting Metabase — first start can take ~90s while the JVM warms up.",
+        bootstrapping: "Metabase is initialising your warehouse connection. Hang on…",
+        copy_done:     "Metabase is ready",
+      },
+    };
+    const READY_POLL_MS    = 2000;
+    const READY_TIMEOUT_MS = 180_000;  // 3 minutes — covers Metabase cold start
+    const FAST_TIMEOUT_MS  =  45_000;  // for services not in SLOW_BOOTSTRAP
+
+    async function waitForReady(serviceName, statusToast) {
+      const slow = SLOW_BOOTSTRAP[serviceName];
+      const deadline = Date.now() + (slow ? READY_TIMEOUT_MS : FAST_TIMEOUT_MS);
+      let lastPhase = null;
+      while (Date.now() < deadline) {
+        try {
+          const r = await fetch(
+            `${ROOT}/api/dashboard/services/${serviceName}/ready`,
+            { method: 'GET' },
+          );
+          if (r.ok) {
+            const body = await r.json();
+            if (body.ready) return { ok: true };
+            if (slow && body.phase && body.phase !== lastPhase) {
+              const copy = slow[body.phase];
+              if (copy && statusToast) statusToast.innerHTML =
+                `<div><strong>${serviceName}</strong><br>${copy}</div>`;
+              lastPhase = body.phase;
+            }
+          }
+        } catch (_) { /* network blip; try again */ }
+        await new Promise(res => setTimeout(res, READY_POLL_MS));
+      }
+      return { ok: false, lastPhase };
+    }
+
+    // Triggered by the per-card "Open" button (see _service_card_fragment).
     window.orchestackOpenService = async function(serviceName) {
+      const slow = SLOW_BOOTSTRAP[serviceName];
+      const initialCopy = slow
+        ? slow.starting
+        : `Starting ${serviceName}. This usually takes 10-20 seconds.`;
+      const statusToast = showToast(
+        `<div><strong>${serviceName}</strong><br>${initialCopy}</div>`,
+        'info',
+        0,  // sticky — we dismiss when ready or timed out
+      );
+
+      let openBody = null;
       try {
         const resp = await fetch(`${ROOT}/api/dashboard/services/${serviceName}/open`, {
           method: 'POST',
         });
         if (!resp.ok) {
-          alert(`Couldn't open ${serviceName}: ${resp.status}`);
+          dismissToast(statusToast);
+          showToast(
+            `<div><strong>${serviceName}</strong><br>` +
+            `Couldn't start the service (${resp.status}). Try again in a moment.</div>`,
+            'error',
+          );
           return;
         }
-        const body = await resp.json();
-        if (body.token && body.tool_url) {
-          localStorage.setItem(SESSION_KEY_PREFIX + serviceName, body.token);
-          window.open(body.tool_url, '_blank', 'noopener,noreferrer');
+        openBody = await resp.json();
+        if (openBody.token) {
+          localStorage.setItem(SESSION_KEY_PREFIX + serviceName, openBody.token);
         }
       } catch (e) {
-        alert(`Open ${serviceName} failed: ${e.message}`);
+        dismissToast(statusToast);
+        showToast(
+          `<div><strong>${serviceName}</strong><br>` +
+          `Network error: ${e.message}</div>`,
+          'error',
+        );
+        return;
+      }
+
+      // Now poll readiness — the orchestrator confirmed the start; we
+      // don't actually want to open the tool URL until the container is
+      // serving and (for Metabase) the bootstrap hook has finished.
+      const ready = await waitForReady(serviceName, statusToast);
+      dismissToast(statusToast);
+
+      if (!ready.ok) {
+        const lastPhase = ready.lastPhase;
+        const phaseCopy = (slow && lastPhase && slow[lastPhase])
+          ? slow[lastPhase]
+          : "The service is still initialising.";
+        showToast(
+          `<div><strong>${serviceName}</strong><br>` +
+          `${phaseCopy}<br>` +
+          `Try clicking Open again in a minute. If it persists, check ` +
+          `the Audit page for errors.</div>`,
+          'warn',
+          10_000,
+        );
+        return;
+      }
+
+      // Ready — open the tab + flash a success toast.
+      showToast(
+        `<div><strong>${serviceName}</strong> opened in a new tab.</div>`,
+        'ok',
+        2500,
+      );
+      if (openBody && openBody.tool_url) {
+        window.open(openBody.tool_url, '_blank', 'noopener,noreferrer');
       }
     };
 
