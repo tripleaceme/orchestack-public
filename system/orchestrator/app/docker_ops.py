@@ -792,19 +792,44 @@ async def start_service(service: str) -> CommandResult:
 
 
 async def stop_service(service: str) -> CommandResult:
-    """Stop a cold-tier service. Keeps volumes + networks; only stops the container.
+    """Stop a service. Keeps volumes + networks; only stops the container.
 
     We use `stop`, not `down`, so subsequent `start_service` is a fast
     container-start (~1-2s) instead of a full recreate (~10s).
 
-    Pass `need_env=False`: stop doesn't interpolate any env vars at
-    parse time, so requiring a usable .env file just to stop a service
-    is over-strict. Operators who lost their .env between starts can
-    still stop their containers cleanly.
+    Path A (env file usable): `docker compose ... --env-file .env stop`.
+    Docker compose PARSES the yml regardless of subcommand, and
+    metabase.yml uses `${ORCHESTACK_DB_PASSWORD:?...}` which fails parse
+    if the var isn't provided — even though `stop` doesn't actually
+    USE the variable. Passing the env file satisfies the parser.
+
+    Path B (env file broken — the bind-mount-as-empty-directory trap):
+    fall back to `docker stop <container>` directly. This bypasses
+    compose entirely, so the missing-env-var parse failure can't bite.
+    The container is named by metabase.yml's container_name attribute,
+    which we mirror with the `orchestack-<service>` convention.
+    Without this fallback, an operator whose .env mount went bad
+    could never stop a running service from the dashboard.
     """
+    if _env_file_usable():
+        return await asyncio.to_thread(
+            _run_sync,
+            _service_compose_args(service, need_env=True) + ["stop"],
+            60,
+        )
+    # Fallback: direct `docker stop`. Bypasses compose entirely so the
+    # missing .env can't trip the yml parser.
+    container_name = f"orchestack-{service}"
+    log.warning(
+        "stop_service(%s): .env unusable; falling back to `docker stop %s` "
+        "(bypassing compose parser). Restore the operator's .env on the "
+        "host and restart the orchestack-orchestrator container to "
+        "return to the normal compose-based stop path.",
+        service, container_name,
+    )
     return await asyncio.to_thread(
         _run_sync,
-        _service_compose_args(service, need_env=False) + ["stop"],
+        ["docker", "stop", container_name],
         60,
     )
 
