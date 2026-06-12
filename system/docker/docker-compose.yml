@@ -35,6 +35,11 @@ networks:
 volumes:
   postgres-data:
     name: orchestack-postgres-data
+  # Shared between the orchestrator (writes) and managed services like
+  # pgadmin (reads). Explicit `name:` so per-service compose files can
+  # attach the same volume by name, regardless of compose project.
+  orchestack_config:
+    name: orchestack_config
 
 services:
 
@@ -309,6 +314,16 @@ services:
       # values back. The orchestrator is OrcheStack's own code; the
       # read-AND-write surface is intentional.
       - ./.env:/etc/orchestack/.env
+      # Shared writable config volume. The orchestrator drops generated
+      # configuration here (pgadmin servers.json today, more under M4)
+      # and managed services attach the same named volume read-only.
+      # A named volume is used instead of a host bind-mount because the
+      # per-service compose subprocess runs inside the orchestrator
+      # container and would resolve `./config` relative to /services/
+      # rather than the operator's bundle directory — a path-coordination
+      # trap. Named volumes are resolved by the host docker daemon and
+      # are visible to both containers regardless of where compose ran.
+      - orchestack_config:/etc/orchestack/config
     networks:
       - orchestack-net
     depends_on:

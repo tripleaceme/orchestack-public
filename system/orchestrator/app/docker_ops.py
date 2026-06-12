@@ -53,20 +53,39 @@ class CommandResult:
         return self.stderr[-500:] if self.stderr else ""
 
 
-def _service_compose_args(service: str) -> list[str]:
+def _env_file_usable() -> bool:
+    """Return True if config.ENV_FILE is a regular, readable file.
+
+    `os.path.exists()` is too permissive: when the operator's `./.env`
+    doesn't exist on the host at orchestrator startup, Docker materialises
+    the bind-mount target as an empty DIRECTORY at /etc/orchestack/.env
+    rather than failing. `os.path.exists()` returns True for that
+    directory, `os.path.isfile()` doesn't — and docker compose rejects
+    `--env-file <dir>` with "couldn't read env file", landing the
+    operator in the broken state seen during M3 testing where stop
+    fails with returncode 1.
+    """
+    try:
+        return os.path.isfile(config.ENV_FILE) and os.access(config.ENV_FILE, os.R_OK)
+    except OSError:
+        return False
+
+
+def _service_compose_args(service: str, *, need_env: bool = True) -> list[str]:
     """Build the `docker compose` argument prefix for a managed service.
 
-    `--env-file` is passed explicitly because the orchestrator runs from
-    its own working directory inside the container, NOT from a directory
-    that contains `.env`. Without this flag, compose would try and fail to
-    interpolate ${ORCHESTACK_DB_PASSWORD}, ${PIPELINE_DB_*}, etc., when
-    bringing up any service that references those variables (see
-    services/metabase.yml). The `.env` file itself is bind-mounted into
-    the orchestrator at config.ENV_FILE — see system/docker/docker-compose.yml.
+    `--env-file` is passed for subcommands that interpolate ${VARS} from
+    .env at parse time (up, run, exec, config) — most importantly the
+    `up -d` that starts a service like metabase which depends on
+    ${ORCHESTACK_DB_PASSWORD} and ${PIPELINE_DB_*}. The `.env` file
+    itself is bind-mounted into the orchestrator at config.ENV_FILE.
 
-    If the env file doesn't exist (development edge case where the
-    orchestrator is run without the canonical compose), we still emit the
-    flag but with the path; docker compose will surface a clear error.
+    Pass `need_env=False` for subcommands that don't interpolate (stop,
+    rm, ps, logs, kill). Compose still validates --env-file at every
+    invocation when the flag is set, so passing it on stop would fail
+    when the .env mount is misshapen — even though stop doesn't actually
+    use any variables. Omitting it on those subcommands is both correct
+    and resilient to a broken .env mount.
     """
     compose_file = os.path.join(config.SERVICES_DIR, f"{service}.yml")
     project_name = f"{config.COMPOSE_PROJECT_PREFIX}-{service}"
@@ -75,15 +94,19 @@ def _service_compose_args(service: str) -> list[str]:
         "--file", compose_file,
         "--project-name", project_name,
     ]
-    if os.path.exists(config.ENV_FILE):
-        args += ["--env-file", config.ENV_FILE]
-    else:
-        log.warning(
-            "env-file not found at %s — compose interpolation may fail. "
-            "Did you mount the operator's .env into the orchestrator? "
-            "See system/docker/docker-compose.yml.",
-            config.ENV_FILE,
-        )
+    if need_env:
+        if _env_file_usable():
+            args += ["--env-file", config.ENV_FILE]
+        else:
+            log.warning(
+                "env-file at %s is not a readable file — compose "
+                "interpolation will fall back to the process environment. "
+                "Common cause: the operator's ./.env was missing when the "
+                "orchestrator started, so the bind-mount materialised as "
+                "an empty directory. Restore the file and restart the "
+                "orchestack-orchestrator container.",
+                config.ENV_FILE,
+            )
     return args
 
 
@@ -171,8 +194,110 @@ async def _ensure_metabase_database() -> None:
         await conn.execute('CREATE DATABASE "metabase"')
 
 
+# Where the orchestrator drops pgadmin's pre-loaded servers.json. The
+# matching bind-mount on the pgadmin side (services/pgadmin.yml) maps
+# the host's ./config/pgadmin directory to /etc/orchestack/conf in the
+# pgadmin container, and PGADMIN_SERVER_JSON_FILE points at the file
+# pgadmin should import on first boot.
+_PGADMIN_SERVERS_JSON = "/etc/orchestack/config/pgadmin/servers.json"
+
+
+def _read_env_file_or_empty() -> dict[str, str]:
+    """Read .env into a dict. Returns {} on any error.
+
+    Trivial parser — KEY=value, ignores comments and blank lines. We don't
+    handle quoting or escaping because docker compose itself doesn't, and
+    the orchestrator's _persist_credentials_to_env() writes raw KEY=value
+    lines too. The parser only sees keys we wrote.
+    """
+    out: dict[str, str] = {}
+    try:
+        with open(config.ENV_FILE) as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return out
+
+
+async def _ensure_pgadmin_servers_json() -> None:
+    """Materialise pgAdmin's servers.json so the operator opens the tool
+    and sees the OrcheStack platform DB and pipeline warehouse already
+    listed in the navigator — no manual "Add Server" required.
+
+    pgAdmin's auto-import deliberately does NOT carry passwords for
+    security reasons; the operator types the password once at first
+    connect (pgAdmin offers to remember it for the session). Pre-listing
+    the SERVERS — name, host, port, user, default DB — is what removes
+    the cognitive overhead of figuring out the right hostname / user
+    from a stack the operator didn't build.
+
+    Best-effort. If the .env can't be read or the file can't be written
+    (mount missing, filesystem RO, etc.), pgAdmin starts with an empty
+    server list and the operator adds entries manually — the path the
+    operator was on before this hook existed. Hook failure never blocks
+    pgAdmin starting.
+    """
+    env = _read_env_file_or_empty()
+    servers: dict[str, object] = {"Servers": {}}
+    by_idx = servers["Servers"]
+    assert isinstance(by_idx, dict)
+
+    # OrcheStack platform DB — always present (the orchestrator's own
+    # internal database). Useful for advanced operators inspecting
+    # platform.users, platform.audit_log, etc.
+    by_idx["1"] = {
+        "Name":          "OrcheStack platform",
+        "Group":         "OrcheStack",
+        "Host":          "orchestack-postgres",
+        "Port":          5432,
+        "MaintenanceDB": env.get("ORCHESTACK_DB_NAME", "orchestack"),
+        "Username":      env.get("ORCHESTACK_DB_USER", "orchestack"),
+        "SSLMode":       "prefer",
+        "Comment":       "OrcheStack's internal database — platform.users, "
+                          "sessions, audit log. Read-only inspection only.",
+    }
+
+    # Pipeline warehouse — present once the operator completes the wizard.
+    pipeline_db   = env.get("PIPELINE_DB_NAME")
+    pipeline_user = env.get("PIPELINE_DB_USER")
+    if pipeline_db and pipeline_user:
+        by_idx["2"] = {
+            "Name":          "Pipeline warehouse",
+            "Group":         "OrcheStack",
+            "Host":          "orchestack-postgres",
+            "Port":          5432,
+            "MaintenanceDB": pipeline_db,
+            "Username":      pipeline_user,
+            "SSLMode":       "prefer",
+            "Comment":       "Your pipeline marts. dbt writes here; "
+                              "Metabase reads here.",
+        }
+
+    target = _PGADMIN_SERVERS_JSON
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        import json as _json
+        with open(target, "w") as f:
+            _json.dump(servers, f, indent=2)
+        log.info("pre-start hook: wrote pgadmin servers.json with %d server(s)",
+                  len(by_idx))
+    except OSError as e:
+        log.warning(
+            "pre-start hook: could not write %s: %s — pgadmin will start "
+            "without pre-listed servers. Add the bind-mount of ./config to "
+            "the orchestrator container (see system/docker/docker-compose.yml).",
+            target, e,
+        )
+
+
 PRE_START_HOOKS = {
     "metabase": _ensure_metabase_database,
+    "pgadmin":  _ensure_pgadmin_servers_json,
 }
 
 
@@ -238,10 +363,15 @@ async def stop_service(service: str) -> CommandResult:
 
     We use `stop`, not `down`, so subsequent `start_service` is a fast
     container-start (~1-2s) instead of a full recreate (~10s).
+
+    Pass `need_env=False`: stop doesn't interpolate any env vars at
+    parse time, so requiring a usable .env file just to stop a service
+    is over-strict. Operators who lost their .env between starts can
+    still stop their containers cleanly.
     """
     return await asyncio.to_thread(
         _run_sync,
-        _service_compose_args(service) + ["stop"],
+        _service_compose_args(service, need_env=False) + ["stop"],
         60,
     )
 

@@ -23,8 +23,26 @@ services:
       # Subpath deployment: served at /app/pgadmin/ via Traefik. pgAdmin
       # respects SCRIPT_NAME — Traefik passes the prefix in the header.
       SCRIPT_NAME: /app/pgadmin
+      # Pre-load OrcheStack's databases into pgAdmin's navigator so the
+      # operator doesn't have to manually add server connections. The
+      # orchestrator's _ensure_pgadmin_servers_json pre-start hook
+      # materialises this file into the shared `orchestack_config`
+      # named volume BEFORE compose up runs; we mount that volume into
+      # /etc/orchestack/conf below and point pgAdmin at it.
+      #
+      # Passwords are intentionally NOT in this file — pgAdmin's auto-
+      # import drops them for security and the operator types them once
+      # on first connect.
+      PGADMIN_SERVER_JSON_FILE: /etc/orchestack/conf/servers.json
     networks:
       - orchestack-net
+    volumes:
+      # Pick up the pre-loaded servers.json the orchestrator's pre-start
+      # hook wrote to the shared orchestack_config volume. Mounted RO —
+      # pgAdmin doesn't need to mutate this file. If the orchestrator's
+      # hook didn't run (network blip, DB not yet up), pgAdmin starts
+      # with an empty server list and the operator adds entries by hand.
+      - orchestack_config:/etc/orchestack/conf:ro
     # pgAdmin starts serving on port 80 once its internal SQLite is
     # initialised — typically ~10–15s from container start. Without this
     # healthcheck Traefik routes requests at the container immediately
@@ -65,3 +83,11 @@ networks:
   orchestack-net:
     external: true
     name: orchestack-net
+
+volumes:
+  # Declared external — the volume is created by the base compose stack
+  # (system/docker/docker-compose.yml). This snippet just attaches to it
+  # so the orchestrator's writes are visible to pgadmin.
+  orchestack_config:
+    external: true
+    name: orchestack_config
