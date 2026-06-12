@@ -85,6 +85,11 @@ async def list_services() -> dict[str, object]:
                 pin_row["expires_at"].isoformat()
                 if pin_row and pin_row["expires_at"] else None
             ),
+            # external_url is set in the catalogue for tools whose UI
+            # doesn't work cleanly under the /app/<name> subpath
+            # (MinIO is the canonical case). The dashboard's Open
+            # handler reads this and overrides the default tool URL.
+            "external_url": meta.get("external_url"),
         })
     return {"services": items}
 

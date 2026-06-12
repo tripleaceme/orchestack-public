@@ -112,7 +112,13 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
     # M4 services. All managed=True as of M4 ship; pre-start hooks
     # provision per-service DBs/roles per design/m4-multi-db.md.
-    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True},
+    # MinIO's console doesn't support subpath deployment reliably (their
+    # 2024+ SPA assumes /api/v1 at root). external_url tells the
+    # dashboard's Open button to send the operator to localhost:9001
+    # instead of /app/minio. The compose snippet exposes 9001 on the
+    # host accordingly. The S3 API on 9000 stays internal to the
+    # docker network — Airbyte/dbt reach it as orchestack-minio:9000.
+    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
     "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True},
     "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},

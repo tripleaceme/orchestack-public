@@ -14,10 +14,26 @@ services:
     environment:
       MINIO_ROOT_USER:     ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
-      # Console subpath — MinIO honors this for its own asset URLs.
-      MINIO_BROWSER_REDIRECT_URL: http://localhost/app/minio
+      # MinIO console URL — used by MinIO for the post-login redirect
+      # and for the WebSocket origin check. Set to the direct-port URL
+      # since the subpath approach (see below) has known incompatibilities
+      # with MinIO 2024+ — the SPA loads but its internal navigation
+      # and WebSocket connection silently fail because some of MinIO's
+      # frontend code assumes its API is at /api/v1, not at
+      # /app/minio/api/v1. The Traefik labels below are still present
+      # as a fallback for operators with locked-down firewalls who
+      # can't bind localhost:9001 — they get a degraded but functional
+      # UI; direct-port operators get the full experience.
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
     volumes:
       - minio-data:/data
+    ports:
+      # Expose the console on host:9001 — this is the SUPPORTED MinIO
+      # deployment pattern for browser access. The dashboard's Open
+      # button points operators here instead of /app/minio. The S3
+      # API on 9000 stays internal to the docker network (Airbyte +
+      # dbt reach it as orchestack-minio:9000 — no need to expose).
+      - "9001:9001"
     networks:
       - orchestack-net
     healthcheck:

@@ -1165,7 +1165,7 @@ async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
 #  Session lifecycle (Open / heartbeat / close)
 # ===========================================================================
 @app.post("/api/dashboard/services/{name}/open", name="open_service_session")
-async def open_service_session(name: str) -> JSONResponse:
+async def open_service_session(request: Request, name: str) -> JSONResponse:
     """Open an orchestrator session against `name` and return the tool URL.
 
     Returns JSON `{token, tool_url, service}`. The dashboard's client-side
@@ -1185,9 +1185,24 @@ async def open_service_session(name: str) -> JSONResponse:
             status_code=502,
             content={"error": "orchestrator unreachable", "detail": str(e)},
         )
-    # Tool URL: tools are mounted under the dashboard's same root.
-    # /app/metabase, /app/pgadmin, etc. — Traefik handles the dispatch.
-    tool_url = f"{ROOT_PATH}/{name}"
+    # Tool URL: default is /app/<name> via Traefik subpath. Services
+    # whose UI doesn't support subpath deployment cleanly (MinIO 2024+
+    # is the canonical example) override this via the service
+    # catalogue's `external_url` field — typically a host:port URL the
+    # tool's compose snippet exposes directly. The {host} placeholder
+    # gets substituted with the operator's hostname so the same
+    # template works on localhost during dev AND on the deployed
+    # hostname in production.
+    try:
+        svc = await orchestrator.get_service(name)
+        external_url = (svc or {}).get("external_url")
+    except httpx.HTTPError:
+        external_url = None
+    if external_url:
+        host = request.url.hostname or "localhost"
+        tool_url = external_url.replace("{host}", host)
+    else:
+        tool_url = f"{ROOT_PATH}/{name}"
     return JSONResponse({
         "token": result.get("token"),
         "service": name,
