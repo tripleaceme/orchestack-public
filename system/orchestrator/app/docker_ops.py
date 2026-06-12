@@ -54,19 +54,57 @@ class CommandResult:
 
 
 def _env_file_usable() -> bool:
-    """Return True if config.ENV_FILE is a regular, readable file.
+    """Return True if config.ENV_FILE is actually openable + readable.
 
-    `os.path.exists()` is too permissive: when the operator's `./.env`
-    doesn't exist on the host at orchestrator startup, Docker materialises
-    the bind-mount target as an empty DIRECTORY at /etc/orchestack/.env
-    rather than failing. `os.path.exists()` returns True for that
-    directory, `os.path.isfile()` doesn't — and docker compose rejects
-    `--env-file <dir>` with "couldn't read env file", landing the
-    operator in the broken state seen during M3 testing where stop
-    fails with returncode 1.
+    Three failure modes this function has to detect:
+
+    1. The file is missing. Easy — os.path.isfile() returns False.
+
+    2. The host's ./.env was missing at compose-up time, so Docker
+       materialised the bind-mount target as an empty directory at
+       /etc/orchestack/.env. os.path.isfile() catches this (False).
+
+    3. STALE BIND-MOUNT INODE. The host's .env was edited after
+       compose-up (most editors do atomic-rename: write to tmpfile,
+       rename over original), which unlinks the original inode the
+       bind-mount is pointing at. Inside the container, `ls -la` and
+       `os.stat()` still see the file via the directory entry (cached
+       on the bind mount), so isfile() and os.access(R_OK) BOTH
+       return True. But any actual read attempt fails with ENOENT
+       because the underlying inode was deleted on the host.
+
+       Detected by st_nlink == 0 (a hard-deleted file with active
+       refs) and confirmed by actually attempting an open() + read().
+
+       Recovery is operator-side: `docker compose up -d orchestrator`
+       restarts the container which re-resolves the bind mount to the
+       current host inode.
+
+    Returning False from this function makes stop_service fall back
+    to direct `docker stop <container>` (compose-free), which keeps
+    the dashboard's Stop button working even when the bind mount
+    has gone stale.
     """
     try:
-        return os.path.isfile(config.ENV_FILE) and os.access(config.ENV_FILE, os.R_OK)
+        if not os.path.isfile(config.ENV_FILE):
+            return False
+        # st_nlink == 0 = directory entry exists but the inode was
+        # deleted on the host. Cheap check before the open() attempt.
+        st = os.stat(config.ENV_FILE)
+        if st.st_nlink == 0:
+            log.warning(
+                "env-file at %s has nlink=0 — host .env was edited via "
+                "atomic rename and the bind-mount is now stale. Restart "
+                "the orchestack-orchestrator container to recover.",
+                config.ENV_FILE,
+            )
+            return False
+        # Actually open + read a byte — catches any other case where
+        # the directory entry exists but the file can't actually be
+        # read (permission changes on host, broken symlink chains, etc).
+        with open(config.ENV_FILE, "rb") as f:
+            f.read(1)
+        return True
     except OSError:
         return False
 
