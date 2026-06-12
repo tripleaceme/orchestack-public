@@ -1164,8 +1164,16 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
                     return JSONResponse(
                         {"ready": False, "phase": "starting"},
                     )
-                token = r.json().get("setup-token")
-                if token is not None:
+                # Metabase's `setup-token` field persists in the in-memory
+                # store even after /api/setup completes — the real signal
+                # for "setup is done" is `has-user-setup: true`. M3 testing
+                # discovered the orchestrator's bootstrap was finishing
+                # successfully (POST /api/setup returned 200, audit log
+                # had metabase_bootstrapped) but the dashboard kept polling
+                # "bootstrapping" forever because we were watching the
+                # wrong field.
+                props = r.json()
+                if not props.get("has-user-setup"):
                     return JSONResponse(
                         {"ready": False, "phase": "bootstrapping"},
                     )

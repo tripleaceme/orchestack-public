@@ -28,6 +28,15 @@ services:
       # only adds a confusing prompt without protecting anything new.
       # See pgAdmin docs: /app/pgadmin/help/help/master_password.html
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+      # Allow .local TLDs in the admin email. pgAdmin uses Python's
+      # email-validator package which strictly validates the TLD against
+      # the IANA list — ".local" is reserved (RFC 6762) but NOT in IANA
+      # so pgAdmin rejects it. CHECK_EMAIL_DELIVERABILITY only disables
+      # the MX-record probe; this is the separate knob for the TLD check.
+      # Wizard defaults admin emails to admin@<company>.local; without
+      # this, pgAdmin crashes on every start in a restart loop.
+      PGADMIN_CONFIG_CHECK_EMAIL_DELIVERABILITY: 'False'
+      PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS: "['local','localhost','example']"
       # Subpath deployment: served at /app/pgadmin/ via Traefik. pgAdmin
       # respects SCRIPT_NAME — Traefik passes the prefix in the header.
       SCRIPT_NAME: /app/pgadmin

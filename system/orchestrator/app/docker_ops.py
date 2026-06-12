@@ -483,25 +483,31 @@ async def _bootstrap_metabase() -> None:
         #
         # Match the POST_START_HOOK_TIMEOUT (300s) too — this 360s loop
         # would otherwise be cut off by the outer asyncio.wait_for.
+        already_configured = False
         for attempt in range(180):
             try:
                 r = await client.get(f"{base}/api/session/properties")
                 if r.status_code == 200:
-                    setup_token = r.json().get("setup-token")
+                    props = r.json()
+                    # `has-user-setup` is the canonical "Metabase has been
+                    # set up by someone" signal. `setup-token` lingers in
+                    # the in-memory store even after /api/setup completes,
+                    # so it is NOT a reliable "still needs setup" signal —
+                    # we used to check setup-token and bootstrap would
+                    # spin forever even after success.
+                    if props.get("has-user-setup"):
+                        log.info(
+                            "metabase bootstrap: has-user-setup=true at ~%ds — "
+                            "already configured, nothing to do",
+                            attempt * 2,
+                        )
+                        already_configured = True
+                        break
+                    setup_token = props.get("setup-token")
                     if setup_token is not None:
                         log.info(
                             "metabase bootstrap: setup-token observed after "
                             "~%ds — proceeding to POST /api/setup",
-                            attempt * 2,
-                        )
-                        break
-                    else:
-                        # 200 with NO setup-token means Metabase is already
-                        # configured (probably from a previous bootstrap
-                        # run). Nothing to do.
-                        log.info(
-                            "metabase bootstrap: setup-token already null at "
-                            "~%ds — Metabase reports as configured already",
                             attempt * 2,
                         )
                         break
@@ -516,8 +522,10 @@ async def _bootstrap_metabase() -> None:
                 )
             await asyncio.sleep(2)
 
+        if already_configured:
+            return
         if setup_token is None:
-            log.info("metabase bootstrap: no setup-token observed (already configured or timeout)")
+            log.info("metabase bootstrap: timed out before setup-token appeared")
             return
 
         # Step 1: complete first-run setup with the MINIMUM REQUIRED
