@@ -175,20 +175,18 @@ version: '1.0.0'
 profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 <p>If the two values already match, you're good. If not, update <code class="inline">profile:</code> in <code class="inline">dbt_project.yml</code> OR update the project name 
   field in OrcheStack, either way, make them identical.</p>
-<p>Then, from your OrcheStack OrcheStack dashboard:</p>
+<p>After pushing your repo to GitHub, tell OrcheStack where to find it:</p>
 <ol>
-  <li>Click <strong>Services → dbt Core</strong>.</li>
-  <li>Click <strong>Edit config</strong>.</li>
-  <li>Confirm <strong>dbt project name</strong> matches your <code class="inline">profile:</code> value.</li>
-  <li>Paste the repo URL into <strong>dbt project Git repository</strong>:
-    <ul>
-      <li>HTTPS: <code class="inline">https://github.com/your-org/your-dbt-repo.git</code></li>
-      <li>SSH: <code class="inline">git@github.com:your-org/your-dbt-repo.git</code></li>
-    </ul>
-  </li>
-  <li>Set <strong>Branch to track</strong> to <code class="inline">main</code> (or whichever branch holds production code).</li>
-  <li>Click <strong>Save &amp; apply</strong>. OrcheStack will clone the repo into the dbt container.</li>
+  <li>Sign into the OrcheStack dashboard.</li>
+  <li>Open <strong>Credentials</strong> from the top nav (or press <code class="inline">g c</code>).</li>
+  <li>From the <strong>Filter by service</strong> dropdown, choose <strong>dbt Core</strong>.</li>
+  <li>Find <code class="inline">DBT_REPO_URL</code> in the table. Click <strong>Reveal</strong>, then paste your repo's HTTPS or SSH URL (e.g. <code class="inline">https://github.com/acme/acme-dbt</code>).</li>
+  <li>Click <strong>Save</strong>. The value is written to <code class="inline">.env</code> immediately.</li>
+  <li>From the <strong>Services</strong> page, find your dbt Core tile, click <strong>Stop</strong>, then click <strong>Start</strong>. The new repo URL takes effect on the next start.</li>
 </ol>
+<div class="callout">
+  <p>M4.2 will ship a per-service "Edit config" form on the dbt tile so you don't have to find the variable in the Credentials grid. Until then, the Credentials page is the path.</p>
+</div>
 <p>From now on, every scheduled dbt run and every manual "Run dbt now" click pulls the latest commit from the tracked branch before executing.</p>
 
 <h2 id="security">Security (never commit secrets)</h2>
@@ -196,7 +194,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 <ul>
   <li><strong>Never put passwords in dbt_project.yml or any SQL file.</strong> Use <code class="inline">env_var()</code> in profiles.yml and keep profiles.yml out of the repo entirely.</li>
   <li><strong>Use .env for local development.</strong> Every developer gets their own .env with their own credentials. The .env file is in .gitignore.</li>
-  <li><strong>If you accidentally commit a secret</strong>: rotate it immediately (change the password in PostgreSQL, revoke the token, etc.). The leaked version lives in Git history forever — rotation is the only cure.</li>
+  <li><strong>If you accidentally commit a secret</strong>: rotate it immediately (change the password in PostgreSQL, revoke the token, etc.). The leaked version lives in Git history forever, rotation is the only cure.</li>
 </ul>
 
 <h2 id="private-repos">Private repos need a token</h2>
@@ -207,7 +205,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
   <li>On GitHub, go to <strong>Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token</strong>.</li>
   <li>Give the token <strong>Contents: read-only</strong> access to just your dbt repo.</li>
   <li>Copy the token.</li>
-  <li>In the OrcheStack dashboard → Services → dbt Core → Edit config, paste the token into <strong>Repo access token</strong>.</li>
+  <li>In the OrcheStack dashboard, open <strong>Credentials</strong>, filter by <strong>dbt Core</strong>, and paste the token into <code class="inline">DBT_REPO_TOKEN</code>. Save, then restart the dbt Core service.</li>
 </ol>
 
 <h3 id="ssh-deploy-key">SSH with a deploy key (more secure)</h3>
@@ -215,7 +213,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
   <li>On the OrcheStack host, run <code class="inline">ssh-keygen -t ed25519 -f ./config/dbt/deploy_key -C "OrcheStack-dbt"</code>.</li>
   <li>Copy the public key: <code class="inline">cat ./config/dbt/deploy_key.pub</code>.</li>
   <li>On GitHub, go to the repo's <strong>Settings → Deploy keys → Add deploy key</strong> and paste it. Leave "Allow write access" unchecked, OrcheStack only reads.</li>
-  <li>In OrcheStack, switch the repo URL to SSH format (<code class="inline">git@github.com:...</code>) and save.</li>
+  <li>In OrcheStack, open <strong>Credentials</strong>, filter by <strong>dbt Core</strong>, switch <code class="inline">DBT_REPO_URL</code> to SSH format (<code class="inline">git@github.com:...</code>), save, then restart dbt Core.</li>
 </ol>
 <div class="callout">
   <p><strong>Tip.</strong> Deploy keys scope access to a single repo. Personal access tokens can be scoped to a single repo too (fine-grained tokens) but are easier to leak. Deploy keys are the production-grade choice.</p>

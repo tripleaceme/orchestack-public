@@ -147,11 +147,22 @@
                      grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
           <label class="block lg:col-span-2">
             <span class="text-xs font-medium text-[var(--text-2)]">Service</span>
+            {# Already-granted services hidden from the picker — a single
+               row per service per role is the data model, so re-picking
+               would conflict on save. The wildcard "* (all services)"
+               option also disappears once any concrete service has been
+               assigned (the wildcard means EVERY service, mixing the
+               two would be confusing). #}
+            {% set granted_names = role_perms | map(attribute='service_name') | list %}
             <select name="service_name" required
                     class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white">
-              <option value="*">* (all services)</option>
+              {% if '*' not in granted_names and granted_names|length == 0 %}
+                <option value="*">* (all services)</option>
+              {% endif %}
               {% for svc in services %}
-                <option value="{{ svc.name }}">{{ svc.display_name }}</option>
+                {% if svc.name not in granted_names %}
+                  <option value="{{ svc.name }}">{{ svc.display_name }}</option>
+                {% endif %}
               {% endfor %}
             </select>
           </label>

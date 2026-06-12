@@ -868,6 +868,7 @@ async def service_config_save(
 
     saved_keys: list[str] = []
     save_error: str | None = None
+    test_failures: list[dict] = []  # surfaced to the operator
     for raw_key, raw_val in form.items():
         if not raw_key or raw_key.startswith("__"):
             continue
@@ -878,6 +879,30 @@ async def service_config_save(
             continue
         if cur.get("value", "") == raw_val:
             continue                    # no change → no write
+
+        # Live connection test for DB-typed credentials BEFORE we
+        # persist. The orchestrator returns {"testable": false, ...}
+        # for keys we can't verify in-band (image tags, secrets used
+        # only by tools we can't reach) — those just save without test.
+        # When the test runs AND fails, we DON'T save the value; we
+        # collect the error and surface it to the operator.
+        try:
+            tr = await orchestrator.test_credential(raw_key, raw_val)
+            if tr.get("testable") and tr.get("ok") is False:
+                test_failures.append({
+                    "key":   raw_key,
+                    "as":    tr.get("tested_as"),
+                    "db":    tr.get("tested_db"),
+                    "error": tr.get("error") or tr.get("error_class")
+                              or "connection refused",
+                })
+                continue  # skip save for this key
+        except httpx.HTTPError as e:
+            # Test endpoint unreachable. Don't block the save — log
+            # and proceed (the post-save Stop/Start of the service is
+            # the operator's safety net).
+            log.warning("test_credential %s endpoint failed: %s", raw_key, e)
+
         try:
             await orchestrator.update_credential(
                 raw_key, raw_val, actor_user_id=user.get("user_id"),
@@ -887,6 +912,14 @@ async def service_config_save(
             log.warning("update_credential %s failed: %s", raw_key, e)
             save_error = str(e)
             break
+
+    # If we collected test failures but no save error, surface the
+    # test failures as the user-visible error. They're the actionable
+    # signal — "your password is wrong" tells the operator what to fix.
+    if test_failures and not save_error:
+        save_error = "Live connection test failed for: " + ", ".join(
+            f"{f['key']} (as {f['as']}: {f['error']})" for f in test_failures
+        )
 
     # Re-render with the latest values + summary banner.
     try:
@@ -985,20 +1018,67 @@ async def health_fragment(request: Request) -> HTMLResponse:
 # ===========================================================================
 @app.get("/api/dashboard/services/grid", response_class=HTMLResponse,
           name="services_grid")
-async def services_grid_fragment(request: Request) -> HTMLResponse:
-    """Render the full service grid (called every 10s by HTMX)."""
+async def services_grid_fragment(
+    request: Request, user=Depends(require_user),
+) -> HTMLResponse:
+    """Render the full service grid (called every 10s by HTMX).
+
+    Visibility rules:
+      - Only services the operator CONFIGURED at wizard time are shown
+        on the main grid. Services they didn't pick are hidden so the
+        dashboard reflects their actual stack, not the catalogue of
+        everything OrcheStack could deploy.
+      - A "Configure another service" link below the grid takes them
+        back into the wizard scoped to add one of the unconfigured
+        layers — that's how they grow the stack later.
+      - For non-Admin users, services are further filtered by per-role
+        permission (see admin's role-permissions table). Admins see
+        everything that's configured.
+    """
     try:
         data = await orchestrator.list_services()
-        services = data.get("services", [])
+        all_services = data.get("services", [])
         error = None
     except (httpx.HTTPError, ValueError) as e:
         log.warning("orchestrator list_services failed: %s", e)
-        services = []
+        all_services = []
         error = str(e)
+
+    # 1. Hide unconfigured services from the main grid. Operators who
+    # skipped (say) Airflow during setup don't see an Airflow tile —
+    # they reach Airflow's onboarding via the "Configure another
+    # service" link below the grid.
+    services = [s for s in all_services if s.get("configured")]
+
+    # 2. Role-based filtering. Admins see everything; for everyone else
+    # we ask the orchestrator's role-permission table which services
+    # this user's roles grant `can_use` on, then keep only those.
+    is_admin = "Admin" in (user.get("roles") or [])
+    if not is_admin:
+        cookie = request.cookies.get(SESSION_COOKIE_NAME)
+        try:
+            perms_data = await orchestrator.list_my_service_permissions(cookie)
+            allowed = set(perms_data.get("allowed_services", []))
+            services = [s for s in services if s["name"] in allowed]
+        except (httpx.HTTPError, ValueError) as e:
+            # Fail-closed for non-admin users: if we can't determine
+            # their permissions, show nothing rather than over-grant.
+            log.warning(
+                "service permission lookup failed for non-admin user %s: %s",
+                user.get("user_id"), e,
+            )
+            services = []
 
     return templates.TemplateResponse(
         "_service_grid_fragment.html",
-        {"request": request, "services": services, "error": error},
+        {
+            "request": request,
+            "services": services,
+            "error": error,
+            "configured_count": len([s for s in all_services if s.get("configured")]),
+            "unconfigured_count": len([s for s in all_services if not s.get("configured")]),
+            "is_admin": is_admin,
+        },
     )
 
 

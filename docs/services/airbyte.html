@@ -120,16 +120,16 @@
 <h2 id="role">Role in the pipeline</h2>
 <p>Airbyte is the first step of every scheduled run. It reads from your external source (database, API, CSV drop, SaaS tool) and writes landed records to two destinations in parallel:</p>
 <ul>
-  <li><strong>MinIO</strong> under <code class="inline">s3://OrcheStack/raw/&lt;source&gt;/&lt;timestamp&gt;/</code> — the data lake archive for ML/DS consumers.</li>
-  <li><strong>PostgreSQL</strong> in the <code class="inline">raw</code> schema — the staging area for dbt.</li>
+  <li><strong>MinIO</strong> under <code class="inline">s3://OrcheStack/raw/&lt;source&gt;/&lt;timestamp&gt;/</code>. The data lake archive for ML/DS consumers.</li>
+  <li><strong>PostgreSQL</strong> in the <code class="inline">raw</code> schema, the staging area for dbt.</li>
 </ul>
 
 <h2 id="configuration">Configuration</h2>
-<p>OrcheStack collects Airbyte's <strong>internal PostgreSQL credentials</strong> during setup — Airbyte uses its own database for tracking sync state. This is separate from your warehouse PostgreSQL.</p>
+<p>OrcheStack collects Airbyte's <strong>internal PostgreSQL credentials</strong> during setup. Airbyte uses its own database for tracking sync state. This is separate from your warehouse PostgreSQL.</p>
 <ul>
-  <li><code class="inline">AIRBYTE_DB_HOST</code> — usually <code class="inline">postgres</code></li>
+  <li><code class="inline">AIRBYTE_DB_HOST</code></li>
   <li><code class="inline">AIRBYTE_DB_USER</code>, <code class="inline">AIRBYTE_DB_PASSWORD</code></li>
-  <li><code class="inline">AIRBYTE_DB_NAME</code> — typically <code class="inline">airbyte</code></li>
+  <li><code class="inline">AIRBYTE_DB_NAME</code></li>
 </ul>
 <p>Source credentials (for the systems Airbyte pulls FROM) are entered inside Airbyte's own UI after the first sync is configured.</p>
 
@@ -140,14 +140,14 @@
   <li>Choose the connector type (PostgreSQL, Google Sheets, Stripe, etc.).</li>
   <li>Enter the source credentials.</li>
   <li>Configure sync frequency and tables.</li>
-  <li>Airbyte writes to both MinIO and PostgreSQL automatically — OrcheStack pre-wires the destinations.</li>
+  <li>Airbyte writes to both MinIO and PostgreSQL automatically. OrcheStack pre-wires the destinations.</li>
 </ol>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
 <ul>
-  <li><strong>Sync fails with "connection refused"</strong> — the source system is unreachable from the Docker network. Check firewall rules and whether the source needs a VPN.</li>
-  <li><strong>"Schema change detected"</strong> — the source added or removed a column. Airbyte's behaviour depends on your sync mode; see the Airbyte docs for schema evolution.</li>
-  <li><strong>Airbyte won't start</strong> — its internal PostgreSQL credentials are wrong. Edit the config in the dashboard.</li>
+  <li><strong>Sync fails with "connection refused":</strong> The source system is unreachable from the Docker network. Check firewall rules and whether the source needs a VPN.</li>
+  <li><strong>"Schema change detected":</strong> The source added or removed a column. Airbyte's behaviour depends on your sync mode; see the Airbyte docs for schema evolution.</li>
+  <li><strong>Airbyte won't start:</strong> Its internal PostgreSQL credentials are wrong. Edit the config in the dashboard.</li>
 </ul>
 
     <div class="next-prev">

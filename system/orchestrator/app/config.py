@@ -101,7 +101,12 @@ DEFAULT_USER_ID: int = 1
 SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # Managed services — orchestrator can start/stop these via compose snippets.
     "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
-    "pgadmin":      {"tier": "hot",  "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
+    # pgAdmin is COLD-tier — typical use is "open, debug a query, close."
+    # Auto-pinning on Open (4hr default) keeps it warm for the operator's
+    # session; the reconciler stops it when the pin expires AND no
+    # active sessions remain. Operators who want it always-on can
+    # manually extend the pin from the service detail page.
+    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
     # Registered-only — wizard can pick these but the orchestrator can't yet
     # start/stop them (no compose snippet exists, that's M4 work).
     "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": False},

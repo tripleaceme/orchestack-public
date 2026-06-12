@@ -277,3 +277,54 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
         "full_name":   updated["full_name"],
         "company_name": updated["company_name"],
     }
+
+
+# ===========================================================================
+#  /api/users/me/services — what services can the signed-in user OPEN?
+#
+# Admins implicitly get everything. For non-admin roles, the dashboard
+# filters its main services grid by this list. The implementation walks
+# platform.role_permissions joined to platform.user_roles and returns
+# the distinct set of service_name values where can_use=true OR
+# can_start=true is granted to any of the user's roles. A NULL
+# service_name in role_permissions means "every service" (operator
+# wildcard) — that resolves to the full SERVICE_CATALOGUE here.
+# ===========================================================================
+
+@router.get("/me/services")
+async def list_my_service_permissions(request: Request) -> dict:
+    """Return {allowed_services: [...]} for the signed-in user."""
+    user = await resolve_session(request)
+    if user is None:
+        raise HTTPException(401, "not authenticated")
+
+    # Admin shortcut: every configured catalogue entry. The dashboard
+    # already filters down to configured, so we don't have to here.
+    from .. import config as _cfg
+    if "Admin" in user.get("roles", []):
+        return {"allowed_services": list(_cfg.SERVICE_CATALOGUE.keys())}
+
+    # Pull every role_permissions row for the user's roles.
+    rows = await db.fetch(
+        """
+        SELECT DISTINCT rp.service_name
+        FROM platform.role_permissions rp
+        JOIN platform.user_roles ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = $1
+          AND (rp.can_use OR rp.can_start)
+        """,
+        user["user_id"],
+    )
+    # A NULL service_name is the wildcard grant — resolve to every
+    # catalogue key so the dashboard's filter degrades to "show all
+    # configured" for that role.
+    names: set[str] = set()
+    saw_wildcard = False
+    for r in rows:
+        if r["service_name"] is None:
+            saw_wildcard = True
+            break
+        names.add(r["service_name"])
+    if saw_wildcard:
+        names = set(_cfg.SERVICE_CATALOGUE.keys())
+    return {"allowed_services": sorted(names)}

@@ -20,4 +20,36 @@
   {% for service in services %}
     {% include "_service_card_fragment.html" %}
   {% endfor %}
+
+  {# "Configure another service" affordance — admins only, only when
+     there are unconfigured catalogue entries left. Operators reach
+     unconfigured services through here, not by them appearing as
+     placeholder tiles on the main grid. #}
+  {% if is_admin and unconfigured_count and unconfigured_count > 0 %}
+    <a href="/setup/select.html?mode=add"
+       title="Add a service that wasn't picked during initial setup"
+       class="bg-[var(--surface)] border border-dashed border-[var(--border)]
+              rounded-lg p-4 flex flex-col items-center justify-center gap-2
+              text-center hover:border-[var(--navy)] hover:bg-[var(--bg)]
+              transition-colors min-h-[140px]">
+      <span class="text-2xl font-light text-[var(--text-2)]">+</span>
+      <span class="text-sm font-medium text-[var(--text)]">
+        Configure another service
+      </span>
+      <span class="text-xs text-[var(--text-2)]">
+        {{ unconfigured_count }}
+        unconfigured catalogue entr{{ 'y' if unconfigured_count == 1 else 'ies' }}
+        available
+      </span>
+    </a>
+  {% endif %}
+
+  {% if services|length == 0 and not is_admin %}
+    <div class="col-span-full bg-[var(--bg)] border border-dashed
+                border-[var(--border)] rounded-lg p-6 text-center
+                text-sm text-[var(--text-2)]">
+      No services available to you yet. Your Admin can grant access
+      from the Roles page.
+    </div>
+  {% endif %}
 {% endif %}

@@ -119,7 +119,8 @@
 <p>This means you don't need to run any <code class="inline">CREATE USER</code> SQL before using OrcheStack. The web UI bootstraps itself.</p>
 
 <h2 id="the-signup-form">The signup form</h2>
-<p>Open the browser and navigate to <code class="inline">http://localhost/signup</code> (or click <strong>Get started</strong> on the landing page). Provide:</p>
+<p>Open the browser and navigate to <code class="inline">http://localhost/signup</code>. </p> 
+  <p>Provide:</p>
 <ul>
   <li><strong>Full name</strong>: appears in the admin dashboard and audit logs.</li>
   <li><strong>Email</strong>: used for password resets and notifications. Must be unique.</li>
@@ -143,7 +144,7 @@
 
 <h2 id="adding-more-users">Adding more users</h2>
 <p>After the first user bootstrap, <strong>self-signup is disabled</strong>. The <code class="inline">POST /orchestrator/api/users</code> endpoint returns <code class="inline">403 Self-signup is disabled</code> if it sees an existing row in <code class="inline">platform.users</code>.</p>
-<p>New users are added by an Admin from the dashboard <strong>Users</strong> page (<code class="inline">/app/users</code>, or keyboard shortcut <span class="kbd">g</span> <span class="kbd">u</span>). The invite form collects username, email, full name, and an optional starter role; submitting it generates a cryptographically random starter password which appears <strong>exactly once</strong> on screen. Pass that password to the invitee out-of-band (Slack DM, signed message) — they change it on first login.</p>
+<p>New users are added by an Admin from the dashboard <strong>Users</strong> page (<code class="inline">/app/users</code>, or keyboard shortcut <span class="kbd">g</span> <span class="kbd">u</span>). The invite form collects username, email, full name, and an optional starter role; submitting it generates a cryptographically random starter password which appears <strong>exactly once</strong> on screen. Pass that password to the invitee out-of-band (Slack DM, signed message), they change it on first login.</p>
 <p>The Admin can also enable or disable any account from the same page, assign or revoke roles, and the existing roles' permission matrix is configured on the dashboard <strong>Roles</strong> page (<code class="inline">/app/roles</code>, shortcut <span class="kbd">g</span> <span class="kbd">r</span>).</p>
 <p>See <strong><a href="roles-permissions.html">Roles &amp; permissions</a></strong> for how to design the permission matrix for each role.</p>
 

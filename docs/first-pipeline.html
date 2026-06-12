@@ -112,7 +112,7 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Get started</a> › Run first pipeline</div>
     <h1>Step 4 — Run your first pipeline</h1>
-    <p class="lede">With OrcheStack configured, trigger your first end-to-end data pipeline — ingest, transform, test, serve — and verify the results land in Metabase.</p>
+    <p class="lede">With OrcheStack configured, trigger your first end-to-end data pipeline (ingest, transform, test, serve) and verify the results land in Metabase or your chosen data visualization tool.</p>
 
 <h2 id="demo-dataset">Load the demo dataset</h2>
 <p>OrcheStack ships a demo dataset — a smallholder agricultural cooperative with yield records, market prices, and supply-chain events — to let you run the pipeline end-to-end without connecting a real source first.</p>
@@ -129,7 +129,7 @@
   <li>Spins up Airbyte (cold tier) and syncs the demo CSVs into PostgreSQL <code class="inline">raw</code> schema.</li>
   <li>Spins up dbt (cold tier) and runs <code class="inline">dbt build --select tag:demo</code>, which builds <code class="inline">stg_yields</code>, <code class="inline">stg_prices</code>, and <code class="inline">fct_coop_performance</code> in the <code class="inline">marts</code> schema.</li>
   <li>Runs Great Expectations on the mart — checks that yields are positive, prices are not null, and the state column matches the 36 Nigerian states plus FCT.</li>
-  <li>Runs Elementary to record test results.</li>
+  <li>Records dbt test results into the run-history tables in PostgreSQL. (When OpenMetadata lands in M4.6, the same results will also flow there for lineage and anomaly views.)</li>
   <li>Shuts down the cold services.</li>
 </ol>
 

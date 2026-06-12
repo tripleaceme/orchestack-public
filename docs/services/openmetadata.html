@@ -115,16 +115,16 @@
     <p class="lede">Column-level lineage, data catalog, glossary. Auto-ingests from Airbyte, dbt, and PostgreSQL to show how data flows end to end.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> OpenMetadata is heavy (~2–3 GB RAM) and stakeholders rarely open it. Engineers open it when they need to understand lineage — OrcheStack spins it up on click and stops it when idle.</p>
+<p><strong>Cold.</strong> OpenMetadata is heavy (~2–3 GB RAM) and stakeholders rarely open it. Engineers open it when they need to understand lineage, OrcheStack spins it up on click and stops it when idle.</p>
 
 <h2 id="role">Role</h2>
 <p>OpenMetadata pulls metadata from every stage (Airbyte sources, PostgreSQL schemas, dbt models, Metabase dashboards) to produce column-level lineage graphs. It answers the question: "If I change this column, what breaks downstream?"</p>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
-  <li><strong>Admin email and password</strong> — for the OpenMetadata web UI</li>
-  <li><strong>JWT secret</strong> — 32+ characters, used for internal API authentication</li>
-  <li><strong>Backend PostgreSQL</strong> — OrcheStack stores OpenMetadata's state in the <code class="inline">openmetadata</code> schema of the base PostgreSQL</li>
+  <li><strong>Admin email and password:</strong> for the OpenMetadata web UI</li>
+  <li><strong>JWT secret:</strong> 32+ characters, used for internal API authentication</li>
+  <li><strong>Backend PostgreSQL:</strong> OrcheStack stores OpenMetadata's state in the <code class="inline">openmetadata</code> schema of the base PostgreSQL</li>
 </ul>
 
 <h2 id="when-to-use">When to open it</h2>

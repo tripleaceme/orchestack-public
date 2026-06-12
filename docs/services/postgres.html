@@ -120,10 +120,10 @@
 <h2 id="role">Role</h2>
 <p>Everything writable lands here. The same PostgreSQL instance holds:</p>
 <ul>
-  <li><strong>Platform state</strong> — user accounts, roles, permissions, sessions, audit log.</li>
-  <li><strong>Warehouse raw</strong> — landed data from Airbyte, awaiting dbt.</li>
-  <li><strong>Warehouse marts</strong> — dbt outputs served to Metabase.</li>
-  <li><strong>Service metadata</strong> — Airflow's DAG state, OpenMetadata's catalogue (when enabled).</li>
+  <li><strong>Platform state:</strong> user accounts, roles, permissions, sessions, audit log.</li>
+  <li><strong>Warehouse raw:</strong> landed data from Airbyte, awaiting dbt.</li>
+  <li><strong>Warehouse marts:</strong> dbt outputs served to Metabase.</li>
+  <li><strong>Service metadata:</strong> Airflow's DAG state, OpenMetadata's catalogue (when enabled).</li>
 </ul>
 <p>Each concern gets its own schema. Separation makes permissions cleaner without adding operational complexity.</p>
 
@@ -137,9 +137,9 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <h2 id="configuration">Configuration</h2>
 <p>Credentials are collected at install time:</p>
 <ul>
-  <li><code class="inline">POSTGRES_USER</code> — superuser for platform management</li>
-  <li><code class="inline">POSTGRES_PASSWORD</code> — bcrypt-stored as platform password; stored plain in <code class="inline">.env</code> for Postgres</li>
-  <li><code class="inline">POSTGRES_DB</code> — default database name (typically <code class="inline">OrcheStack</code>)</li>
+  <li><code class="inline">POSTGRES_USER:</code> superuser for platform management</li>
+  <li><code class="inline">POSTGRES_PASSWORD:</code> bcrypt-stored as platform password; stored plain in <code class="inline">.env</code> for Postgres</li>
+  <li><code class="inline">POSTGRES_DB:</code> default database name (typically <code class="inline">OrcheStack</code>)</li>
 </ul>
 <p>OrcheStack creates per-service PostgreSQL roles with scoped privileges so each downstream tool (dbt, Airflow, Metabase) authenticates as its own user with only the permissions it needs.</p>
 

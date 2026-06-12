@@ -130,6 +130,104 @@ class UpdateRequest(BaseModel):
     actor_user_id: int | None = Field(None, description="User triggering the change.")
 
 
+class TestRequest(BaseModel):
+    value: str = Field(..., description="The proposed new value to test BEFORE saving.")
+
+
+# ----------------------------------------------------------------------
+# Live connection tests for database-typed credentials.
+#
+# What the test does, key-by-key:
+#
+#   PIPELINE_DB_PASSWORD — open a PostgreSQL connection as
+#     PIPELINE_DB_USER against PIPELINE_DB_NAME on orchestack-postgres
+#     using the PROPOSED password. Close immediately. Success means the
+#     password is correct from postgres's perspective.
+#
+#   METABASE_DB_PASSWORD — same shape, against the `metabase` role and
+#     the `metabase` database.
+#
+#   PGADMIN_DEFAULT_PASSWORD — no test. pgAdmin's admin user lives in
+#     its own SQLite store, not in our postgres, and we don't read that
+#     store. Returns testable=False.
+#
+#   ORCHESTACK_DB_PASSWORD — never tested. This is the platform admin
+#     password and changing it requires a stack restart anyway; the test
+#     would only confirm the OLD password is still good. Returns
+#     testable=False.
+#
+#   Anything else — testable=False. Don't fake a green light by saying
+#     "all good" when there's actually nothing to verify.
+#
+# This is what the dashboard's per-service Edit-config form calls to
+# satisfy the docs' "live connection test before save" promise, and what
+# the global /app/credentials page calls when the operator hits Save on
+# a DB credential.
+# ----------------------------------------------------------------------
+_DB_TEST_TABLE: dict[str, tuple[str, str, str]] = {
+    # key: (user_key, db_key, user_default — used if user_key is unset)
+    "PIPELINE_DB_PASSWORD":  ("PIPELINE_DB_USER",  "PIPELINE_DB_NAME", ""),
+    "METABASE_DB_PASSWORD":  ("__literal_metabase__", "__literal_metabase__", "metabase"),
+}
+
+
+@router.post("/{key}/test")
+async def test_credential(key: str, req: TestRequest) -> dict[str, object]:
+    """Live-test a credential value before the operator persists it."""
+    if key not in _DB_TEST_TABLE:
+        return {"testable": False,
+                 "reason": f"No live connection test available for {key}."}
+
+    user_key, db_key, default_user = _DB_TEST_TABLE[key]
+    # Re-read .env every call — the operator may have updated other
+    # related vars in the same session and we want to test against the
+    # CURRENT linked-key values, not stale ones.
+    env_map: dict[str, str] = {}
+    for _, line in _iter_env_lines():
+        m = LINE_RE.match(line.strip())
+        if m:
+            env_map[m.group(1)] = m.group(2)
+
+    if user_key == "__literal_metabase__":
+        # Metabase uses fixed role + DB names (`metabase`); they're not
+        # in .env so we hardcode them here.
+        pg_user, pg_db = "metabase", "metabase"
+    else:
+        pg_user = env_map.get(user_key) or default_user
+        pg_db   = env_map.get(db_key)
+        if not (pg_user and pg_db):
+            return {
+                "testable": False,
+                "reason": f"can't test {key}: {user_key} or {db_key} "
+                           "isn't set in .env",
+            }
+
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(
+            host=config.DB_HOST, port=config.DB_PORT,
+            user=pg_user, password=req.value, database=pg_db,
+            timeout=5.0,
+        )
+        try:
+            await conn.fetchval("SELECT 1")
+        finally:
+            await conn.close()
+        return {"testable": True, "ok": True, "tested_as": pg_user, "tested_db": pg_db}
+    except Exception as e:
+        # asyncpg.exceptions.InvalidPasswordError, ConnectionFailure,
+        # etc — surface the postgres-side error so the operator knows
+        # what's actually wrong.
+        return {
+            "testable": True,
+            "ok": False,
+            "tested_as": pg_user,
+            "tested_db": pg_db,
+            "error_class": type(e).__name__,
+            "error": str(e)[:300],
+        }
+
+
 @router.put("/{key}")
 async def update_credential(key: str, req: UpdateRequest) -> dict[str, object]:
     """Update a single variable in .env. Read-only keys are rejected.

@@ -117,9 +117,9 @@
 <h2 id="what-to-backup">What to back up</h2>
 <p>Three things matter:</p>
 <ol>
-  <li><strong>PostgreSQL</strong> — a <code class="inline">pg_dump</code> of the entire instance covers platform state, raw, marts, Airflow, and OpenMetadata metadata.</li>
-  <li><strong>MinIO bucket</strong> — use <code class="inline">mc mirror</code> to replicate the <code class="inline">OrcheStack/</code> bucket to external storage.</li>
-  <li><strong>Config directory</strong> — <code class="inline">./config/</code> contains your <code class="inline">.env</code>, generated <code class="inline">docker-compose.yml</code>, and any custom DAGs or dbt models.</li>
+  <li><strong>PostgreSQL:</strong> a <code class="inline">pg_dump</code> of the entire instance covers platform state, raw, marts, Airflow, and OpenMetadata metadata.</li>
+  <li><strong>MinIO bucket:</strong> use <code class="inline">mc mirror</code> to replicate the <code class="inline">OrcheStack/</code> bucket to external storage.</li>
+  <li><strong>Config directory:</strong> <code class="inline">./config/</code> contains your <code class="inline">.env</code>, generated <code class="inline">docker-compose.yml</code>, and any custom DAGs or dbt models.</li>
 </ol>
 
 <h2 id="nightly-job">The nightly backup job</h2>

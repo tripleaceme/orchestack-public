@@ -216,6 +216,19 @@ class OrchestratorClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def test_credential(self, key: str, value: str) -> dict[str, object]:
+        """Live-test a credential before saving. For DB-typed keys this
+        attempts a live connection with the proposed value; non-DB keys
+        return testable=False with a reason and the caller should save
+        without further verification."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/credentials/{key}/test",
+                json={"value": value},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     # ---- Admin: users / roles / role-permissions --------------------------
     def _admin_cookies(self, session_cookie: str | None) -> dict[str, str]:
         return {"orchestack_session": session_cookie} if session_cookie else {}
@@ -375,5 +388,17 @@ class OrchestratorClient:
         async with httpx.AsyncClient(timeout=10.0,
                                        cookies=self._admin_cookies(session_cookie)) as c:
             r = await c.patch(f"{self.base_url}/api/users/me", json=payload)
+            r.raise_for_status()
+            return r.json()
+
+    # ------------------------------------------------------------------
+    # Role-based service permissions — what tools can the signed-in user
+    # actually open? Admins always see everything; this endpoint is the
+    # gating signal for non-admin users.
+    # ------------------------------------------------------------------
+    async def list_my_service_permissions(self, session_cookie: str | None) -> dict:
+        async with httpx.AsyncClient(timeout=5.0,
+                                       cookies=self._admin_cookies(session_cookie)) as c:
+            r = await c.get(f"{self.base_url}/api/users/me/services")
             r.raise_for_status()
             return r.json()

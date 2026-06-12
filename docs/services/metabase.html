@@ -131,7 +131,7 @@
 </div>
 
 <h2 id="first-dashboard">Your first dashboard</h2>
-<p>Open Metabase from the OrcheStack dashboard. OrcheStack auto-completes the Metabase setup wizard for you — you land directly on the Metabase login. Sign in with the <code class="inline">METABASE_ADMIN_EMAIL</code> and <code class="inline">METABASE_ADMIN_PASSWORD</code> you entered during the OrcheStack wizard. Your pipeline warehouse is already registered as a data source.</p>
+<p>Open Metabase from the OrcheStack dashboard. OrcheStack auto-completes the Metabase setup wizard for you, so you land directly on the Metabase login. Sign in with the <code class="inline">METABASE_ADMIN_EMAIL</code> and <code class="inline">METABASE_ADMIN_PASSWORD</code> you entered during the OrcheStack wizard. Your pipeline warehouse is already registered as a data source.</p>
 <ol>
   <li>Click <strong>Browse data</strong> → <strong>Pipeline warehouse</strong> → <code class="inline">marts</code> schema.</li>
   <li>Pick a table (e.g. <code class="inline">fct_sales</code>).</li>
@@ -149,7 +149,7 @@
   <li>Fill in the stakeholder's name and email, optionally assign them to a Group.</li>
   <li>Metabase generates a temporary password (and emails them an invite link if SMTP is configured). Send the temporary password out-of-band if SMTP isn't set up.</li>
 </ol>
-<p>The stakeholder logs in at <code class="inline">http://&lt;your-host&gt;/app/metabase</code> with the credentials you sent them. They do <strong>not</strong> need an OrcheStack account — Metabase has its own login, and Traefik routes them to Metabase regardless of whether they have an OrcheStack session.</p>
+<p>The stakeholder logs in at <code class="inline">http://&lt;your-host&gt;/app/metabase</code> with the credentials you sent them. They do <strong>not</strong> need an OrcheStack account, Metabase has its own login, and Traefik routes them to Metabase regardless of whether they have an OrcheStack session.</p>
 <div class="callout">
   <p><strong>Permissions.</strong> By default Metabase groups have access to every dashboard. To limit what each group sees, use Metabase's <strong>Admin → Permissions</strong> screen. Common pattern: create a "Marketing" group with access only to the marketing collection, an "Executives" group with read access to everything but no edit rights, etc. Per-stakeholder permission tuning is Metabase's job, not OrcheStack's.</p>
 </div>
