@@ -1,0 +1,48 @@
+# MinIO — S3-compatible object store (hot-tier).
+#
+# Stays running so Airbyte can write raw landings + dbt can read them
+# without a cold-start delay. Console is served at /app/minio via
+# Traefik; the S3 API on port 9000 is reachable inside the docker
+# network as orchestack-minio:9000.
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: orchestack-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+      # Console subpath — MinIO honors this for its own asset URLs.
+      MINIO_BROWSER_REDIRECT_URL: http://localhost/app/minio
+    volumes:
+      - minio-data:/data
+    networks:
+      - orchestack-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    labels:
+      - orchestack.service=minio
+      - orchestack.tier=hot
+      - traefik.enable=true
+      # Console UI (port 9001) under /app/minio
+      - traefik.http.routers.minio.rule=PathPrefix(`/app/minio`)
+      - traefik.http.routers.minio.entrypoints=web
+      - traefik.http.routers.minio.priority=200
+      - traefik.http.middlewares.minio-strip.stripprefix.prefixes=/app/minio
+      - traefik.http.routers.minio.middlewares=minio-strip@docker
+      - traefik.http.services.minio.loadbalancer.server.port=9001
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  minio-data:
+    name: orchestack-minio-data

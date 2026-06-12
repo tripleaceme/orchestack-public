@@ -567,9 +567,234 @@ async def _ensure_pgadmin_servers_json() -> None:
         )
 
 
+# ===========================================================================
+#  M4 service hooks — generic per-service DB + role provisioning
+#
+# Each managed service that needs a PostgreSQL role + database (or a
+# schema in `services`) registers a tiny pre-start hook here. The
+# common pattern factored into _ensure_service_setup below:
+#
+#   1. Read $$<SERVICE>_DB_PASSWORD from .env; derive deterministically
+#      from ORCHESTACK_DB_PASSWORD if absent; persist the derived value
+#      back to .env so the container sees it on the next compose-up.
+#   2. CREATE ROLE <role_name> WITH LOGIN PASSWORD IF NOT EXISTS.
+#   3. CREATE DATABASE <db_name> OWNER <role_name> IF NOT EXISTS.
+#   4. For Airflow specifically: also CREATE SCHEMA airflow inside
+#      `services` because Airflow honors AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA.
+#
+# Per the schema-aware test (design/m4-multi-db.md §1): MinIO,
+# GE, dbt need no DB; Airflow CAN take a custom schema and lives in
+# services.airflow; Airbyte + OpenMetadata + Metabase need their own
+# DBs because they hardcode public.<tablename>.
+# ===========================================================================
+async def _ensure_simple_pg_role_and_db(
+    role_name: str, db_name: str, env_key: str,
+    *, schema_in_services: str | None = None,
+) -> None:
+    """Provision a per-service PG role + database OR schema.
+
+    role_name: PG role to create (e.g. "airflow")
+    db_name: database to own (e.g. "airflow") — IGNORED if schema_in_services set
+    env_key: .env var holding the password (e.g. "AIRFLOW_DB_PASSWORD")
+    schema_in_services: if set, the role gets the named schema inside
+                        `services` instead of its own database.
+    """
+    from . import db as _db
+    env = _read_env_file_or_empty()
+    password = env.get(env_key, "").strip()
+    if not password:
+        platform_pw = env.get("ORCHESTACK_DB_PASSWORD", "")
+        if not platform_pw:
+            log.warning(
+                "pre-start hook (%s): no %s in .env and no ORCHESTACK_DB_PASSWORD "
+                "to derive from; skipping role/DB setup.",
+                role_name, env_key,
+            )
+            return
+        import hashlib
+        password = hashlib.sha256(
+            f"{role_name}:{platform_pw}".encode("utf-8")
+        ).hexdigest()[:32]
+        try:
+            _append_or_update_env_key(env_key, password)
+            log.info(
+                "pre-start hook (%s): derived %s and wrote to .env",
+                role_name, env_key,
+            )
+        except Exception as e:
+            log.warning(
+                "pre-start hook (%s): couldn't persist derived password: %s",
+                role_name, e,
+            )
+
+    quoted_pw = password.replace("'", "''")
+    pool = _db.get_pool()
+    async with pool.acquire() as conn:
+        role_exists = await conn.fetchval(
+            f"SELECT 1 FROM pg_roles WHERE rolname = '{role_name}'"
+        )
+        if not role_exists:
+            log.info("pre-start hook (%s): creating role", role_name)
+            await conn.execute(
+                f'CREATE ROLE "{role_name}" WITH LOGIN PASSWORD \'{quoted_pw}\''
+            )
+        else:
+            await conn.execute(
+                f'ALTER ROLE "{role_name}" WITH LOGIN PASSWORD \'{quoted_pw}\''
+            )
+
+        if schema_in_services:
+            # Schema-in-services path: ensure `services` DB exists,
+            # then a per-role schema inside it.
+            services_exists = await conn.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = 'services'"
+            )
+            if not services_exists:
+                log.info("pre-start hook (%s): creating 'services' database", role_name)
+                await conn.execute('CREATE DATABASE "services"')
+            await conn.execute(
+                f'GRANT CONNECT ON DATABASE services TO "{role_name}"'
+            )
+
+    if schema_in_services:
+        import asyncpg
+        services_conn = await asyncpg.connect(
+            host=config.DB_HOST, port=config.DB_PORT,
+            user=config.DB_USER, password=config.DB_PASSWORD,
+            database="services",
+        )
+        try:
+            await services_conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_in_services}" '
+                                          f'AUTHORIZATION "{role_name}"')
+            await services_conn.execute(
+                f'GRANT USAGE, CREATE ON SCHEMA "{schema_in_services}" TO "{role_name}"'
+            )
+            await services_conn.execute(
+                f'GRANT USAGE ON SCHEMA public TO "{role_name}"'
+            )
+        finally:
+            await services_conn.close()
+        # Set the role's default search_path so the schema name doesn't
+        # have to be hardcoded in every query the tool runs.
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f'ALTER ROLE "{role_name}" SET search_path TO '
+                f'"{schema_in_services}", public'
+            )
+    else:
+        # Dedicated-DB path: CREATE DATABASE owned by the role.
+        async with pool.acquire() as conn:
+            db_exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"
+            )
+            if not db_exists:
+                log.info("pre-start hook (%s): creating '%s' database", role_name, db_name)
+                await conn.execute(
+                    f'CREATE DATABASE "{db_name}" OWNER "{role_name}"'
+                )
+
+
+async def _ensure_airflow_setup() -> None:
+    """Airflow: own role + schema inside `services`."""
+    await _ensure_simple_pg_role_and_db(
+        "airflow", "airflow", "AIRFLOW_DB_PASSWORD",
+        schema_in_services="airflow",
+    )
+
+
+async def _ensure_airbyte_setup() -> None:
+    """Airbyte: own role + own DB (hardcodes public schema)."""
+    await _ensure_simple_pg_role_and_db(
+        "airbyte", "airbyte", "AIRBYTE_DB_PASSWORD",
+    )
+
+
+async def _ensure_openmetadata_setup() -> None:
+    """OpenMetadata: own role + own DB (hardcodes public schema)."""
+    await _ensure_simple_pg_role_and_db(
+        "openmetadata", "openmetadata", "OPENMETADATA_DB_PASSWORD",
+    )
+
+
+async def _ensure_dbt_setup() -> None:
+    """dbt: role in the warehouse DB, no separate database. dbt WRITES
+    to the warehouse (under the marts schema) so it just needs scoped
+    grants on the existing pipeline DB."""
+    from . import db as _db
+    env = _read_env_file_or_empty()
+    pipeline_db = env.get("PIPELINE_DB_NAME")
+    if not pipeline_db:
+        log.warning("dbt pre-start: no PIPELINE_DB_NAME; skipping")
+        return
+    # Same password derivation pattern
+    password = env.get("DBT_DB_PASSWORD", "").strip()
+    if not password:
+        platform_pw = env.get("ORCHESTACK_DB_PASSWORD", "")
+        if not platform_pw:
+            log.warning("dbt pre-start: no DBT_DB_PASSWORD; skipping")
+            return
+        import hashlib
+        password = hashlib.sha256(
+            f"dbt:{platform_pw}".encode("utf-8")
+        ).hexdigest()[:32]
+        try:
+            _append_or_update_env_key("DBT_DB_PASSWORD", password)
+        except Exception as e:
+            log.warning("dbt pre-start: couldn't persist password: %s", e)
+    quoted_pw = password.replace("'", "''")
+
+    pool = _db.get_pool()
+    async with pool.acquire() as conn:
+        role_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'dbt_user'"
+        )
+        if not role_exists:
+            await conn.execute(
+                f"CREATE ROLE dbt_user WITH LOGIN PASSWORD '{quoted_pw}'"
+            )
+        else:
+            await conn.execute(
+                f"ALTER ROLE dbt_user WITH LOGIN PASSWORD '{quoted_pw}'"
+            )
+        await conn.execute(
+            f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_user'
+        )
+
+    # In-warehouse grants — connect to the pipeline DB to issue them.
+    import asyncpg
+    wh_conn = await asyncpg.connect(
+        host=config.DB_HOST, port=config.DB_PORT,
+        user=config.DB_USER, password=config.DB_PASSWORD,
+        database=pipeline_db,
+    )
+    try:
+        # marts schema is dbt's write target — create if absent.
+        await wh_conn.execute(
+            "CREATE SCHEMA IF NOT EXISTS marts AUTHORIZATION dbt_user"
+        )
+        # raw schema is the read source (Airbyte's target) — create if absent.
+        await wh_conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
+        await wh_conn.execute("GRANT USAGE ON SCHEMA raw TO dbt_user")
+        await wh_conn.execute(
+            "GRANT SELECT ON ALL TABLES IN SCHEMA raw TO dbt_user"
+        )
+        await wh_conn.execute(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA raw "
+            "GRANT SELECT ON TABLES TO dbt_user"
+        )
+    finally:
+        await wh_conn.close()
+
+
 PRE_START_HOOKS = {
-    "metabase": _ensure_metabase_database,
-    "pgadmin":  _ensure_pgadmin_servers_json,
+    "metabase":     _ensure_metabase_database,
+    "pgadmin":      _ensure_pgadmin_servers_json,
+    "airflow":      _ensure_airflow_setup,
+    "airbyte":      _ensure_airbyte_setup,
+    "openmetadata": _ensure_openmetadata_setup,
+    "dbt":          _ensure_dbt_setup,
+    # MinIO and GE need no PG provisioning — MinIO is filesystem-based,
+    # GE writes checkpoints to disk.
 }
 
 

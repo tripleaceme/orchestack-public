@@ -217,15 +217,45 @@
 
   {# ---------------- Connection-indicator wiring (existing) ---------- #}
   <script>
+    // The "Connected" indicator means the SERVER is reachable. Auth
+    // failures (401), permission denials (403), and validation errors
+    // (422) are not connection problems — the server responded, just
+    // negatively. Flipping the indicator red on those is misleading and
+    // makes operators chase phantom outages.
+    //
+    // Old behavior (every M3 tester hit this): submit the invite form
+    // with "No role yet" → FastAPI 422 → indicator goes red → operator
+    // thinks the system is broken even though everything is fine.
+    //
+    // New behavior: indicator only flips red on actual network errors
+    // (htmx:sendError fires on those) or 5xx server errors. 4xx is just
+    // "server rejected this specific request" — not a connection issue.
+    // Bonus: 401 redirects to /login so a stale cookie doesn't trap
+    // the operator on a page they can't interact with.
     document.addEventListener('htmx:sendError', () => {
       document.body.classList.add('htmx-disconnected');
     });
     document.addEventListener('htmx:afterRequest', (e) => {
-      if (e.detail && e.detail.successful) {
+      if (!e.detail) return;
+      const xhr = e.detail.xhr;
+      const status = xhr ? xhr.status : 0;
+
+      if (status === 401) {
+        // Stale cookie after a stack restart or session expiry. Send
+        // the operator back through login rather than leaving them on
+        // a page whose every HTMX request silently 401s.
+        window.location.href = "{{ request.scope.root_path or '/app' }}/login";
+        return;
+      }
+      if (status >= 200 && status < 400) {
         document.body.classList.remove('htmx-disconnected');
-      } else if (e.detail && e.detail.failed) {
+      } else if (status >= 500) {
+        // Real server problem — show the disconnected dot.
         document.body.classList.add('htmx-disconnected');
       }
+      // Anything in 4xx (other than 401): leave the indicator alone.
+      // The request failed validation or permission; the connection's
+      // fine.
     });
   </script>
 
@@ -308,6 +338,22 @@
       pgadmin: {
         starting:      "Starting pgAdmin. First boot takes ~15s while gunicorn warms up.",
         copy_done:     "pgAdmin is ready",
+      },
+      airflow: {
+        starting:      "Starting Apache Airflow. First boot runs DB migrations + scheduler init (~60s).",
+        copy_done:     "Airflow is ready",
+      },
+      airbyte: {
+        starting:      "Starting Airbyte. First boot takes 60-90s while connector catalogue loads.",
+        copy_done:     "Airbyte is ready",
+      },
+      openmetadata: {
+        starting:      "Starting OpenMetadata. First boot runs Flyway migrations + indexes (~90s).",
+        copy_done:     "OpenMetadata is ready",
+      },
+      minio: {
+        starting:      "Starting MinIO. Ready in ~10s.",
+        copy_done:     "MinIO is ready",
       },
     };
     const READY_POLL_MS    = 2000;

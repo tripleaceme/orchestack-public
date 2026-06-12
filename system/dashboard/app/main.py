@@ -1296,6 +1296,30 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
+    # M4 services — each tool's "I'm actually serving" signal differs.
+    # Add a branch per service so the operator's Open click waits for
+    # the real readiness instead of just container=running.
+    _M4_READY_PROBES = {
+        "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
+        "airflow":      ("orchestack-airflow",      8080, "/health"),
+        "airbyte":      ("orchestack-airbyte",      8000, "/api/v1/health"),
+        "openmetadata": ("orchestack-openmetadata", 8585, "/healthcheck"),
+    }
+    if name in _M4_READY_PROBES:
+        host, port, path = _M4_READY_PROBES[name]
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"http://{host}:{port}{path}")
+                if r.status_code == 200:
+                    return JSONResponse({"ready": True})
+                return JSONResponse({"ready": False, "phase": "starting"})
+        except httpx.HTTPError:
+            return JSONResponse({"ready": False, "phase": "starting"})
+
+    # dbt + GE are CLI tool containers (no HTTP UI). state==running is
+    # the right signal for them — `docker exec` is the operator's entry
+    # point. Fall through to the default ready=true below.
+
     # Default for any other managed service: state==running is the signal.
     # When M4 lands more managed services, each should add its own probe
     # branch above with a service-specific readiness check.

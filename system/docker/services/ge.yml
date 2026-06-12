@@ -1,0 +1,45 @@
+# Great Expectations — data quality (cold-tier).
+#
+# Like dbt, GE is a CLI tool not a daemon. Container holds the toolchain
+# and a persistent volume for checkpoint history. Operators invoke via
+# `docker exec orchestack-ge great_expectations checkpoint run <name>`.
+
+services:
+  ge:
+    image: greatexpectations/great_expectations:0.18.21
+    container_name: orchestack-ge
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        # If GE_REPO_URL is set (the operator may store expectations
+        # alongside their dbt project), clone it.
+        if [ -n "$$GE_REPO_URL" ]; then
+          if [ -d /great_expectations/.git ]; then
+            cd /great_expectations && git fetch && git reset --hard origin/$${GE_REPO_BRANCH:-main} || true
+          else
+            git clone -b $${GE_REPO_BRANCH:-main} $$GE_REPO_URL /great_expectations || true
+          fi
+        fi
+        exec sleep infinity
+    environment:
+      GE_REPO_URL:    ${GE_REPO_URL:-}
+      GE_REPO_BRANCH: ${GE_REPO_BRANCH:-main}
+      GE_DATA_CONTEXT_ROOT_DIR: /great_expectations
+    networks:
+      - orchestack-net
+    volumes:
+      - ge-data:/great_expectations
+    labels:
+      - orchestack.service=ge
+      - orchestack.tier=cold
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  ge-data:
+    name: orchestack-ge-data

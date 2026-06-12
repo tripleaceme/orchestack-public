@@ -1,0 +1,85 @@
+# OpenMetadata — governance + observability (cold-tier).
+#
+# Uses its own `openmetadata` database (NOT a schema in services). Same
+# constraint as Metabase: OpenMetadata's Flyway migrations write to
+# `public.<tablename>` with no honorable schema setting. Tested against
+# the schema-aware contract; failed; per-DB is the architecturally
+# honest choice.
+#
+# OpenMetadata's deployment also requires Elasticsearch (for full-text
+# search) and an Airflow-side ingestion runner. For M4.6 we ship the
+# OpenMetadata server alone with embedded Elasticsearch via the
+# openmetadata-server distribution. ES-as-sidecar in M5+.
+
+services:
+  openmetadata:
+    image: docker.getcollate.io/openmetadata/server:1.6.5
+    container_name: orchestack-openmetadata
+    restart: unless-stopped
+    environment:
+      # Database
+      DB_USER:     openmetadata
+      DB_USER_PASSWORD: ${OPENMETADATA_DB_PASSWORD:-}
+      DB_HOST:     orchestack-postgres
+      DB_PORT:     "5432"
+      OM_DATABASE: openmetadata
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME:   postgresql
+      # Auth — JWT + basic
+      AUTHENTICATION_PROVIDER:   basic
+      AUTHORIZER_ADMIN_PRINCIPALS: "[admin]"
+      AUTHORIZER_INGESTION_PRINCIPALS: "[ingestion-bot]"
+      JWT_TOKEN_SECRET_KEY: ${OPENMETADATA_JWT_SECRET:?OPENMETADATA_JWT_SECRET must be set in .env}
+      OM_ADMIN_EMAIL:       ${OPENMETADATA_ADMIN_EMAIL:?OPENMETADATA_ADMIN_EMAIL must be set in .env}
+      OM_ADMIN_PASSWORD:    ${OPENMETADATA_ADMIN_PASSWORD:?OPENMETADATA_ADMIN_PASSWORD must be set in .env}
+      # Search
+      SEARCH_TYPE:   elasticsearch
+      ELASTICSEARCH_HOST: openmetadata-es
+      ELASTICSEARCH_PORT: "9200"
+      # Subpath
+      SERVER_HOST_API_URL: http://localhost/app/openmetadata/api
+      WEB_CONF_URI:        http://localhost/app/openmetadata
+    networks:
+      - orchestack-net
+    depends_on:
+      - openmetadata-es
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8585/healthcheck > /dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 18
+      start_period: 90s
+    labels:
+      - orchestack.service=openmetadata
+      - orchestack.tier=cold
+      - traefik.enable=true
+      - traefik.http.routers.openmetadata.rule=PathPrefix(`/app/openmetadata`)
+      - traefik.http.routers.openmetadata.entrypoints=web
+      - traefik.http.routers.openmetadata.priority=200
+      - traefik.http.middlewares.openmetadata-strip.stripprefix.prefixes=/app/openmetadata
+      - traefik.http.routers.openmetadata.middlewares=openmetadata-strip@docker
+      - traefik.http.services.openmetadata.loadbalancer.server.port=8585
+
+  # Required sidecar for OpenMetadata's full-text search. Not exposed
+  # outside the docker network; OpenMetadata is the only client.
+  openmetadata-es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4
+    container_name: orchestack-openmetadata-es
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+    networks:
+      - orchestack-net
+    volumes:
+      - openmetadata-es-data:/usr/share/elasticsearch/data
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  openmetadata-es-data:
+    name: orchestack-openmetadata-es-data

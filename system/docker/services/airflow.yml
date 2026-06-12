@@ -1,0 +1,89 @@
+# Apache Airflow — orchestration (hot-tier).
+#
+# Single-container LocalExecutor deployment. Production setups split
+# webserver + scheduler + worker into separate containers; for the
+# scale OrcheStack targets (Nigerian SME, 1-50 active DAGs), one
+# container with the embedded scheduler + webserver is simpler and
+# cheaper to run.
+#
+# Uses the `airflow` PG role + the `airflow` schema inside the shared
+# `services` database (per design/m4-multi-db.md §2). The orchestrator
+# provisions both via _ensure_airflow_database pre-start hook.
+
+services:
+  airflow:
+    image: apache/airflow:2.10.4-python3.11
+    container_name: orchestack-airflow
+    restart: unless-stopped
+    user: "0:0"          # need root to chown the dags + logs volumes
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY must be set in .env}
+      # Database connection — points at the airflow schema in `services`
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+        postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:-}@orchestack-postgres:5432/services
+      AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA: airflow
+      # Webserver subpath for Traefik
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost/app/airflow
+      AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: 'True'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PROTO: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_HOST: '1'
+      # First-run admin user — read by our entrypoint wrapper below.
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_EMAIL:    ${AIRFLOW_ADMIN_EMAIL:?AIRFLOW_ADMIN_EMAIL must be set in .env}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD must be set in .env}
+      # DAGs git repo (optional) — synced by a sidecar pattern in M4.5+
+      AIRFLOW_DAGS_REPO_URL:    ${AIRFLOW_DAGS_REPO_URL:-}
+      AIRFLOW_DAGS_REPO_BRANCH: ${AIRFLOW_DAGS_REPO_BRANCH:-main}
+    command: >
+      bash -c '
+        airflow db migrate &&
+        airflow users create --role Admin
+          --username "$$_AIRFLOW_WWW_USER_USERNAME"
+          --email "$$_AIRFLOW_WWW_USER_EMAIL"
+          --firstname Admin --lastname User
+          --password "$$_AIRFLOW_WWW_USER_PASSWORD" 2>&1 | tail -3 || true;
+        if [ -n "$$AIRFLOW_DAGS_REPO_URL" ]; then
+          if [ -d /opt/airflow/dags/.git ]; then
+            cd /opt/airflow/dags && git fetch && git reset --hard origin/$${AIRFLOW_DAGS_REPO_BRANCH:-main} || true;
+          else
+            git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $$AIRFLOW_DAGS_REPO_URL /opt/airflow/dags-clone &&
+            cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ || true;
+          fi;
+        fi;
+        airflow scheduler & airflow webserver
+      '
+    networks:
+      - orchestack-net
+    volumes:
+      - airflow-dags:/opt/airflow/dags
+      - airflow-logs:/opt/airflow/logs
+      - airflow-plugins:/opt/airflow/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/app/airflow/health > /dev/null || curl -sf http://localhost:8080/health > /dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 18
+      start_period: 60s
+    labels:
+      - orchestack.service=airflow
+      - orchestack.tier=hot
+      - traefik.enable=true
+      - traefik.http.routers.airflow.rule=PathPrefix(`/app/airflow`)
+      - traefik.http.routers.airflow.entrypoints=web
+      - traefik.http.routers.airflow.priority=200
+      - traefik.http.services.airflow.loadbalancer.server.port=8080
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  airflow-dags:
+    name: orchestack-airflow-dags
+  airflow-logs:
+    name: orchestack-airflow-logs
+  airflow-plugins:
+    name: orchestack-airflow-plugins

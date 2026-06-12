@@ -1,0 +1,63 @@
+# dbt Core — transformation runner (cold-tier).
+#
+# Runs as a "sleeping" container by default — dbt itself is a one-shot
+# CLI tool, not a daemon. The container holds the toolchain + profiles
+# so operators can `docker exec orchestack-dbt dbt build` or trigger
+# runs from Airflow. Auto-clones the repo from $DBT_REPO_URL on start.
+# Sleep-as-PID-1 is the standard pattern for "tool container, no
+# always-on process."
+
+services:
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.10.0
+    container_name: orchestack-dbt
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # Clone or update the operator's dbt project on every start so
+        # `docker exec orchestack-dbt dbt run` always sees the latest
+        # commit on the configured branch.
+        set -e
+        if [ -n "$$DBT_REPO_URL" ]; then
+          if [ -d /usr/app/dbt/.git ]; then
+            cd /usr/app/dbt && git fetch && git reset --hard origin/$${DBT_REPO_BRANCH:-main} || true
+          else
+            git clone -b $${DBT_REPO_BRANCH:-main} $$DBT_REPO_URL /usr/app/dbt || true
+          fi
+        fi
+        # Keep the container running as a CLI host; dbt itself is not a
+        # daemon, the container exists so `docker exec` can invoke it.
+        exec sleep infinity
+    environment:
+      DBT_REPO_URL:    ${DBT_REPO_URL:-}
+      DBT_REPO_BRANCH: ${DBT_REPO_BRANCH:-main}
+      # Connection profile pieces — used by the dbt CLI via profiles.yml
+      # mounted into /root/.dbt/profiles.yml.
+      DBT_PG_HOST:     orchestack-postgres
+      DBT_PG_PORT:     "5432"
+      DBT_PG_USER:     dbt_user
+      DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:-}
+      DBT_PG_DBNAME:   ${PIPELINE_DB_NAME:-data_warehouse}
+      DBT_PG_SCHEMA:   ${DBT_SCHEMA:-marts}
+    networks:
+      - orchestack-net
+    volumes:
+      - dbt-repo:/usr/app/dbt
+      - dbt-profiles:/root/.dbt
+    labels:
+      - orchestack.service=dbt
+      - orchestack.tier=cold
+      # dbt has no HTTP UI — no Traefik labels. The "Open" button in
+      # the dashboard shows a "no UI" placeholder for these tools.
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  dbt-repo:
+    name: orchestack-dbt-repo
+  dbt-profiles:
+    name: orchestack-dbt-profiles

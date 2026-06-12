@@ -100,6 +100,9 @@ DEFAULT_USER_ID: int = 1
 # orchestration deferred to M4).
 SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # Managed services — orchestrator can start/stop these via compose snippets.
+    # Hot vs cold per design/m2-orchestrator.md §3: hot-tier services serve
+    # scheduled workloads (Metabase emails, Airflow schedulers); cold-tier
+    # services are operator-on-demand (open, use, close).
     "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
     # pgAdmin is COLD-tier — typical use is "open, debug a query, close."
     # Auto-pinning on Open (4hr default) keeps it warm for the operator's
@@ -107,14 +110,14 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # active sessions remain. Operators who want it always-on can
     # manually extend the pin from the service detail page.
     "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
-    # Registered-only — wizard can pick these but the orchestrator can't yet
-    # start/stop them (no compose snippet exists, that's M4 work).
-    "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": False},
-    "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": False},
-    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": False},
-    "minio":        {"tier": "cold", "display_name": "MinIO",               "layer": "data-lake",    "managed": False},
-    "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": False},
-    "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": False},
+    # M4 services. All managed=True as of M4 ship; pre-start hooks
+    # provision per-service DBs/roles per design/m4-multi-db.md.
+    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True},
+    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True},
+    "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
+    "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
+    "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True},
+    "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": True},
     # PostgreSQL is special — it's part of the base control plane (already
     # running as orchestack-postgres), but the wizard's warehouse layer lets
     # the operator pick it as the analytical warehouse too. Catalogue entry
