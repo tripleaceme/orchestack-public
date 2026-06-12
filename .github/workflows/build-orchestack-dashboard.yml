@@ -86,6 +86,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Inject the commit SHA into the image so the dashboard footer
+          # can show "dashboard <8-char-sha>" instead of "dev." Without
+          # this, operators can't tell from the UI whether they're on
+          # latest or an older pulled-but-stale image.
+          build-args: |
+            DASHBOARD_BUILD_SHA=${{ github.sha }}
           # GHA cache scoped per-image so auth/orchestrator/dashboard don't
           # evict each other's working sets.
           cache-from: type=gha,scope=dashboard

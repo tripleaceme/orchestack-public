@@ -31,6 +31,12 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # Application code.
 COPY app/ /app/app/
 
+# CI passes --build-arg DASHBOARD_BUILD_SHA=$GITHUB_SHA so the dashboard
+# footer can display "dashboard <8-char-sha>" instead of "dev." Default
+# stays "dev" for local builds so the footer is still readable in dev.
+ARG DASHBOARD_BUILD_SHA=dev
+ENV DASHBOARD_BUILD_SHA=$DASHBOARD_BUILD_SHA
+
 USER dashboard
 
 # Container healthcheck via stdlib urllib (no curl/wget dependency).

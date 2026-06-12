@@ -334,16 +334,14 @@ async def _ensure_pgadmin_servers_json() -> None:
             "MaintenanceDB": pipeline_db,
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
-            # DBRestriction filters the Object Explorer to only show this
-            # database — without it, pgAdmin lists every database on the
-            # postgres server (the platform's internal `orchestack`, the
-            # `metabase` state DB, the bare `postgres` template DB) and
-            # the operator clicks them by accident, gets "no password
-            # supplied" or "permission denied" depending on what they
-            # tried, and concludes "the system is broken." Limiting the
-            # listing keeps the operator focused on what they actually
-            # have rights to.
-            "DBRestriction": pipeline_db,
+            # NO DBRestriction — operator is the platform admin and
+            # gets to see every database the postgres server hosts.
+            # The wildcard pgpass entry below handles auth for all of
+            # them; if the operator clicks a database their role can't
+            # actually USE, postgres returns "permission denied" which
+            # is the clear signal, not "this is hidden from you."
+            # Per-role restriction lands in M5 with the multi-DB RBAC
+            # design (design/m4-multi-db.md §3).
             "Comment":       "Your pipeline warehouse. dbt writes here; "
                               "Metabase reads here. Click to connect — "
                               "password auto-filled from your .env via pgpass.",
