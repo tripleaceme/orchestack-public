@@ -200,6 +200,17 @@ async def _ensure_metabase_database() -> None:
 # pgadmin container, and PGADMIN_SERVER_JSON_FILE points at the file
 # pgadmin should import on first boot.
 _PGADMIN_SERVERS_JSON = "/etc/orchestack/config/pgadmin/servers.json"
+_PGADMIN_PGPASS_FILE  = "/etc/orchestack/config/pgadmin/.pgpass"
+# pgAdmin's container UID. The image's Dockerfile creates a pgadmin user
+# at UID 5050; the .pgpass file must be readable by that user. Without
+# this chown the file would be root-owned (orchestrator runs as root)
+# and pgAdmin's libpq client would refuse to read it.
+_PGADMIN_CONTAINER_UID = 5050
+_PGADMIN_CONTAINER_GID = 5050
+# pgAdmin's view of where the shared config volume is mounted (the
+# matching `volumes:` directive in services/pgadmin.yml mounts
+# `orchestack_config:/etc/orchestack/conf:ro`).
+_PGADMIN_INNER_CONF_DIR = "/etc/orchestack/conf"
 
 
 def _read_env_file_or_empty() -> dict[str, str]:
@@ -247,6 +258,46 @@ async def _ensure_pgadmin_servers_json() -> None:
     by_idx = servers["Servers"]
     assert isinstance(by_idx, dict)
 
+    # Materialise a pgpass file alongside servers.json so pgAdmin
+    # auto-connects without prompting the operator for the warehouse
+    # password every session. pgpass format: host:port:dbname:user:pw,
+    # one entry per line. pgAdmin's libpq reads the path from the
+    # PassFile attribute on each server entry below.
+    pipeline_db   = env.get("PIPELINE_DB_NAME")
+    pipeline_user = env.get("PIPELINE_DB_USER")
+    pipeline_pass = env.get("PIPELINE_DB_PASSWORD")
+    pgpass_inner_path: str | None = None
+    if pipeline_db and pipeline_user and pipeline_pass:
+        try:
+            os.makedirs(os.path.dirname(_PGADMIN_PGPASS_FILE), exist_ok=True)
+            # Strip embedded colons from the password — pgpass uses ':' as
+            # the field separator. The wizard's password rules already
+            # forbid ':' but defend in depth.
+            safe_pw = pipeline_pass.replace(":", r"\:")
+            line = f"orchestack-postgres:5432:{pipeline_db}:{pipeline_user}:{safe_pw}\n"
+            with open(_PGADMIN_PGPASS_FILE, "w") as f:
+                f.write(line)
+            # pgAdmin enforces mode 0600 and refuses to read pgpass files
+            # with looser permissions. Owner needs to match the pgadmin
+            # user inside the container — without this chown the file is
+            # root-owned and pgAdmin gets EACCES.
+            os.chmod(_PGADMIN_PGPASS_FILE, 0o600)
+            try:
+                os.chown(_PGADMIN_PGPASS_FILE,
+                          _PGADMIN_CONTAINER_UID,
+                          _PGADMIN_CONTAINER_GID)
+            except (OSError, PermissionError) as ce:
+                # Best-effort. On rootless docker the orchestrator may
+                # not have the privilege to chown; operator will see a
+                # password prompt instead, which is the pre-pgpass UX.
+                log.warning("pgadmin pgpass chown skipped: %s", ce)
+            pgpass_inner_path = f"{_PGADMIN_INNER_CONF_DIR}/pgadmin/.pgpass"
+            log.info("pre-start hook: wrote pgadmin pgpass for %s@%s",
+                      pipeline_user, pipeline_db)
+        except OSError as e:
+            log.warning("pgadmin pgpass write failed: %s — operator will "
+                          "be prompted for password on first connect", e)
+
     # Pipeline warehouse — the only server we pre-load by default.
     #
     # We deliberately do NOT pre-load the OrcheStack platform DB
@@ -264,10 +315,8 @@ async def _ensure_pgadmin_servers_json() -> None:
     # display name with a real PostgreSQL database name — surfacing the
     # actual name removes that ambiguity at the cost of a slightly less
     # operator-friendly label.
-    pipeline_db   = env.get("PIPELINE_DB_NAME")
-    pipeline_user = env.get("PIPELINE_DB_USER")
     if pipeline_db and pipeline_user:
-        by_idx["1"] = {
+        entry = {
             "Name":          pipeline_db,
             "Group":         "OrcheStack",
             "Host":          "orchestack-postgres",
@@ -276,9 +325,14 @@ async def _ensure_pgadmin_servers_json() -> None:
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
             "Comment":       "Your pipeline warehouse. dbt writes here; "
-                              "Metabase reads here. Password prompts on first "
-                              "connect; pgAdmin remembers it for the session.",
+                              "Metabase reads here. Click to connect — "
+                              "password auto-filled from your .env via pgpass.",
         }
+        if pgpass_inner_path is not None:
+            # PassFile path is from inside the pgAdmin container — the
+            # shared volume mounts at /etc/orchestack/conf there.
+            entry["PassFile"] = pgpass_inner_path
+        by_idx["1"] = entry
 
     target = _PGADMIN_SERVERS_JSON
     try:
@@ -353,7 +407,31 @@ async def _bootstrap_metabase() -> None:
     admin_email    = env.get("METABASE_ADMIN_EMAIL", "").strip()
     admin_password = env.get("METABASE_ADMIN_PASSWORD", "").strip()
     if not (admin_email and admin_password):
-        log.info("metabase bootstrap: no METABASE_ADMIN_* in .env; skipping")
+        # CRITICAL: this is the silent-skip path that has been making
+        # the dashboard's "bootstrapping…" toast loop forever. If the
+        # operator's .env bind-mount went bad (became a directory rather
+        # than a file — same root cause as the credentials 500 we fixed
+        # earlier), _read_env_file_or_empty() returns {}, this skip
+        # fires, and the dashboard /ready endpoint never sees the
+        # setup-token disappear. Surface it in the audit log so the
+        # operator can see the cause on /app/audit instead of staring
+        # at the toast.
+        from . import audit
+        log.warning(
+            "metabase bootstrap: missing METABASE_ADMIN_EMAIL or "
+            "METABASE_ADMIN_PASSWORD in .env — skipping. Common cause: "
+            ".env bind-mount unreadable inside the orchestrator container."
+        )
+        await audit.write(
+            "metabase_bootstrap_skipped",
+            service_name="metabase",
+            user_id=None,
+            details={
+                "reason": "missing METABASE_ADMIN_EMAIL/PASSWORD in .env",
+                "env_file": config.ENV_FILE,
+                "env_keys_seen": len(env),
+            },
+        )
         return
 
     pipeline_name = env.get("PIPELINE_DB_NAME")
@@ -392,13 +470,36 @@ async def _bootstrap_metabase() -> None:
                 r = await client.get(f"{base}/api/session/properties")
                 if r.status_code == 200:
                     setup_token = r.json().get("setup-token")
-                    break
+                    if setup_token is not None:
+                        log.info(
+                            "metabase bootstrap: setup-token observed after "
+                            "~%ds — proceeding to POST /api/setup",
+                            attempt * 2,
+                        )
+                        break
+                    else:
+                        # 200 with NO setup-token means Metabase is already
+                        # configured (probably from a previous bootstrap
+                        # run). Nothing to do.
+                        log.info(
+                            "metabase bootstrap: setup-token already null at "
+                            "~%ds — Metabase reports as configured already",
+                            attempt * 2,
+                        )
+                        break
             except httpx.HTTPError:
                 pass
+            # Heartbeat every minute so docker-logs observers can see the
+            # hook is making progress (not stuck) without spamming logs.
+            if attempt > 0 and attempt % 30 == 0:
+                log.info(
+                    "metabase bootstrap: still waiting for setup-token (%ds elapsed)",
+                    attempt * 2,
+                )
             await asyncio.sleep(2)
 
         if setup_token is None:
-            log.info("metabase bootstrap: no setup-token observed (already configured)")
+            log.info("metabase bootstrap: no setup-token observed (already configured or timeout)")
             return
 
         # Build the warehouse-database payload only if we have all three
