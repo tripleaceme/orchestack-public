@@ -33,7 +33,13 @@ services:
       # Passwords are intentionally NOT in this file — pgAdmin's auto-
       # import drops them for security and the operator types them once
       # on first connect.
-      PGADMIN_SERVER_JSON_FILE: /etc/orchestack/conf/servers.json
+      # Path matches where the orchestrator's _ensure_pgadmin_servers_json
+      # hook writes inside the shared volume — the volume is mounted at
+      # /etc/orchestack/config in the orchestrator and /etc/orchestack/conf
+      # here, with the `pgadmin/servers.json` layout preserved across both
+      # (we keep subdirectories so M4 can add airflow-connections.json,
+      # great-expectations/checkpoints, etc. without colliding).
+      PGADMIN_SERVER_JSON_FILE: /etc/orchestack/conf/pgadmin/servers.json
     networks:
       - orchestack-net
     volumes:

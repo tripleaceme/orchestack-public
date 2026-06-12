@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/main.css">
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/favicon.svg">
 </head>
 <body>
 
@@ -114,12 +115,12 @@
 
 <h2 id="prerequisites">What you need</h2>
 <ul>
-  <li>A GitHub account (GitLab, Bitbucket, or any Git host also work — the steps are the same)</li>
-  <li>Git installed locally — check with <code class="inline">git --version</code>. If missing, install from <a href="https://git-scm.com/downloads" target="_blank" rel="noopener">git-scm.com</a>.</li>
+  <li>A GitHub account (GitLab, Bitbucket, or any Git host also work, the steps are the same)</li>
+  <li>Git installed locally. You check with <code class="inline">git --version</code>. If missing, install from <a href="https://git-scm.com/downloads" target="_blank" rel="noopener">git-scm.com</a>.</li>
   <li>A dbt project folder with a <code class="inline">dbt_project.yml</code> and at least one model under <code class="inline">models/</code></li>
 </ul>
 <div class="callout">
-  <p><strong>New to Git?</strong> The 10-minute official tour — <a href="https://try.github.io/" target="_blank" rel="noopener">try.github.io</a> — covers exactly what you need. You can follow this guide straight after.</p>
+  <p><strong>New to Git?</strong> The 10-minute official tour, <strong><a href="https://try.github.io/" target="_blank" rel="noopener">try.github.io</a></strong> covers exactly what you need. You can follow this guide straight after.</p>
 </div>
 
 <h2 id="create-repo">Create the GitHub repository</h2>
@@ -127,7 +128,7 @@
   <li>Open <a href="https://github.com/new" target="_blank" rel="noopener">github.com/new</a>.</li>
   <li>Name the repo something descriptive: <code class="inline">acme-dbt</code>, <code class="inline">analytics-models</code>, <code class="inline">your-company-dbt</code>.</li>
   <li>Choose <strong>Private</strong> unless the whole world should read your SQL. Most teams pick private.</li>
-  <li><strong>Don't</strong> tick "Initialize this repository with a README" — we'll push an existing project instead.</li>
+  <li><strong>Don't</strong> tick "Initialize this repository with a README" because we'll push an existing project instead.</li>
   <li>Click <strong>Create repository</strong>. GitHub shows you a URL; keep this tab open.</li>
 </ol>
 
@@ -148,11 +149,11 @@ profiles.yml
 .env</pre>
 <p>Why each one matters:</p>
 <ul>
-  <li><strong>profiles.yml</strong> — contains your database password. Never commit.</li>
-  <li><strong>.env</strong> — contains secrets (API keys, tokens). Never commit.</li>
-  <li><strong>target/</strong> — dbt's compiled SQL; regenerated on every run. Noise.</li>
-  <li><strong>dbt_packages/</strong> — third-party package source; reinstalled from <code class="inline">packages.yml</code> on every run. Noise.</li>
-  <li><strong>logs/</strong> — dbt run logs. Too large and machine-specific to version-control.</li>
+  <li><strong>profiles.yml:</strong> contains your database password. Never commit.</li>
+  <li><strong>.env:</strong> contains secrets (API keys, tokens). Never commit.</li>
+  <li><strong>target/:</strong> dbt's compiled SQL; regenerated on every run. Noise.</li>
+  <li><strong>dbt_packages/:</strong> third-party package source; reinstalled from <code class="inline">packages.yml</code> on every run. Noise.</li>
+  <li><strong>logs/:</strong> dbt run logs. Too large and machine-specific to version-control.</li>
 </ul>
 <p>Save the file as <code class="inline">.gitignore</code> in the dbt project root.</p>
 
@@ -164,7 +165,7 @@ git commit -m "Initial dbt project"</pre>
 <pre>git remote add origin https://github.com/your-org/your-dbt-repo.git
 git branch -M main
 git push -u origin main</pre>
-<p>Refresh GitHub — your files are now there.</p>
+<p>Refresh GitHub page and your files should now be there.</p>
 
 <h2 id="connect">Connect the repo to OrcheStack</h2>
 <p>Before pasting the URL into OrcheStack, take ten seconds to verify one thing inside your dbt project: the <code class="inline">profile:</code> value at the top of <code class="inline">dbt_project.yml</code> must match what you entered (or will enter) as the <strong>dbt project name</strong> in OrcheStack. OrcheStack uses that value as the top-level key when it generates <code class="inline">profiles.yml</code>; if they diverge, dbt fails to start with <code class="inline">Could not find profile named 'X'</code>.</p>
@@ -172,7 +173,8 @@ git push -u origin main</pre>
 name: 'acme_analytics'
 version: '1.0.0'
 profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
-<p>If the two values already match, you're good. If not, update <code class="inline">profile:</code> in <code class="inline">dbt_project.yml</code> OR update the project name field in OrcheStack — either way, make them identical.</p>
+<p>If the two values already match, you're good. If not, update <code class="inline">profile:</code> in <code class="inline">dbt_project.yml</code> OR update the project name 
+  field in OrcheStack, either way, make them identical.</p>
 <p>Then, from your OrcheStack OrcheStack dashboard:</p>
 <ol>
   <li>Click <strong>Services → dbt Core</strong>.</li>
@@ -189,7 +191,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 </ol>
 <p>From now on, every scheduled dbt run and every manual "Run dbt now" click pulls the latest commit from the tracked branch before executing.</p>
 
-<h2 id="security">Security — never commit secrets</h2>
+<h2 id="security">Security (never commit secrets)</h2>
 <p>Even with a private repo, commits are forever (in Git history). Habits that save you later:</p>
 <ul>
   <li><strong>Never put passwords in dbt_project.yml or any SQL file.</strong> Use <code class="inline">env_var()</code> in profiles.yml and keep profiles.yml out of the repo entirely.</li>
@@ -212,7 +214,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
 <ol>
   <li>On the OrcheStack host, run <code class="inline">ssh-keygen -t ed25519 -f ./config/dbt/deploy_key -C "OrcheStack-dbt"</code>.</li>
   <li>Copy the public key: <code class="inline">cat ./config/dbt/deploy_key.pub</code>.</li>
-  <li>On GitHub, go to the repo's <strong>Settings → Deploy keys → Add deploy key</strong> and paste it. Leave "Allow write access" unchecked — OrcheStack only reads.</li>
+  <li>On GitHub, go to the repo's <strong>Settings → Deploy keys → Add deploy key</strong> and paste it. Leave "Allow write access" unchecked, OrcheStack only reads.</li>
   <li>In OrcheStack, switch the repo URL to SSH format (<code class="inline">git@github.com:...</code>) and save.</li>
 </ol>
 <div class="callout">
@@ -240,7 +242,7 @@ profile: 'acme_analytics'     # ← this is what OrcheStack needs to match</pre>
       <li><a href="#gitignore">The critical .gitignore</a></li>
       <li><a href="#first-push">First commit and push</a></li>
       <li><a href="#connect">Connect the repo to OrcheStack</a></li>
-      <li><a href="#security">Security — never commit secrets</a></li>
+      <li><a href="#security">Security (never commit secrets)</a></li>
       <li><a href="#private-repos">Private repos need a token</a></li>
     </ul>
   </aside>

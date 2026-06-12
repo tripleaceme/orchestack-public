@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/main.css">
+  <link rel="icon" type="image/svg+xml" href="../../assets/logos/favicon.svg">
 </head>
 <body>
 
@@ -117,7 +118,7 @@
 <p>The root cause: everyone writing to the same schema. Fix: give each developer their own schema.</p>
 
 <h2 id="the-pattern">The dev-schema pattern</h2>
-<p>Each engineer gets a personal schema in the warehouse — <code class="inline">dev_ayoade</code>, <code class="inline">dev_alice</code>, <code class="inline">dev_bob</code>. They run dbt locally with <code class="inline">--target dev</code>, which writes to that personal schema. Production runs happen via OrcheStack's nightly DAG using <code class="inline">--target prod</code>, which writes to the shared <code class="inline">marts</code> schema.</p>
+<p>Each engineer gets a personal schema in the warehouse, <code class="inline">dev_ayoade</code>, <code class="inline">dev_alice</code>, <code class="inline">dev_bob</code>. They run dbt locally with <code class="inline">--target dev</code>, which writes to that personal schema. Production runs happen via OrcheStack's nightly DAG using <code class="inline">--target prod</code>, which writes to the shared <code class="inline">marts</code> schema.</p>
 <p>Flow:</p>
 <pre>LOCAL  : Alice → dbt run --target dev → writes to dev_alice.fct_orders
 LOCAL  : Bob   → dbt run --target dev → writes to dev_bob.fct_orders
@@ -142,17 +143,17 @@ GRANT SELECT ON ALL TABLES IN SCHEMA dev_ayoade TO analyst_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
   GRANT SELECT ON TABLES TO analyst_user;</pre>
 <div class="callout">
-  <p><strong>Smaller team alternative.</strong> If you have 1–2 engineers, a single shared <code class="inline">dev_marts</code> schema is fine. The dbt convention scales up later — you only need per-person schemas when conflicts actually happen.</p>
+  <p><strong>Smaller team alternative.</strong> If you have 1–2 engineers, a single shared <code class="inline">dev_marts</code> schema is fine. The dbt convention scales up later, you only need per-person schemas when conflicts actually happen.</p>
 </div>
 
 <h2 id="developer-profile">Each developer's profiles.yml</h2>
-<p>Each engineer puts a <code class="inline">profiles.yml</code> on their laptop at <code class="inline">~/.dbt/profiles.yml</code> (or in the project root — dbt finds both). The file is per-machine; never commit it.</p>
+<p>Each engineer puts a <code class="inline">profiles.yml</code> on their laptop at <code class="inline">~/.dbt/profiles.yml</code> (or in the project root, dbt finds both). The file is per-machine; never commit it.</p>
 <pre>OrcheStack:
   target: dev                    # default when you just type 'dbt run'
   outputs:
     dev:
       type: postgres
-      host: OrcheStack.acme.ng     # or the IP / localhost for self-host
+      host: localhost    # or the IP / localhost for self-host
       user: dbt_user
       password: "{{ env_var('DBT_PASSWORD') }}"
       port: 5432
@@ -161,7 +162,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
       threads: 4
     prod:
       type: postgres
-      host: OrcheStack.acme.ng
+      host: localhost
       user: dbt_user
       password: "{{ env_var('DBT_PASSWORD') }}"
       port: 5432
@@ -169,11 +170,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
       schema: marts              # ← shared production schema
       threads: 8</pre>
 <p>Each engineer replaces <code class="inline">dev_ayoade</code> with their own schema name.</p>
-<p>Set <code class="inline">DBT_PASSWORD</code> in your shell's <code class="inline">.env</code> or <code class="inline">~/.bashrc</code> — never paste it into profiles.yml directly.</p>
+<p>Set <code class="inline">DBT_PASSWORD</code> in your shell's <code class="inline">.env</code> or <code class="inline">~/.bashrc</code>, never paste it into profiles.yml directly.</p>
 
 <h2 id="local-workflow">Local development workflow</h2>
 <p>Once the profile is configured, the daily loop is:</p>
-<pre># Iterate on your model — writes to dev_ayoade.fct_orders
+<pre># Iterate on your model, writes to dev_ayoade.fct_orders
 dbt run --select fct_orders
 
 # Test it locally against your dev data
@@ -186,18 +187,18 @@ git push origin feature/new-orders-mart</pre>
 <p>Notice: you never typed <code class="inline">--target prod</code>. Default is <code class="inline">dev</code>. Production is unreachable by accident.</p>
 
 <h2 id="promote-to-prod">Promoting to production</h2>
-<p>Open a pull request on GitHub. The team reviews the model — was the transformation right? Did tests pass?</p>
+<p>Open a pull request on GitHub. The team reviews the model to check if the transformation is correct and if tests pass.</p>
 <p>Once merged to <code class="inline">main</code>, the next OrcheStack nightly DAG run does:</p>
 <pre>git pull origin main
 dbt build --target prod</pre>
 <p>Which rebuilds <code class="inline">marts.fct_orders</code> with the new code. Metabase dashboards refresh on their own cadence and show the new data.</p>
-<p>If the DAG fails (tests didn't pass against real data, for example), <code class="inline">marts.fct_orders</code> stays unchanged — Metabase keeps showing the last good version until someone fixes and re-merges. Failing safely is the whole point.</p>
+<p>If the DAG fails (tests didn't pass against real data, for example), <code class="inline">marts.fct_orders</code> stays unchanged. Metabase keeps showing the last good version until someone fixes and re-merges. Failing safely is the whole point.</p>
 
 <h2 id="naming">Naming conventions</h2>
 <table>
   <thead><tr><th>Schema name</th><th>Purpose</th><th>Who writes</th></tr></thead>
   <tbody>
-    <tr><td><code class="inline">marts</code></td><td>Production — what stakeholders see</td><td>The nightly DAG, from merged main</td></tr>
+    <tr><td><code class="inline">marts</code></td><td>Production (what stakeholders see)</td><td>The nightly DAG, from merged main</td></tr>
     <tr><td><code class="inline">raw</code></td><td>Airbyte-landed raw data</td><td>Airbyte only</td></tr>
     <tr><td><code class="inline">dev_&lt;username&gt;</code></td><td>Personal development schema</td><td>That engineer</td></tr>
     <tr><td><code class="inline">staging_&lt;ticket&gt;</code></td><td>Shared WIP for a multi-person feature</td><td>Feature team</td></tr>
