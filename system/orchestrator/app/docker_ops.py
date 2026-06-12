@@ -274,7 +274,17 @@ async def _ensure_pgadmin_servers_json() -> None:
             # the field separator. The wizard's password rules already
             # forbid ':' but defend in depth.
             safe_pw = pipeline_pass.replace(":", r"\:")
-            line = f"orchestack-postgres:5432:{pipeline_db}:{pipeline_user}:{safe_pw}\n"
+            # Use `*` for the dbname field — postgres lists every database
+            # on the server in the navigator regardless of which one we
+            # marked as MaintenanceDB, and pgAdmin/libpq does a per-database
+            # auth lookup when the operator clicks a different DB. Without
+            # a wildcard, clicking `metabase` or `orchestack` triggered
+            # "fe_sendauth: no password supplied" because no pgpass row
+            # matched. The DBRestriction setting below ALSO filters the
+            # listing so the operator only sees their own DB — both
+            # together: the wildcard handles "tried to connect anyway,"
+            # the restriction handles "shouldn't even be visible."
+            line = f"orchestack-postgres:5432:*:{pipeline_user}:{safe_pw}\n"
             with open(_PGADMIN_PGPASS_FILE, "w") as f:
                 f.write(line)
             # pgAdmin enforces mode 0600 and refuses to read pgpass files
@@ -324,6 +334,16 @@ async def _ensure_pgadmin_servers_json() -> None:
             "MaintenanceDB": pipeline_db,
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
+            # DBRestriction filters the Object Explorer to only show this
+            # database — without it, pgAdmin lists every database on the
+            # postgres server (the platform's internal `orchestack`, the
+            # `metabase` state DB, the bare `postgres` template DB) and
+            # the operator clicks them by accident, gets "no password
+            # supplied" or "permission denied" depending on what they
+            # tried, and concludes "the system is broken." Limiting the
+            # listing keeps the operator focused on what they actually
+            # have rights to.
+            "DBRestriction": pipeline_db,
             "Comment":       "Your pipeline warehouse. dbt writes here; "
                               "Metabase reads here. Click to connect — "
                               "password auto-filled from your .env via pgpass.",
