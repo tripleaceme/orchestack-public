@@ -103,26 +103,44 @@
       {# Control-plane service (PostgreSQL): always-on, no Start/Stop.
          Open routes to the external_url (pgAdmin) since the warehouse
          has no UI of its own. #}
-      <button type="button"
-              onclick="orchestackOpenService('{{ service.name }}')"
-              title="Open the warehouse in pgAdmin (new tab)"
-              class="w-full text-sm font-medium py-1.5 rounded
-                     bg-[var(--navy)] text-white
-                     hover:bg-[var(--navy-2)] transition-colors">
+      {% set _host = request.url.hostname or 'localhost' %}
+      {% set _tool_url = service.external_url|replace('{host}', _host)
+                         if service.external_url
+                         else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+      <a href="{{ _tool_url }}"
+         target="_blank"
+         rel="noopener noreferrer"
+         onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
+         class="w-full text-sm font-medium py-1.5 rounded text-center
+                bg-[var(--navy)] text-white
+                hover:bg-[var(--navy-2)] transition-colors">
         Open in pgAdmin
-      </button>
+      </a>
     {% elif is_running %}
-      {# Primary action: Open the tool in a new tab + create a session.
-         Calls a JS helper in base.html that POSTs to /open then opens
-         the tool URL. #}
-      <button type="button"
-              onclick="orchestackOpenService('{{ service.name }}')"
-              title="Open {{ service.display_name }} in a new tab"
-              class="w-full text-sm font-medium py-1.5 rounded
-                     bg-[var(--navy)] text-white
-                     hover:bg-[var(--navy-2)] transition-colors">
+      {# Primary action: Open the tool in a new tab.
+         Implemented as a native <a target="_blank"> anchor — that's the
+         only reliable way to open a new tab from a click. window.open()
+         after an async fetch loses the user-gesture flag and gets
+         silently blocked; window.open('about:blank') first then
+         redirecting works UNTIL you add 'noopener' (which makes
+         window.open return null). An anchor sidesteps all of it.
+         The onclick handler fires the orchestrator's /open POST as
+         fire-and-forget so session-tracking + audit still happen,
+         but we don't wait for the response — the tab navigates
+         immediately via the href. #}
+      {% set _host = request.url.hostname or 'localhost' %}
+      {% set _tool_url = service.external_url|replace('{host}', _host)
+                         if service.external_url
+                         else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+      <a href="{{ _tool_url }}"
+         target="_blank"
+         rel="noopener noreferrer"
+         onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
+         class="w-full text-sm font-medium py-1.5 rounded text-center
+                bg-[var(--navy)] text-white
+                hover:bg-[var(--navy-2)] transition-colors">
         Open
-      </button>
+      </a>
       {# Secondary action: Stop the service. Outline style. #}
       <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
