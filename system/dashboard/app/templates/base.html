@@ -375,6 +375,22 @@
         starting:      "Opening dbt terminal. ttyd is starting up — your bash session lands in /usr/app/dbt with nano, vim, git, and dbt all available.",
         copy_done:     "dbt terminal ready",
       },
+      // Great Expectations has the same dual-action shape as dbt but
+      // pip-installs GE on the first start, so the first cold boot
+      // is ~3 min while the venv populates. Subsequent starts are
+      // fast because the venv lives in a persistent volume.
+      ge: {
+        starting:      "Starting Great Expectations…",
+        copy_done:     "Great Expectations is ready",
+      },
+      'ge:docs': {
+        starting:      "Starting Great Expectations data docs. First start installs GE into a virtualenv (~3 min on a fresh install); subsequent starts are quick.",
+        copy_done:     "GE data docs ready",
+      },
+      'ge:cli': {
+        starting:      "Opening Great Expectations terminal. ttyd is starting up — your bash session lands in /great_expectations with the great_expectations CLI, nano, vim, and git all available.",
+        copy_done:     "GE terminal ready",
+      },
     };
     const READY_POLL_MS    = 2000;
     const READY_TIMEOUT_MS = 420_000;  // 7 minutes; matches POST_START_HOOK_TIMEOUT

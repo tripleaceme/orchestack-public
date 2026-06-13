@@ -165,7 +165,28 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
             },
         ],
     },
-    "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
+    # Great Expectations: same dual-action shape as dbt. Open Data Docs
+    # opens the generated HTML site (validations + expectations + suite
+    # browser); Open Terminal opens ttyd at /usr/great_expectations
+    # for `great_expectations suite edit` / `checkpoint run` work.
+    "ge": {
+        "tier": "cold", "display_name": "Great Expectations",
+        "layer": "quality", "managed": True,
+        "actions": [
+            {
+                "key": "docs",
+                "label": "Open Data Docs",
+                "external_url": "http://{host}:8003",
+                "ready_probe": (8080, "/index.html"),
+            },
+            {
+                "key": "cli",
+                "label": "Open Terminal",
+                "external_url": "http://{host}/app/ge-terminal/",
+                "ready_probe": (7681, "/"),
+            },
+        ],
+    },
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
     # — same subpath-incompatibility class as MinIO. The compose snippet

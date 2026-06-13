@@ -235,7 +235,7 @@ async def _service_404_response(request: Request, exc):
             "Airbyte's worker can take a couple of minutes on first boot.",
             f"<strong>The URL was deep-linked from an old install.</strong> "
             f"Container IDs and workspace slugs change between fresh deploys "
-            f"— the <code class=\"font-mono\">{path}</code> path may point to a "
+            f", the <code class=\"font-mono\">{path}</code> path may point to a "
             f"resource that no longer exists.",
             f"<strong>You don't have access to this {display_name} resource.</strong> "
             f"Inside {display_name}, the resource exists but your account "
@@ -252,7 +252,7 @@ async def _service_404_response(request: Request, exc):
             "<strong>The URL was typed or pasted with a typo.</strong> "
             "Check the address bar for extra spaces or wrong slashes.",
             "<strong>The page moved.</strong> The dashboard's URLs "
-            "occasionally change between OrcheStack versions — try "
+            "occasionally change between OrcheStack versions, try "
             "navigating from the home page.",
             "<strong>You used a stale bookmark.</strong> If this link "
             "came from an older install, the resource may no longer exist.",
@@ -270,7 +270,7 @@ async def _service_404_response(request: Request, exc):
             "bullets_heading": "A few likely reasons:",
             "bullets": bullets,
             "admin_hint": (
-                "Still stuck? Reach out to your OrcheStack admin — they can "
+                "Still stuck? Reach out to your OrcheStack admin, they can "
                 "check the service state, see who has access, and look at "
                 "the orchestrator's audit log on the "
                 f"<a href=\"{ROOT_PATH}/audit\" class=\"text-[var(--navy)] hover:underline\">Audit page</a>."
@@ -1500,6 +1500,11 @@ async def service_ready_probe(
         # configured prefix. Match the Traefik subpath we set in
         # services/dbt.yml: --base-path /app/dbt-terminal.
         ("dbt", "cli"):  ("orchestack-dbt", 7681, "/app/dbt-terminal/"),
+        # Great Expectations follows dbt's pattern exactly: Python
+        # http.server serving generated data docs on 8080, ttyd on
+        # 7681 with --base-path /app/ge-terminal.
+        ("ge", "docs"):  ("orchestack-ge", 8080, "/index.html"),
+        ("ge", "cli"):   ("orchestack-ge", 7681, "/app/ge-terminal/"),
     }
     probe = None
     if action is not None and (name, action) in _M4_ACTION_PROBES:

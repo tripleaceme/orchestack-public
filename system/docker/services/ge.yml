@@ -1,39 +1,239 @@
-# Great Expectations — data quality (cold-tier).
+# Great Expectations — data quality with embedded data docs + terminal (cold-tier).
 #
-# Like dbt, GE is a CLI tool not a daemon. Container holds the toolchain
-# and a persistent volume for checkpoint history. Operators invoke via
-# `docker exec orchestack-ge great_expectations checkpoint run <name>`.
+# Two operator-facing surfaces, same pattern as dbt:
+#
+#   - Data Docs on port 8080 (host:8003 direct-port — GE data docs is
+#               a generated static site that emits absolute-root asset
+#               paths). "Open Data Docs" button.
+#
+#   - ttyd shell on port 7681 served at /app/ge-terminal via Traefik
+#               subpath. "Open Terminal" button.
+#
+# Great Expectations doesn't publish an official Docker image, so we
+# use python:3.12-slim and pip-install into a persistent venv volume
+# (/opt/ge-venv). First start is slow (~3min pip install); every
+# restart after that is fast because the venv persists.
 
 services:
   ge:
-    image: greatexpectations/great_expectations:0.18.21
+    image: python:3.12-slim
     container_name: orchestack-ge
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -e
-        # If GE_REPO_URL is set (the operator may store expectations
-        # alongside their dbt project), clone it.
-        if [ -n "$$GE_REPO_URL" ]; then
-          if [ -d /great_expectations/.git ]; then
-            cd /great_expectations && git fetch && git reset --hard origin/$${GE_REPO_BRANCH:-main} || true
-          else
-            git clone -b $${GE_REPO_BRANCH:-main} $$GE_REPO_URL /great_expectations || true
-          fi
+
+        # ── 0a. Skip apt-get for now ────────────────────────────────────
+        # The python:3.12-slim image's apt-get has been hanging on this
+        # host (Docker Desktop networking + apt's slow mirror picker).
+        # We skip editor install for the initial ship; engineers can
+        # `docker exec apt-get install -y nano vim` themselves if they
+        # need to edit files in-container, but for production-bound
+        # changes they should use GitHub web UI anyway (see banner).
+        # ttyd download via Python is reliable — keep that.
+        if ! command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] downloading ttyd…"
+          python -c "
+        import urllib.request
+        url = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        urllib.request.urlretrieve(url, '/usr/local/bin/ttyd')
+        " || echo "[orchestack] ttyd download failed — terminal will be unavailable"
+          chmod +x /usr/local/bin/ttyd 2>/dev/null || true
         fi
-        exec sleep infinity
+
+        # ── 0c. Install Great Expectations + postgres driver ──────────
+        # Cached to a venv on a persistent volume so we only pay the
+        # ~3min pip cost on the first start of a fresh install.
+        if [ ! -d /opt/ge-venv/bin ]; then
+          echo "[orchestack] creating virtualenv + installing great_expectations…"
+          python -m venv /opt/ge-venv
+          /opt/ge-venv/bin/pip install --no-cache-dir --upgrade pip 2>&1 | sed 's/^/[pip] /'
+          /opt/ge-venv/bin/pip install --no-cache-dir \
+              'great_expectations==0.18.21' \
+              'psycopg2-binary>=2.9' \
+              'sqlalchemy>=1.4,<2' 2>&1 | sed 's/^/[pip] /'
+        fi
+        export PATH="/opt/ge-venv/bin:$$PATH"
+        export VIRTUAL_ENV=/opt/ge-venv
+
+        # ── 1. Bootstrap a data context if one doesn't exist ──────────
+        export GE_DATA_CONTEXT_ROOT_DIR=/great_expectations
+        # GE_REPO_URL clone path requires git which we no longer apt-install.
+        # If you need a custom repo, build a fork of this image with git
+        # pre-installed and DBT_REPO_URL-style cloning.
+        if [ ! -f "$$GE_DATA_CONTEXT_ROOT_DIR/great_expectations.yml" ]; then
+          echo "[orchestack] initialising demo Great Expectations project…"
+          mkdir -p "$$GE_DATA_CONTEXT_ROOT_DIR"
+          cd "$$GE_DATA_CONTEXT_ROOT_DIR"
+          mkdir -p expectations checkpoints uncommitted/data_docs/local_site \
+                   uncommitted/validations plugins
+          cat > great_expectations.yml <<'GEYAML'
+        config_version: 3.0
+        datasources:
+          warehouse:
+            class_name: Datasource
+            execution_engine:
+              class_name: SqlAlchemyExecutionEngine
+              connection_string: postgresql+psycopg2://${GE_PG_USER}:${GE_PG_PASSWORD}@${GE_PG_HOST}:${GE_PG_PORT}/${GE_PG_DBNAME}
+            data_connectors:
+              default_runtime:
+                class_name: RuntimeDataConnector
+                batch_identifiers: [default_identifier_name]
+              default_inferred:
+                class_name: InferredAssetSqlDataConnector
+                include_schema_name: true
+        config_variables_file_path: uncommitted/config_variables.yml
+        plugins_directory: plugins/
+        stores:
+          expectations_store:
+            class_name: ExpectationsStore
+            store_backend:
+              class_name: TupleFilesystemStoreBackend
+              base_directory: expectations/
+          validations_store:
+            class_name: ValidationsStore
+            store_backend:
+              class_name: TupleFilesystemStoreBackend
+              base_directory: uncommitted/validations/
+          evaluation_parameter_store:
+            class_name: EvaluationParameterStore
+          checkpoint_store:
+            class_name: CheckpointStore
+            store_backend:
+              class_name: TupleFilesystemStoreBackend
+              base_directory: checkpoints/
+        expectations_store_name: expectations_store
+        validations_store_name: validations_store
+        evaluation_parameter_store_name: evaluation_parameter_store
+        checkpoint_store_name: checkpoint_store
+        data_docs_sites:
+          local_site:
+            class_name: SiteBuilder
+            store_backend:
+              class_name: TupleFilesystemStoreBackend
+              base_directory: uncommitted/data_docs/local_site/
+            site_index_builder:
+              class_name: DefaultSiteIndexBuilder
+        anonymous_usage_statistics:
+          enabled: false
+        GEYAML
+
+          cat > expectations/demo_warehouse_tables.json <<'SUITE'
+        {
+          "data_asset_type": null,
+          "expectation_suite_name": "demo_warehouse_tables",
+          "expectations": [
+            {
+              "expectation_type": "expect_table_row_count_to_be_between",
+              "kwargs": {"min_value": 0, "max_value": 100000},
+              "meta": {"notes": "Demo expectation — adjust to your real data."}
+            }
+          ],
+          "meta": {
+            "great_expectations_version": "0.18.21",
+            "notes": "Demo suite generated by OrcheStack on first start. Replace with your own by setting GE_REPO_URL in Edit Config."
+          }
+        }
+        SUITE
+        fi
+
+        cd "$$GE_DATA_CONTEXT_ROOT_DIR"
+
+        # ── 2. Build data docs (best-effort) + serve ──────────────────
+        (
+          echo "[orchestack] building data docs…"
+          great_expectations docs build --site-name local_site --yes 2>&1 | \
+              sed 's/^/[ge docs] /' || \
+              echo "[orchestack] great_expectations docs build failed — site will be empty"
+          DOCS_DIR="$$GE_DATA_CONTEXT_ROOT_DIR/uncommitted/data_docs/local_site"
+          if [ ! -f "$$DOCS_DIR/index.html" ]; then
+              mkdir -p "$$DOCS_DIR"
+              echo "<html><body><h1>Great Expectations Data Docs</h1><p>Building… refresh in a moment.</p></body></html>" > "$$DOCS_DIR/index.html"
+          fi
+          cd "$$DOCS_DIR"
+          echo "[orchestack] serving data docs on :8080 from $$DOCS_DIR"
+          exec python -m http.server 8080 --bind 0.0.0.0
+        ) &
+        DOCS_PID=$$!
+
+        # ── 3. ttyd web terminal ──────────────────────────────────────
+        cat > /etc/profile.d/00-orchestack-welcome.sh <<'WELCOME'
+        if [ -n "$PS1" ]; then
+            export PS1='\[\e[36m\]ge@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$ '
+            export PATH="/opt/ge-venv/bin:$PATH"
+            export GE_DATA_CONTEXT_ROOT_DIR=/great_expectations
+            cd $GE_DATA_CONTEXT_ROOT_DIR 2>/dev/null || true
+            echo
+            echo -e "\e[1;36m── OrcheStack Great Expectations terminal ──\e[0m"
+            echo "  Project dir : /great_expectations (you are here)"
+            echo "  Common cmds : great_expectations suite list"
+            echo "                great_expectations suite edit <suite-name>"
+            echo "                great_expectations checkpoint run <checkpoint-name>"
+            echo "                great_expectations docs build"
+            echo "  Editors     : nano / vim"
+            echo "  Tip: like dbt, prefer GitHub web UI for production-bound"
+            echo "       expectation changes (review + CI). Use this terminal"
+            echo "       for diagnosing failing validations — re-run a"
+            echo "       checkpoint against fresh data, inspect failed rows."
+            echo
+        fi
+        WELCOME
+        chmod +x /etc/profile.d/00-orchestack-welcome.sh
+
+        if command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] starting ttyd on :7681 (base-path /app/ge-terminal)"
+          ttyd --writable \
+               --port 7681 \
+               --base-path /app/ge-terminal \
+               -t titleFixed='Great Expectations CLI' \
+               -t fontSize=14 \
+               bash --login &
+          TTYD_PID=$$!
+        else
+          echo "[orchestack] ttyd missing — Open Terminal will be unavailable"
+          TTYD_PID=""
+        fi
+
+        # ── 4. Wait for either to exit ────────────────────────────────
+        if [ -n "$$TTYD_PID" ]; then
+          wait -n $$DOCS_PID $$TTYD_PID
+        else
+          wait $$DOCS_PID
+        fi
+
     environment:
       GE_REPO_URL:    ${GE_REPO_URL:-}
       GE_REPO_BRANCH: ${GE_REPO_BRANCH:-main}
-      GE_DATA_CONTEXT_ROOT_DIR: /great_expectations
+      GE_PG_HOST:     orchestack-postgres
+      GE_PG_PORT:     "5432"
+      GE_PG_USER:     warehouse_user
+      GE_PG_PASSWORD: ${PIPELINE_DB_PASSWORD:?PIPELINE_DB_PASSWORD must be set}
+      GE_PG_DBNAME:   ${PIPELINE_DB_NAME:-data_warehouse}
     networks:
       - orchestack-net
     volumes:
       - ge-data:/great_expectations
+      - ge-venv:/opt/ge-venv
+      - ge-bin:/usr/local/bin
+    ports:
+      - "8003:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 120s
     labels:
       - orchestack.service=ge
       - orchestack.tier=cold
+      - traefik.enable=true
+      - traefik.http.routers.ge-terminal.rule=PathPrefix(`/app/ge-terminal`)
+      - traefik.http.routers.ge-terminal.entrypoints=web
+      - traefik.http.routers.ge-terminal.priority=200
+      - traefik.http.services.ge-terminal.loadbalancer.server.port=7681
 
 networks:
   orchestack-net:
@@ -43,3 +243,7 @@ networks:
 volumes:
   ge-data:
     name: orchestack-ge-data
+  ge-venv:
+    name: orchestack-ge-venv
+  ge-bin:
+    name: orchestack-ge-bin
