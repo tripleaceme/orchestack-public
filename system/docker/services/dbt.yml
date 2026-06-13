@@ -36,7 +36,24 @@ services:
       - |
         set -e
 
-        # ── 0. Install ttyd if not already present ─────────────────────
+        # ── 0a. Install editors + git for in-terminal model editing ────
+        # The dbt-postgres image is python:3.12-slim — no nano, no vim,
+        # no git, no less. Engineers troubleshooting a failing model in
+        # the in-browser terminal need at minimum an editor (to fix the
+        # SQL) and less (to page through dbt's verbose output). git is
+        # already needed for DBT_REPO_URL cloning. Cache the install
+        # state in a marker file so we only pay the apt-get cost on
+        # the first start of a fresh install.
+        if [ ! -f /var/lib/dbt-tools-installed ]; then
+          echo "[orchestack] installing editors (nano, vim, less)…"
+          apt-get update -qq && \
+          apt-get install -y --no-install-recommends nano vim less git 2>&1 | \
+              sed 's/^/[apt] /' && \
+          rm -rf /var/lib/apt/lists/* && \
+          touch /var/lib/dbt-tools-installed
+        fi
+
+        # ── 0b. Install ttyd if not already present ────────────────────
         # ttyd is a static Go binary ~2MB. We fetch from the GitHub
         # release on first start; subsequent starts skip the download
         # because the file is in the volume-mounted /usr/local/bin
@@ -152,14 +169,41 @@ services:
         # operator they're inside the dbt project directory.
         export PS1='\[\e[36m\]dbt@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$$ '
         cd /usr/app/dbt
+
+        # Write a /etc/profile.d snippet so the welcome banner shows on
+        # every new ttyd session, not just the first. The banner is the
+        # operator's first impression of the terminal — make it tell
+        # them what's available so they don't have to guess.
+        cat > /etc/profile.d/00-orchestack-welcome.sh <<'WELCOME'
+        # Only show banner on interactive shells
+        if [ -n "$PS1" ]; then
+            export PS1='\[\e[36m\]dbt@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$ '
+            echo
+            echo -e "\e[1;36m── OrcheStack dbt terminal ──\e[0m"
+            echo "  Project dir : /usr/app/dbt (you are here)"
+            echo "  Common cmds : dbt debug · dbt run · dbt test · dbt show"
+            echo "                dbt run --select <model> · dbt build"
+            echo "  Editors     : nano / vim"
+            echo "  Tip: for production fixes, prefer editing on GitHub web UI"
+            echo "       (changes go through review/CI). Use this terminal for"
+            echo "       diagnosing — dbt debug, dbt run --select <failing_model>,"
+            echo "       dbt show --inline 'SELECT ... FROM raw.<table>'."
+            echo
+        fi
+        WELCOME
+        chmod +x /etc/profile.d/00-orchestack-welcome.sh
+
         if command -v ttyd >/dev/null 2>&1; then
           echo "[orchestack] starting ttyd on :7681 (base-path /app/dbt-terminal)"
+          # bash --login sources /etc/profile.d/*.sh on every new
+          # session, so the welcome banner fires on every Open Terminal
+          # click (not just the first container start).
           ttyd --writable \
                --port 7681 \
                --base-path /app/dbt-terminal \
                -t titleFixed='dbt CLI' \
                -t fontSize=14 \
-               bash &
+               bash --login &
           TTYD_PID=$$!
         else
           echo "[orchestack] ttyd missing — Open Terminal will be unavailable"

@@ -355,9 +355,25 @@
         starting:      "Starting MinIO. Ready in ~10s.",
         copy_done:     "MinIO is ready",
       },
+      // dbt's generic (action-less) entry is the fallback if neither
+      // dbt:docs nor dbt:cli matches. In practice the per-action keys
+      // below are what fires because the template always passes an
+      // actionKey for dbt.
       dbt: {
-        starting:      "Starting dbt. Running dbt deps + dbt docs generate so the documentation site is up to date (~30-90s).",
-        copy_done:     "dbt docs is ready",
+        starting:      "Starting dbt…",
+        copy_done:     "dbt is ready",
+      },
+      // Per-action copy. The lookup in orchestackOpenService below
+      // checks SLOW_BOOTSTRAP[`${name}:${actionKey}`] before falling
+      // back to SLOW_BOOTSTRAP[name], so dbt:docs and dbt:cli get
+      // their own progress messaging.
+      'dbt:docs': {
+        starting:      "Starting dbt docs server. Running dbt deps + dbt run + dbt docs generate so the lineage graph reflects your current models (~30-90s on first start).",
+        copy_done:     "dbt docs ready",
+      },
+      'dbt:cli': {
+        starting:      "Opening dbt terminal. ttyd is starting up — your bash session lands in /usr/app/dbt with nano, vim, git, and dbt all available.",
+        copy_done:     "dbt terminal ready",
       },
     };
     const READY_POLL_MS    = 2000;
@@ -428,7 +444,14 @@
       // service permanently "already opening."
       try {
 
-      const slow = SLOW_BOOTSTRAP[serviceName];
+      // Look up per-action copy first (e.g. SLOW_BOOTSTRAP['dbt:cli'])
+      // and fall back to the service-level copy (e.g. SLOW_BOOTSTRAP['dbt']).
+      // Per-action entries let multi-action services like dbt show
+      // accurate progress text — the Terminal click shouldn't claim
+      // "Running dbt docs generate" because that's only what the Docs
+      // path does.
+      const slow = (actionKey && SLOW_BOOTSTRAP[`${serviceName}:${actionKey}`])
+        || SLOW_BOOTSTRAP[serviceName];
       const initialCopy = slow
         ? slow.starting
         : `Starting ${serviceName}. This usually takes 10-20 seconds.`;
