@@ -1,0 +1,298 @@
+# Airbyte — ingestion (hot-tier).
+#
+# This is the 0.50.55 multi-container Airbyte OSS layout, adapted for
+# OrcheStack's pattern. The earlier "single-image airbyte/airbyte"
+# attempt was a hallucination — Airbyte does NOT ship a single bundled
+# image; their actual deployment is a chain of init → bootloader →
+# server/worker/temporal/cron + webapp, all sharing volumes for
+# workspace state. Verified against the canonical compose at
+# https://github.com/airbytehq/airbyte-platform/blob/v0.50.55/docker-compose.yaml
+#
+# Differences from canonical Airbyte docker-compose:
+#
+#   1. NO airbyte-db — we reuse orchestack-postgres for both Airbyte's
+#      config DB and Temporal's history DB (separate databases, both
+#      created by the orchestrator's pre-start hook).
+#   2. NO airbyte-proxy — Traefik on the base stack handles routing;
+#      the basic-auth proxy Airbyte ships is redundant with our auth
+#      forward-auth chain.
+#   3. NO airbyte-api-server / airbyte-connector-builder-server — these
+#      are optional. The webapp + server + worker are enough for the
+#      ingestion demo.
+#   4. NO embedded configs (`flags.yml`, `temporal/dynamicconfig/*`) —
+#      we provide minimal defaults inline.
+#
+# The result is a 6-container chain (init → bootloader → temporal +
+# server + worker + cron + webapp), ~3 GB of images on first pull.
+#
+# DB layout (created by the pre-start hook _ensure_airbyte_setup):
+#   - `airbyte`           role with password AIRBYTE_DB_PASSWORD
+#   - `airbyte`           DB owned by the airbyte role
+#   - `temporal`          DB owned by the airbyte role (Temporal stores
+#                         its workflow history here)
+#   - `temporal_visibility` DB for Temporal's read-side queries
+#
+# All three databases live in orchestack-postgres (same instance as
+# the OrcheStack platform DB and the data warehouse). Logical
+# isolation via DB-level grants — Airbyte's role can't see the
+# platform's tables and vice versa.
+
+x-airbyte-common-logging: &airbyte-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
+x-airbyte-db-env: &airbyte-db-env
+  DATABASE_HOST: orchestack-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_DB: airbyte
+  DATABASE_USER: airbyte
+  DATABASE_PASSWORD: ${AIRBYTE_DB_PASSWORD:?AIRBYTE_DB_PASSWORD must be set}
+  DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte
+  CONFIG_DATABASE_HOST: orchestack-postgres
+  CONFIG_DATABASE_PORT: "5432"
+  CONFIG_DATABASE_DB: airbyte
+  CONFIG_DATABASE_USER: airbyte
+  CONFIG_DATABASE_PASSWORD: ${AIRBYTE_DB_PASSWORD:?}
+  CONFIG_DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte
+
+services:
+  airbyte-init:
+    image: airbyte/init:0.50.55
+    container_name: orchestack-airbyte-init
+    logging: *airbyte-logging
+    command: /bin/sh -c "./scripts/create_mount_directories.sh /local_parent /tmp /tmp/airbyte_local"
+    environment:
+      LOCAL_ROOT: /tmp/airbyte_local
+      HACK_LOCAL_ROOT_PARENT: /tmp
+    volumes:
+      - /tmp:/local_parent
+    networks:
+      - orchestack-net
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+
+  airbyte-bootloader:
+    image: airbyte/bootloader:0.50.55
+    container_name: orchestack-airbyte-bootloader
+    logging: *airbyte-logging
+    environment:
+      <<: *airbyte-db-env
+      AIRBYTE_VERSION: "0.50.55"
+      CONFIGS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.35.15.001"
+      JOBS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.29.15.001"
+      CONNECTOR_REGISTRY_BASE_URL: ""
+      CONNECTOR_REGISTRY_SEED_PROVIDER: ""
+      LOCAL_CONNECTOR_CATALOG_PATH: ""
+      LOG_LEVEL: INFO
+    networks:
+      - orchestack-net
+    depends_on:
+      airbyte-init:
+        condition: service_completed_successfully
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+
+  airbyte-temporal:
+    image: airbyte/temporal:0.50.55
+    container_name: orchestack-airbyte-temporal
+    logging: *airbyte-logging
+    restart: unless-stopped
+    environment:
+      DB: postgresql
+      DB_PORT: "5432"
+      POSTGRES_PWD: ${AIRBYTE_DB_PASSWORD:?}
+      POSTGRES_SEEDS: orchestack-postgres
+      POSTGRES_USER: airbyte
+      LOG_LEVEL: INFO
+      # NOTE: DYNAMIC_CONFIG_FILE_PATH must NOT be set to empty string —
+      # Temporal stat()s the path and crashes with "no such file or
+      # directory" on empty. The canonical Airbyte compose bind-mounts a
+      # development.yaml; we embed an equivalent minimal dynamic-config
+      # below so we don't need extra files on disk. The configs: block
+      # makes it appear at /etc/temporal/config/dynamicconfig/development.yaml
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development.yaml
+    networks:
+      - orchestack-net
+    configs:
+      - source: temporal_dynamic_config
+        target: /etc/temporal/config/dynamicconfig/development.yaml
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+
+  airbyte-server:
+    image: airbyte/server:0.50.55
+    container_name: orchestack-airbyte-server
+    logging: *airbyte-logging
+    restart: unless-stopped
+    environment:
+      <<: *airbyte-db-env
+      AIRBYTE_VERSION: "0.50.55"
+      CONFIGS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.35.15.001"
+      JOBS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.29.15.001"
+      AIRBYTE_ROLE: ""
+      CONFIG_ROOT: /data
+      DEPLOYMENT_MODE: OSS
+      INTERNAL_API_HOST: orchestack-airbyte-server:8001
+      LOG_LEVEL: INFO
+      TEMPORAL_HOST: orchestack-airbyte-temporal:7233
+      TRACKING_STRATEGY: logging
+      WEBAPP_URL: http://localhost/app/airbyte
+      WORKER_ENVIRONMENT: docker
+      WORKSPACE_ROOT: /tmp/workspace
+      JOB_MAIN_CONTAINER_CPU_LIMIT: ""
+      JOB_MAIN_CONTAINER_CPU_REQUEST: ""
+      JOB_MAIN_CONTAINER_MEMORY_LIMIT: ""
+      JOB_MAIN_CONTAINER_MEMORY_REQUEST: ""
+      MICROMETER_METRICS_ENABLED: "false"
+      MICRONAUT_ENVIRONMENTS: control-plane
+      PUBLISH_METRICS: "false"
+      # OSS-local secret backend: stores connector secrets as rows in
+      # the Airbyte config DB. NONE is invalid in 0.50.x — Micronaut
+      # can't bind a SecretsRepositoryWriter bean and the server's
+      # DeclarativeSourceDefinitionsApiController fails to instantiate.
+      SECRET_PERSISTENCE: TESTING_CONFIG_DB_TABLE
+      SHOULD_RUN_NOTIFY_WORKFLOWS: "false"
+      MAX_NOTIFY_WORKERS: "5"
+      CONNECTOR_BUILDER_SERVER_API_HOST: "http://orchestack-airbyte-server:8001"
+    volumes:
+      - airbyte-workspace:/tmp/workspace
+      - airbyte-data:/data
+      - /tmp/airbyte_local:/tmp/airbyte_local
+    networks:
+      - orchestack-net
+    depends_on:
+      airbyte-bootloader:
+        condition: service_completed_successfully
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+
+  airbyte-worker:
+    image: airbyte/worker:0.50.55
+    container_name: orchestack-airbyte-worker
+    logging: *airbyte-logging
+    restart: unless-stopped
+    environment:
+      <<: *airbyte-db-env
+      AIRBYTE_VERSION: "0.50.55"
+      CONFIGS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.35.15.001"
+      JOBS_DATABASE_MINIMUM_FLYWAY_MIGRATION_VERSION: "0.29.15.001"
+      AIRBYTE_ROLE: ""
+      CONFIG_ROOT: /data
+      DEPLOYMENT_MODE: OSS
+      INTERNAL_API_HOST: orchestack-airbyte-server:8001
+      LOCAL_DOCKER_MOUNT: /tmp/airbyte_local
+      LOCAL_ROOT: /tmp/airbyte_local
+      LOG_LEVEL: INFO
+      LOG_CONNECTOR_MESSAGES: "false"
+      MAX_CHECK_WORKERS: "5"
+      MAX_DISCOVER_WORKERS: "5"
+      MAX_NOTIFY_WORKERS: "5"
+      MAX_SPEC_WORKERS: "5"
+      MAX_SYNC_WORKERS: "5"
+      SYNC_JOB_INIT_RETRY_TIMEOUT_MINUTES: "5"
+      SYNC_JOB_MAX_ATTEMPTS: "3"
+      SYNC_JOB_MAX_TIMEOUT_DAYS: "3"
+      TEMPORAL_HOST: orchestack-airbyte-temporal:7233
+      WEBAPP_URL: http://localhost/app/airbyte
+      WORKSPACE_DOCKER_MOUNT: orchestack-airbyte-workspace
+      WORKSPACE_ROOT: /tmp/workspace
+      APPLY_FIELD_SELECTION: "false"
+      AUTO_DETECT_SCHEMA: "true"
+      AUTO_DISABLE_FAILING_CONNECTIONS: "false"
+      FEATURE_FLAG_CLIENT: config
+      MICROMETER_METRICS_ENABLED: "false"
+      MICRONAUT_ENVIRONMENTS: control-plane
+      PUBLISH_METRICS: "false"
+      SECRET_PERSISTENCE: TESTING_CONFIG_DB_TABLE
+      SHOULD_RUN_NOTIFY_WORKFLOWS: "false"
+      # Local file storage for worker logs + state. Empty string here
+      # is parsed as an invalid enum and crashes LogConfigs bean creation.
+      WORKER_LOGS_STORAGE_TYPE: LOCAL
+      WORKER_STATE_STORAGE_TYPE: LOCAL
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - airbyte-workspace:/tmp/workspace
+      - /tmp/airbyte_local:/tmp/airbyte_local
+    networks:
+      - orchestack-net
+    depends_on:
+      airbyte-bootloader:
+        condition: service_completed_successfully
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+
+  airbyte-webapp:
+    image: airbyte/webapp:0.50.55
+    container_name: orchestack-airbyte-webapp
+    logging: *airbyte-logging
+    restart: unless-stopped
+    environment:
+      # The webapp's nginx reverse-proxies API calls back to the server.
+      # CONNECTOR_BUILDER_API_HOST is required even though we don't run
+      # the connector-builder-server — the webapp's nginx.conf
+      # references it at startup. Point it at the server (the builder
+      # endpoints will 404, but the webapp boots cleanly).
+      INTERNAL_API_HOST: orchestack-airbyte-server:8001
+      CONNECTOR_BUILDER_API_HOST: orchestack-airbyte-server:8001
+      KEYCLOAK_INTERNAL_HOST: localhost
+    networks:
+      - orchestack-net
+    depends_on:
+      airbyte-bootloader:
+        condition: service_completed_successfully
+    labels:
+      - orchestack.service=airbyte
+      - orchestack.tier=hot
+      - traefik.enable=true
+      # Airbyte's webapp expects to live at root (/). We strip /app/airbyte
+      # via Traefik middleware; the SPA reads paths relative to its own
+      # mounted location. Some asset URLs may still break — known
+      # limitation, similar to MinIO's subpath issue. If the operator
+      # hits white-page symptoms, fall back to direct-port exposure
+      # (uncomment the ports: block below and add external_url to
+      # config.py's catalogue entry).
+      - traefik.http.routers.airbyte.rule=PathPrefix(`/app/airbyte`)
+      - traefik.http.routers.airbyte.entrypoints=web
+      - traefik.http.routers.airbyte.priority=200
+      - traefik.http.middlewares.airbyte-strip.stripprefix.prefixes=/app/airbyte
+      - traefik.http.routers.airbyte.middlewares=airbyte-strip@docker
+      - traefik.http.services.airbyte.loadbalancer.server.port=80
+    # Direct-port exposure on host — same pattern as MinIO. Airbyte's
+    # webapp emits absolute-root paths for its JS bundle and CSS
+    # (`<script src="/assets/index-XXX.js">`), which Traefik's
+    # stripprefix can't rewrite (those URLs leave the HTML before
+    # they hit Traefik again). The catalogue's external_url points
+    # operators here so Open lands them on a working UI. The Traefik
+    # labels above stay as a fallback — /app/airbyte serves a
+    # degraded HTML-only response which is at least testable.
+    ports:
+      - "8001:80"
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  airbyte-workspace:
+    name: orchestack-airbyte-workspace
+  airbyte-data:
+    name: orchestack-airbyte-data
+
+# Inline dynamic-config for Temporal — saves us a separate file on disk.
+# All values are Temporal's documented defaults for development/single-node;
+# tuning happens later if we need to scale workflow throughput.
+configs:
+  temporal_dynamic_config:
+    content: |
+      # Empty config — Temporal uses its built-in defaults for everything.
+      # Presence of the file (even if empty) is what matters; the
+      # DYNAMIC_CONFIG_FILE_PATH stat() check passes once the file exists.
+

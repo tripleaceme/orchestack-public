@@ -1,0 +1,72 @@
+# OrcheStack — Traefik v3 static configuration.
+#
+# This file is mounted read-only into the proxy container at /etc/traefik/traefik.yml.
+# It defines THINGS THAT DON'T CHANGE AT RUNTIME — listening ports, providers,
+# logging. Per-service routing rules are NOT here; they live as `labels:` on
+# each service in docker-compose.yml (Docker provider) and as files in
+# /etc/traefik/dynamic/ (file provider) for things that aren't container-scoped.
+
+# ============================================================================
+# Entry points — the TCP ports Traefik listens on.
+# ============================================================================
+entryPoints:
+  web:
+    address: ":80"
+    # M5 enhancement: redirect HTTP → HTTPS once Let's Encrypt is wired in.
+    # http:
+    #   redirections:
+    #     entryPoint:
+    #       to: websecure
+    #       scheme: https
+  websecure:
+    address: ":443"
+    # M5 enhancement: enable TLS via Let's Encrypt resolver.
+    # http:
+    #   tls:
+    #     certResolver: letsencrypt
+
+# ============================================================================
+# Providers — where Traefik discovers routing configuration.
+# ============================================================================
+providers:
+  docker:
+    # Traefik talks to the socket-proxy container over the internal Docker
+    # network instead of mounting /var/run/docker.sock directly. The proxy
+    # is the only container holding the host socket and exposes a
+    # read-only HTTP API on port 2375. See the socket-proxy service in
+    # docker-compose.yml for the rationale.
+    endpoint: "tcp://socket-proxy:2375"
+    # Only route to containers explicitly opted-in via `traefik.enable=true`.
+    # This means the postgres, orchestrator, and socket-proxy services
+    # (which have no labels) are invisible to Traefik — exactly what we
+    # want for non-HTTP services.
+    exposedByDefault: false
+    network: orchestack-net
+  file:
+    # Mounted via the compose file at /etc/traefik/dynamic. Currently empty —
+    # this is where things like global middlewares or non-container routes
+    # would live if we need them later (e.g. routing to an external service).
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# ============================================================================
+# API + dashboard.
+# `insecure: true` exposes the dashboard at http://localhost:8080/dashboard/
+# without authentication. This is acceptable for development; production
+# deployments should set `insecure: false` and gate the dashboard behind
+# basic auth or remove it entirely.
+# ============================================================================
+api:
+  dashboard: true
+  insecure: true
+
+# ============================================================================
+# Logging — stdout in INFO mode. Compose collects this into docker logs.
+# ============================================================================
+log:
+  level: INFO
+  format: common
+accessLog:
+  filePath: "/dev/stdout"
+  format: common
+  bufferingSize: 100

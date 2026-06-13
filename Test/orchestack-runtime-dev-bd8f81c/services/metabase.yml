@@ -1,0 +1,108 @@
+# Metabase — BI dashboard (hot-tier).
+#
+# Brought up by the orchestrator on first session via:
+#   docker compose -f services/metabase.yml -p orchestack-service-metabase up -d
+#
+# Hot-tier: stays running once started. The reconciler exempts services
+# with `orchestack.tier=hot` from idle sweeps because Metabase typically
+# serves dashboards on a schedule (Slack snapshots, scheduled emails) —
+# stopping it would interrupt those.
+#
+# Network: joins the existing `orchestack-net` bridge created by the base
+# compose stack. Marked `external: true` so this snippet doesn't try to
+# create or own the network.
+#
+# Postgres reuse: stores its own metadata in a `metabase` database inside
+# the platform Postgres instance. Created on first start by Metabase
+# itself (MB_DB_TYPE=postgres + DB doesn't exist → autocreate).
+
+services:
+  metabase:
+    image: metabase/metabase:v0.51.7
+    container_name: orchestack-metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: orchestack-postgres
+      MB_DB_PORT: 5432
+      # Per-service PostgreSQL role + dedicated database. Architecture
+      # (design/m4-multi-db.md):
+      #   - `orchestack`     platform internals (users, audit)
+      #   - `data_warehouse` operator's analytical data
+      #   - `metabase`       Metabase's own state — DEDICATED DB
+      #   - `services`       shared DB with schemas for tools that DO
+      #                      honor a configurable schema (Airflow,
+      #                      OpenMetadata when M4 lands)
+      # Metabase gets its OWN database (not a schema in `services`)
+      # because Metabase 0.51's initialization migration HARDCODES
+      # `public.<tablename>` in every CREATE TABLE statement —
+      # MB_DB_SCHEMA is honored only for runtime queries, not for the
+      # first-boot Liquibase migration. Tested empirically June 12; see
+      # design/m4-multi-db.md §1 for the diagnostic that surfaced this.
+      MB_DB_USER: metabase
+      MB_DB_PASS: ${METABASE_DB_PASSWORD:-}
+      MB_DB_DBNAME: metabase
+      # Subpath deployment — Metabase is served at /app/metabase/ via Traefik
+      # so it shares the same host as the rest of OrcheStack.
+      MB_SITE_URL: http://localhost/app/metabase
+    networks:
+      - orchestack-net
+    # Metabase serves on port 3000 once its internal schema bootstrap
+    # completes. First-start takes 30–60s (JVM warm + Liquibase migration);
+    # subsequent starts ~10s. Traefik respects Docker's container health
+    # status by default — while this check is in the start_period grace
+    # window or actively failing, Traefik excludes the container from
+    # its loadbalancer pool. Once the container goes healthy, traffic
+    # flows. No Traefik-level healthcheck label needed (see the labels
+    # block below for the cautionary note).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18           # 18 * 10s = 3 min before declared unhealthy
+      start_period: 30s     # Don't count failures during the first 30s
+    labels:
+      # Reconciler tags — these are what the orchestrator's docker_ops
+      # filters on. Don't change without also updating SERVICE_CATALOGUE
+      # in app/config.py.
+      - orchestack.service=metabase
+      - orchestack.tier=hot
+      # Traefik routing — path-based, with prefix stripped before forwarding
+      # so Metabase's internal routes don't have to know about /app/metabase.
+      - traefik.enable=true
+      - traefik.http.routers.metabase.rule=PathPrefix(`/app/metabase`)
+      - traefik.http.routers.metabase.entrypoints=web
+      # Explicit priority so the longer /app/metabase prefix definitively
+      # beats the dashboard's /app prefix. Without this, Traefik's
+      # rule-length tiebreaker SHOULD pick metabase (longer prefix), but
+      # M3 testing surfaced cases where /app/metabase served the dashboard
+      # FastAPI 404 instead — meaning the metabase router was either not
+      # registered or lost the priority race. Setting priority=200 (default
+      # rule-length is ~30) makes it unambiguous. The dashboard remains at
+      # default priority so it still catches /app, /app/sessions, etc.
+      - traefik.http.routers.metabase.priority=200
+      - traefik.http.middlewares.metabase-strip.stripprefix.prefixes=/app/metabase
+      - traefik.http.routers.metabase.middlewares=metabase-strip@docker
+      - traefik.http.services.metabase.loadbalancer.server.port=3000
+      # No Traefik loadbalancer healthcheck — we rely on the Docker
+      # container healthcheck above. Metabase's /api/health returns 503
+      # during the 60-90s init phase (Jetty up but Liquibase migration
+      # still running), and a Traefik-level check would mark the backend
+      # down for that entire window. With no healthcheck loop reaches
+      # `/app/metabase` are routed straight at the container; the
+      # browser may see Metabase's own "Please wait..." page until init
+      # finishes, which is the correct UX for a slow-starting service.
+
+  # ===================================================================
+  # IF YOU ARE TEMPTED TO RE-ADD A LOADBALANCER HEALTHCHECK HERE: the
+  # symptom you're trying to fix (502 Bad Gateway during the init
+  # window) is downstream of `start_period` on the container check.
+  # Bump `start_period` instead. A duplicate Traefik check just causes
+  # /app/metabase to fall through to /app (the dashboard's PathPrefix)
+  # which serves a FastAPI 404 — the bug shipped in commit cef353c.
+  # ===================================================================
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net

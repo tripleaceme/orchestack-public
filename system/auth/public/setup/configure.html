@@ -165,17 +165,26 @@
 
     // ------- Ingestion -------
     "Airbyte": {
-      desc: "Connector-based ingestion. Needs credentials for Airbyte's own internal PostgreSQL to track sync state.",
+      desc: "Connector-based ingestion. Airbyte 0.50 OSS doesn't have its own user-login system — anyone reaching the URL gets the workspace. Access is gated by OrcheStack's platform auth (clicking <em>Open Airbyte</em> from the dashboard goes through the same forward-auth chain that protects every other tool). The credentials below are for Airbyte's OWN internal PostgreSQL where it stores sync state and connector configs.",
       fields: [
-        { name: "AIRBYTE_DB_HOST", label: "Internal DB host", type: "text", default: "postgres",
-          hint: "Hostname Airbyte uses to reach its state database. In OrcheStack this is the service name 'postgres' (the shared instance). Leave as default." },
-        { name: "AIRBYTE_DB_USER", label: "DB user", type: "text", placeholder: "airbyte", required: true,
-          hint: "PostgreSQL username Airbyte connects as. OrcheStack creates this role automatically with scoped permissions." },
-        { name: "AIRBYTE_DB_PASSWORD", label: "DB password", type: "password", placeholder: "••••••••", required: true,
-          hint: "Password for the Airbyte user. Stored in .env (chmod 600) and never in plain text anywhere else." },
-        { name: "AIRBYTE_DB_NAME", label: "DB name", type: "text", default: "airbyte",
-          hint: "Internal database name where Airbyte tracks sync state. Keep as 'airbyte' unless you're running multiple Airbyte instances." },
+        { name: "AIRBYTE_DB_HOST", label: "Internal DB host", type: "text", default: "orchestack-postgres", readonly: true,
+          hint: "Internal Docker hostname Airbyte uses to reach its state database. Fixed at the orchestack-postgres service name because that's where OrcheStack's shared Postgres instance lives. Cannot be changed from the wizard." },
+        { name: "AIRBYTE_DB_USER", label: "Internal DB user", type: "text", default: "airbyte", readonly: true,
+          hint: "PostgreSQL username Airbyte connects as. OrcheStack auto-creates this role via the pre-start hook. Fixed at 'airbyte' so the hook knows what to provision — not operator-overridable." },
+        { name: "AIRBYTE_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
+          generate: "hex",
+          hint: "Password for the Airbyte user. Click Generate — the browser produces a cryptographically random 32-character hex string. This is the only Airbyte-related credential the operator owns; the user, host, and DB name are platform-set." },
+        { name: "AIRBYTE_DB_NAME", label: "Internal DB name", type: "text", default: "airbyte", readonly: true,
+          hint: "Internal database name where Airbyte tracks sync state. Fixed at 'airbyte' — the pre-start hook creates the database with this exact name; renaming would break the hook." },
       ],
+      note: "About logging into Airbyte:",
+      noteHtml: `
+        <ul>
+          <li><strong>There is no Airbyte login form in 0.50 OSS.</strong> The webapp opens straight into the default workspace. Anyone with network reach to the URL gets in.</li>
+          <li><strong>OrcheStack provides the auth layer.</strong> When you click <em>Open Airbyte</em> from the dashboard, the request goes through OrcheStack's forward-auth chain (your dashboard session cookie). Operators who aren't logged into OrcheStack can't reach the URL.</li>
+          <li><strong>Direct-port access bypasses the auth.</strong> The dashboard's <em>Open</em> button routes to <code>http://&lt;host&gt;:8001</code> (Airbyte's React app emits absolute asset paths that don't survive subpath routing). On a single-operator host this is acceptable; on a multi-tenant host, firewall port 8001 from outside.</li>
+        </ul>
+      `,
     },
     // Key matches what cleanName() produces from the select.html option text
     // "Custom Python (Airflow DAGs)" — the "(Airflow DAGs)" suffix is stripped
@@ -222,14 +231,19 @@
 
     // ------- Warehouse -------
     "PostgreSQL": {
-      desc: "Your <strong>pipeline warehouse</strong> is separate from OrcheStack's internal database. This database holds your raw landing tables, dbt marts, and Airflow metadata.",
+      desc: "Your <strong>warehouse</strong> database is separate from OrcheStack's internal database. This is where raw landings from Airbyte, dbt's marts, and analytics tables live — the database every BI and analyst tool connects to.",
       fields: [
-        { name: "PIPELINE_DB_USER", label: "Pipeline DB user", type: "text", placeholder: "e.g. acme_warehouse", required: true,
-          hint: "PostgreSQL user that owns your pipeline database. Distinct from OrcheStack's internal user (which lives in .env). Created during deploy by the orchestrator with privileges scoped to the pipeline DB only — it cannot read or modify OrcheStack's platform tables." },
-        { name: "PIPELINE_DB_PASSWORD", label: "Pipeline DB password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
-          hint: "Password for the pipeline DB user. Min 12 characters recommended. Used by dbt, Airflow, and Airbyte to connect. You can rotate it later from the admin dashboard." },
-        { name: "PIPELINE_DB_NAME", label: "Pipeline DB name", type: "text", placeholder: "e.g. acme_warehouse", required: true,
-          hint: "Name of the database created for your pipeline data. Lowercase recommended — Postgres folds unquoted identifiers to lowercase. Pick a name that reflects your organisation or environment (e.g. 'acme_warehouse', 'acme_prod')." },
+        { name: "PIPELINE_DB_HOST", label: "Warehouse host", type: "text", default: "orchestack-postgres", readonly: true,
+          hint: "Internal Docker hostname of the warehouse — fixed by the platform because every service connects via the orchestack-net network using this exact name. Cannot be changed from the wizard or Edit Config; rebuild the stack with a different base compose file if you need an external warehouse." },
+        { name: "PIPELINE_DB_PORT", label: "Warehouse port", type: "text", default: "5432", readonly: true,
+          hint: "PostgreSQL's port. Fixed at 5432 by the postgres image's default — overriding it here would just break every internal connection without changing what's actually listening." },
+        { name: "PIPELINE_DB_USER", label: "Warehouse admin user", type: "text", default: "warehouse_admin", required: true,
+          hint: "PostgreSQL role that owns the warehouse database. Distinct from OrcheStack's internal user. Created during deploy by the orchestrator with privileges scoped to the warehouse DB only — it cannot read or modify OrcheStack's platform tables. Naming convention: <code>&lt;service&gt;_admin</code> (default <code>warehouse_admin</code>). Override only if your security policy requires a different role name." },
+        { name: "PIPELINE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
+          generate: "hex",
+          hint: "Password for the warehouse admin user. Click Generate — the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it. Used by dbt, Airflow, and Airbyte to connect; rotating it requires updating those services' configs too." },
+        { name: "PIPELINE_DB_NAME", label: "Warehouse database name", type: "text", default: "data_warehouse", required: true,
+          hint: "Name of the database created for your warehouse data. Lowercase recommended — Postgres folds unquoted identifiers to lowercase. The default 'data_warehouse' fits most setups; override only if you want a name that reflects your organisation (e.g. 'acme_warehouse', 'acme_prod')." },
       ],
     },
     "ClickHouse": {

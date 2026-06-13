@@ -1,0 +1,309 @@
+# dbt Core — transformation runner with concurrent docs server + web terminal (cold-tier).
+#
+# Two operator-facing surfaces, both running in the same container:
+#
+#   - dbt-docs   on port 8080 (host:8002 direct-port — dbt-docs emits
+#                absolute-root asset paths, can't use subpath routing).
+#                "Open Docs" button in the dashboard.
+#
+#   - ttyd shell on port 7681 served at /app/dbt-terminal via Traefik
+#                subpath routing (ttyd honors --base-path cleanly,
+#                which means we route it through OrcheStack's
+#                forward-auth chain — no separate password, no
+#                exposed-shell-port). "Open Terminal" button.
+#
+# Why both surfaces matter:
+#
+#   - dbt-docs is what analytics engineers show stakeholders and what
+#     they consult to confirm a column's meaning.
+#   - The terminal is what they REACH FOR when production fails. An
+#     Airflow-flagged model failure means "drop in, dbt run --select
+#     that_model, dbt debug, dbt show --inline, edit a model, re-run."
+#     Without an in-browser terminal the only path is host SSH +
+#     docker exec — viable for someone running the host, opaque to a
+#     remote analyst.
+#
+# Process model: both servers run in the foreground via `wait -n` —
+# if either exits, the container exits and Docker restarts it.
+
+services:
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    container_name: orchestack-dbt
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+
+        # ── 0a. Install editors + git for in-terminal model editing ────
+        # The dbt-postgres image is python:3.12-slim — no nano, no vim,
+        # no git, no less. Engineers troubleshooting a failing model in
+        # the in-browser terminal need at minimum an editor (to fix the
+        # SQL) and less (to page through dbt's verbose output). git is
+        # already needed for DBT_REPO_URL cloning. Cache the install
+        # state in a marker file so we only pay the apt-get cost on
+        # the first start of a fresh install.
+        if [ ! -f /var/lib/dbt-tools-installed ]; then
+          echo "[orchestack] installing editors (nano, vim, less)…"
+          apt-get update -qq && \
+          apt-get install -y --no-install-recommends nano vim less git 2>&1 | \
+              sed 's/^/[apt] /' && \
+          rm -rf /var/lib/apt/lists/* && \
+          touch /var/lib/dbt-tools-installed
+        fi
+
+        # ── 0b. Install ttyd if not already present ────────────────────
+        # ttyd is a static Go binary ~2MB. We fetch from the GitHub
+        # release on first start; subsequent starts skip the download
+        # because the file is in the volume-mounted /usr/local/bin
+        # — but we still re-check in case the image was rebuilt.
+        if ! command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] downloading ttyd…"
+          python -c "
+        import urllib.request
+        url = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        urllib.request.urlretrieve(url, '/usr/local/bin/ttyd')
+        " || echo "[orchestack] ttyd download failed — terminal will be unavailable"
+          chmod +x /usr/local/bin/ttyd 2>/dev/null || true
+        fi
+
+        # ── 1. Ensure a project exists FIRST ───────────────────────────
+        # We need the project's dbt_project.yml on disk before we can
+        # generate profiles.yml — the profile name in profiles.yml MUST
+        # match the `profile:` field in dbt_project.yml or dbt refuses
+        # to run with "could not find profile named '<name>'". So
+        # clone the repo first, THEN read the profile name and write
+        # the profile.
+        if [ -n "$$DBT_REPO_URL" ]; then
+          if [ -d /usr/app/dbt/.git ]; then
+            cd /usr/app/dbt && git fetch && git reset --hard "origin/$${DBT_REPO_BRANCH:-main}" || true
+          else
+            git clone -b "$${DBT_REPO_BRANCH:-main}" "$$DBT_REPO_URL" /usr/app/dbt || true
+          fi
+        elif [ ! -f /usr/app/dbt/dbt_project.yml ]; then
+          mkdir -p /usr/app/dbt/models
+          cat > /usr/app/dbt/dbt_project.yml <<'PROJECT'
+        name: orchestack_demo
+        version: '1.0.0'
+        config-version: 2
+        profile: default
+        model-paths: ["models"]
+        target-path: "target"
+        clean-targets: ["target", "dbt_packages"]
+        models:
+          orchestack_demo:
+            +materialized: view
+        PROJECT
+          cat > /usr/app/dbt/models/warehouse_tables.sql <<'MODEL'
+        -- Demo model: catalogue of every table in the warehouse.
+        -- Replace by mounting your own project at /usr/app/dbt.
+        select
+            schemaname,
+            tablename,
+            tableowner,
+            current_timestamp as ingested_at
+        from pg_catalog.pg_tables
+        where schemaname not in ('pg_catalog', 'information_schema')
+        MODEL
+          cat > /usr/app/dbt/models/schema.yml <<'SCHEMA'
+        version: 2
+        models:
+          - name: warehouse_tables
+            description: |
+              Catalogue of every operator-created table in the warehouse,
+              with the owner and ingest timestamp. This is a demo model —
+              replace it with your own by setting DBT_REPO_URL in the
+              dashboard's Edit Config page, or by mounting a project into
+              the dbt-repo volume.
+            columns:
+              - name: schemaname
+                description: PostgreSQL schema name.
+                tests: [not_null]
+              - name: tablename
+                description: Table name within the schema.
+                tests: [not_null]
+              - name: tableowner
+                description: PostgreSQL role that owns the table.
+              - name: ingested_at
+                description: Timestamp when this row was produced by dbt.
+        SCHEMA
+        fi
+
+        cd /usr/app/dbt
+
+        # ── 1b. Materialise profiles.yml using the project's profile name ─
+        # Read the `profile:` field from dbt_project.yml so the generated
+        # profiles.yml matches whatever name the operator's repo uses.
+        # If the repo doesn't have a profile field (malformed) or
+        # dbt_project.yml is missing for any reason, fall back to
+        # "default" which matches our demo project.
+        DBT_PROFILE_NAME=$$(
+          python -c "
+        import sys, re, yaml
+        try:
+            with open('/usr/app/dbt/dbt_project.yml') as f:
+                p = yaml.safe_load(f)
+            print((p or {}).get('profile', 'default'))
+        except Exception:
+            print('default')
+        " 2>/dev/null
+        )
+        if [ -z "$$DBT_PROFILE_NAME" ]; then
+          DBT_PROFILE_NAME=default
+        fi
+        echo "[orchestack] generating profiles.yml with profile name: $$DBT_PROFILE_NAME (target: prod)"
+        mkdir -p /root/.dbt
+        cat > /root/.dbt/profiles.yml <<PROFILES
+        $$DBT_PROFILE_NAME:
+          target: prod
+          outputs:
+            prod:
+              type: postgres
+              host: "{{ env_var('DBT_PG_HOST') }}"
+              port: "{{ env_var('DBT_PG_PORT') | int }}"
+              user: "{{ env_var('DBT_PG_USER') }}"
+              password: "{{ env_var('DBT_PG_PASSWORD') }}"
+              dbname: "{{ env_var('DBT_PG_DBNAME') }}"
+              schema: "{{ env_var('DBT_PG_SCHEMA') }}"
+              threads: 4
+              keepalives_idle: 0
+        PROFILES
+
+        # ── 3. Build + generate docs (best-effort, in background) ──────
+        # Why background: ttyd should come up fast so the operator can
+        # drop in IMMEDIATELY when troubleshooting, even while docs is
+        # still generating. The dashboard's per-action /ready probe lets
+        # the Open Terminal button work as soon as ttyd is listening.
+        (
+          dbt deps          2>&1 | sed 's/^/[dbt deps] /'          || echo "[orchestack] dbt deps failed"
+          dbt run           2>&1 | sed 's/^/[dbt run] /'           || echo "[orchestack] dbt run failed"
+          dbt docs generate 2>&1 | sed 's/^/[dbt docs gen] /'      || echo "[orchestack] dbt docs generate failed"
+          echo "[orchestack] starting dbt docs serve on :8080"
+          exec dbt docs serve --host 0.0.0.0 --port 8080 --no-browser
+        ) &
+        DOCS_PID=$$!
+
+        # ── 4. ttyd web terminal ──────────────────────────────────────
+        # --writable lets the operator actually type; without it ttyd
+        # serves a read-only feed.
+        # --base-path /app/dbt-terminal makes ttyd honor the Traefik
+        # subpath so the auth chain works (forward-auth via
+        # orchestack-auth gates the websocket).
+        # -t titleFixed='dbt CLI' sets the browser tab title.
+        # PROMPT_COMMAND sets a friendly bash prompt that shows the
+        # operator they're inside the dbt project directory.
+        export PS1='\[\e[36m\]dbt@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$$ '
+        cd /usr/app/dbt
+
+        # Write a /etc/profile.d snippet so the welcome banner shows on
+        # every new ttyd session, not just the first. The banner is the
+        # operator's first impression of the terminal — make it tell
+        # them what's available so they don't have to guess.
+        cat > /etc/profile.d/00-orchestack-welcome.sh <<'WELCOME'
+        # Only show banner on interactive shells
+        if [ -n "$PS1" ]; then
+            export PS1='\[\e[36m\]dbt@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$ '
+            echo
+            echo -e "\e[1;36m── OrcheStack dbt terminal ──\e[0m"
+            echo "  Project dir : /usr/app/dbt (you are here)"
+            echo "  Common cmds : dbt debug · dbt run · dbt test · dbt show"
+            echo "                dbt run --select <model> · dbt build"
+            echo "  Editors     : nano / vim"
+            echo "  Tip: for production fixes, prefer editing on GitHub web UI"
+            echo "       (changes go through review/CI). Use this terminal for"
+            echo "       diagnosing — dbt debug, dbt run --select <failing_model>,"
+            echo "       dbt show --inline 'SELECT ... FROM raw.<table>'."
+            echo
+        fi
+        WELCOME
+        chmod +x /etc/profile.d/00-orchestack-welcome.sh
+
+        if command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] starting ttyd on :7681 (base-path /app/dbt-terminal)"
+          # bash --login sources /etc/profile.d/*.sh on every new
+          # session, so the welcome banner fires on every Open Terminal
+          # click (not just the first container start).
+          ttyd --writable \
+               --port 7681 \
+               --base-path /app/dbt-terminal \
+               -t titleFixed='dbt CLI' \
+               -t fontSize=14 \
+               bash --login &
+          TTYD_PID=$$!
+        else
+          echo "[orchestack] ttyd missing — Open Terminal will be unavailable"
+          TTYD_PID=""
+        fi
+
+        # ── 5. Wait for either to exit ────────────────────────────────
+        # If docs serve dies (e.g. operator interrupted with dbt run
+        # mid-generate), or ttyd dies (network blip), the container
+        # exits and Docker's restart=unless-stopped brings it back.
+        if [ -n "$$TTYD_PID" ]; then
+          wait -n $$DOCS_PID $$TTYD_PID
+        else
+          wait $$DOCS_PID
+        fi
+
+    environment:
+      DBT_REPO_URL:    ${DBT_REPO_URL:-}
+      DBT_REPO_BRANCH: ${DBT_REPO_BRANCH:-main}
+      DBT_PG_HOST:     orchestack-postgres
+      DBT_PG_PORT:     "5432"
+      # Service admin role created + managed by _ensure_dbt_setup hook.
+      # Naming convention: <service>_admin for the auto-provisioned role
+      # that runs the service's writes against the warehouse. Operators
+      # can override via DBT_PG_USER in Edit Config later.
+      DBT_PG_USER:     ${DBT_PG_USER:-dbt_admin}
+      DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:?DBT_DB_PASSWORD must be set}
+      # Target database. Defaults to the pipeline warehouse but operators
+      # can override via DBT_DATABASE in Edit Config if they want dbt
+      # to write to a dedicated analytics DB instead of the shared one.
+      DBT_PG_DBNAME:   ${DBT_DATABASE:-${PIPELINE_DB_NAME:-data_warehouse}}
+      DBT_PG_SCHEMA:   ${DBT_SCHEMA:-marts}
+    networks:
+      - orchestack-net
+    volumes:
+      - dbt-repo:/usr/app/dbt
+      - dbt-profiles:/root/.dbt
+      # ttyd binary lives in the volume so we only download it on the
+      # first start of each fresh install.
+      - dbt-bin:/usr/local/bin
+    ports:
+      # dbt-docs only — ttyd goes through Traefik subpath. Direct-port
+      # for dbt-docs because it emits absolute-root asset paths (same
+      # constraint as MinIO and Airbyte).
+      - "8002:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 60s
+    labels:
+      - orchestack.service=dbt
+      - orchestack.tier=cold
+      # Traefik labels for the ttyd terminal at /app/dbt-terminal.
+      # No stripprefix — ttyd honors --base-path internally so it
+      # generates URLs with the prefix already included.
+      - traefik.enable=true
+      - traefik.http.routers.dbt-terminal.rule=PathPrefix(`/app/dbt-terminal`)
+      - traefik.http.routers.dbt-terminal.entrypoints=web
+      - traefik.http.routers.dbt-terminal.priority=200
+      - traefik.http.services.dbt-terminal.loadbalancer.server.port=7681
+
+networks:
+  orchestack-net:
+    external: true
+    name: orchestack-net
+
+volumes:
+  dbt-repo:
+    name: orchestack-dbt-repo
+  dbt-profiles:
+    name: orchestack-dbt-profiles
+  dbt-bin:
+    name: orchestack-dbt-bin

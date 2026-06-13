@@ -49,9 +49,21 @@ router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 
 
 # Read-only keys — the dashboard renders these as informational only.
+# Operators can SEE the value but the input is disabled with a "read-only"
+# badge. Used for two distinct concepts:
+#   - Platform decisions: image tags, internal Docker hostnames, ports
+#   - Things rotating would break: ORCHESTACK_DB_PASSWORD
+# Operator's principle: anything OrcheStack sets to a fixed value that
+# the operator doesn't choose should be shown but not editable. Saves
+# operators from mistakenly editing localhost:5432 into something
+# meaningless then debugging why nothing connects.
 READ_ONLY_PATTERNS = (
-    re.compile(r"_TAG$"),                  # AUTH_TAG, ORCHESTRATOR_TAG, …
+    re.compile(r"_TAG$"),                     # AUTH_TAG, ORCHESTRATOR_TAG, …
     re.compile(r"^ORCHESTACK_DB_PASSWORD$"),  # rotating breaks the platform
+    # Internal Docker network: hostnames are container names, ports are
+    # service-defined. Operator doesn't choose either.
+    re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, PIPELINE_DB_HOST, AIRBYTE_DB_HOST, …
+    re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
 )
 
 # Sensitive patterns — values masked in GET responses unless reveal=true.

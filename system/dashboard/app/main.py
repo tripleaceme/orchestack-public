@@ -415,7 +415,12 @@ async def credentials_page(request: Request, user=Depends(require_admin)) -> HTM
 CREDENTIAL_SERVICE_GROUPS: list[tuple[str, list[str]]] = [
     ("OrcheStack platform", ["ORCHESTACK_"]),
     ("Image tags",          ["_TAG"]),  # suffix-match handled specially
-    ("Pipeline warehouse",  ["PIPELINE_DB_"]),
+    # "Warehouse" is the operator-facing label for the pipeline DB
+    # credentials. Env keys keep the PIPELINE_DB_ prefix for backward
+    # compat with existing .env files; only the display name changed
+    # to reduce confusion ("pipeline" sounded like data-pipeline software,
+    # not "the database holding pipeline output tables").
+    ("Warehouse",           ["PIPELINE_DB_"]),
     ("Airbyte",             ["AIRBYTE_"]),
     ("Apache Airflow",      ["AIRFLOW_"]),
     ("dbt Core",            ["DBT_"]),
