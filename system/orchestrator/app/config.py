@@ -125,11 +125,17 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True},
     "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": True},
     # PostgreSQL is special — it's part of the base control plane (already
-    # running as orchestack-postgres), but the wizard's warehouse layer lets
-    # the operator pick it as the analytical warehouse too. Catalogue entry
-    # exists so installed_services records the choice; managed=False because
-    # the orchestrator doesn't start/stop the base postgres.
-    "postgresql":   {"tier": "hot",  "display_name": "PostgreSQL",          "layer": "warehouse",    "managed": False},
+    # running as orchestack-postgres), so the orchestrator does NOT start
+    # or stop it via compose; the base stack owns its lifecycle. The
+    # `control_plane` flag tells the dashboard:
+    #   - report state="running" unconditionally (the base container is
+    #     always up; if it weren't, the dashboard itself couldn't render),
+    #   - render no Start/Stop buttons (you don't stop the platform DB),
+    #   - point Open at pgAdmin's data_warehouse view since PostgreSQL
+    #     has no UI of its own.
+    # external_url uses the host's pgAdmin entry point so clicking Open
+    # lands the operator in an SQL UI ready to query the warehouse.
+    "postgresql":   {"tier": "hot",  "display_name": "PostgreSQL",          "layer": "warehouse",    "managed": True,  "control_plane": True, "external_url": "http://{host}/app/pgadmin"},
 }
 
 # Wizard layer keys → platform.installed_services.layer CHECK-constraint values.

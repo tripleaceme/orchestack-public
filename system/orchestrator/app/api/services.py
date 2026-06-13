@@ -69,7 +69,15 @@ async def list_services() -> dict[str, object]:
 
     items = []
     for name, meta in config.SERVICE_CATALOGUE.items():
-        is_running = name in running_by_name
+        is_control_plane = bool(meta.get("control_plane", False))
+        # Control-plane services (PostgreSQL) are owned by the base
+        # compose stack and always running — if they weren't, the
+        # orchestrator wouldn't be able to answer this request. Report
+        # them as running unconditionally so the tile reflects reality
+        # instead of grey-out (which happens when list_running_services
+        # filters by the orchestrack.service label that base containers
+        # don't carry).
+        is_running = is_control_plane or (name in running_by_name)
         pin_row = pinned_by_name.get(name)
         items.append({
             "name": name,
@@ -77,8 +85,16 @@ async def list_services() -> dict[str, object]:
             "tier": meta["tier"],
             "layer": meta.get("layer"),
             "state": "running" if is_running else "stopped",
-            "container": running_by_name.get(name, {}).get("container"),
+            "container": (
+                # For control-plane services use the base container name
+                # (orchestack-postgres). For managed services use whatever
+                # docker ps reported.
+                f"orchestack-{name.replace('postgresql', 'postgres')}"
+                if is_control_plane and is_running
+                else running_by_name.get(name, {}).get("container")
+            ),
             "managed": bool(meta.get("managed", False)),
+            "control_plane": is_control_plane,
             "configured": name in configured_names,
             "pinned": pin_row is not None,
             "pin_expires_at": (
@@ -87,8 +103,10 @@ async def list_services() -> dict[str, object]:
             ),
             # external_url is set in the catalogue for tools whose UI
             # doesn't work cleanly under the /app/<name> subpath
-            # (MinIO is the canonical case). The dashboard's Open
-            # handler reads this and overrides the default tool URL.
+            # (MinIO is the canonical case), and for control-plane
+            # services that have no UI of their own and need to redirect
+            # to a related tool (PostgreSQL → pgAdmin). The dashboard's
+            # Open handler reads this and overrides the default tool URL.
             "external_url": meta.get("external_url"),
         })
     return {"services": items}

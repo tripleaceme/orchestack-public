@@ -703,10 +703,32 @@ async def _ensure_airflow_setup() -> None:
 
 
 async def _ensure_airbyte_setup() -> None:
-    """Airbyte: own role + own DB (hardcodes public schema)."""
+    """Airbyte: own role + own DB + two extra DBs for Temporal.
+
+    The multi-container Airbyte deployment includes Temporal as the
+    workflow engine, and Temporal stores its workflow history and
+    visibility queries in two separate Postgres databases. Both share
+    the airbyte role for simplicity; logical isolation is by database,
+    not by user.
+    """
     await _ensure_simple_pg_role_and_db(
         "airbyte", "airbyte", "AIRBYTE_DB_PASSWORD",
     )
+    # Temporal needs its own pair of databases owned by the airbyte
+    # role. CREATE DATABASE can't run inside a transaction so we use a
+    # dedicated connection.
+    from . import db as _db
+    pool = _db.get_pool()
+    for tdb in ("temporal", "temporal_visibility"):
+        async with pool.acquire() as conn:
+            exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_database WHERE datname = '{tdb}'"
+            )
+            if not exists:
+                log.info("pre-start hook (airbyte): creating '%s' database for Temporal", tdb)
+                await conn.execute(
+                    f'CREATE DATABASE "{tdb}" OWNER "airbyte"'
+                )
 
 
 async def _ensure_openmetadata_setup() -> None:

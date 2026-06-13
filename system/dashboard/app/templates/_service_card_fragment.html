@@ -59,7 +59,7 @@
   </div>
   {% if service.container %}
     <p class="text-xs font-mono text-[var(--text-2)] truncate -mt-1.5">
-      {{ service.container }}
+      {{ service.container }}{% if service.control_plane %} <span class="text-[10px] text-emerald-700">· always-on</span>{% endif %}
     </p>
   {% elif not service.configured %}
     <p class="text-xs text-[var(--text-2)] -mt-1.5">
@@ -98,6 +98,18 @@
                      border-[var(--border)] text-[var(--text-2)]
                      bg-[var(--bg)] cursor-not-allowed">
         Unavailable
+      </button>
+    {% elif service.control_plane %}
+      {# Control-plane service (PostgreSQL): always-on, no Start/Stop.
+         Open routes to the external_url (pgAdmin) since the warehouse
+         has no UI of its own. #}
+      <button type="button"
+              onclick="orchestackOpenService('{{ service.name }}')"
+              title="Open the warehouse in pgAdmin (new tab)"
+              class="w-full text-sm font-medium py-1.5 rounded
+                     bg-[var(--navy)] text-white
+                     hover:bg-[var(--navy-2)] transition-colors">
+        Open in pgAdmin
       </button>
     {% elif is_running %}
       {# Primary action: Open the tool in a new tab + create a session.
