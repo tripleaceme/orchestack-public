@@ -1323,6 +1323,11 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
         # stack is ready" — the webapp's nginx returns 200 before the
         # API is up, so probing the webapp would race.
         "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),
+        # dbt-docs server. Container start runs `dbt deps + dbt run +
+        # dbt docs generate` (best-effort) before `dbt docs serve`
+        # takes over as PID 1; probing / confirms the docs server
+        # is actually serving (not just the container being up).
+        "dbt":          ("orchestack-dbt",          8080, "/"),
         "openmetadata": ("orchestack-openmetadata", 8585, "/healthcheck"),
     }
     if name in _M4_READY_PROBES:

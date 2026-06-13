@@ -355,6 +355,10 @@
         starting:      "Starting MinIO. Ready in ~10s.",
         copy_done:     "MinIO is ready",
       },
+      dbt: {
+        starting:      "Starting dbt. Running dbt deps + dbt docs generate so the documentation site is up to date (~30-90s).",
+        copy_done:     "dbt docs is ready",
+      },
     };
     const READY_POLL_MS    = 2000;
     const READY_TIMEOUT_MS = 420_000;  // 7 minutes; matches POST_START_HOOK_TIMEOUT

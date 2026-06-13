@@ -1,43 +1,146 @@
-# dbt Core — transformation runner (cold-tier).
+# dbt Core — transformation runner with embedded docs server (cold-tier).
 #
-# Runs as a "sleeping" container by default — dbt itself is a one-shot
-# CLI tool, not a daemon. The container holds the toolchain + profiles
-# so operators can `docker exec orchestack-dbt dbt build` or trigger
-# runs from Airflow. Auto-clones the repo from $DBT_REPO_URL on start.
-# Sleep-as-PID-1 is the standard pattern for "tool container, no
-# always-on process."
+# Previously dbt was a pure sleeping-CLI container (no UI). The operator
+# had to know to `docker exec orchestack-dbt dbt run` — fine for users
+# who already know dbt, opaque for new operators. The dashboard's Open
+# button had nothing to navigate to.
+#
+# This version generates and serves dbt-docs on container start so the
+# Open button leads to the lineage graph + model + test documentation
+# that IS dbt's de-facto UI. Operators can still `docker exec` for
+# `dbt run`, `dbt test`, etc. — the docs server doesn't take that
+# capability away, it just adds a visual entry point.
+#
+# Docs URL: http://{host}:8002 (direct-port, same pattern as MinIO and
+# Airbyte — dbt-docs is a static HTML+JS site that emits absolute
+# asset paths and doesn't work cleanly under Traefik subpath routing).
+#
+# On first start with no DBT_REPO_URL set we materialise a minimal demo
+# project that introspects the postgres warehouse — gives the docs site
+# something to render so the operator can see what dbt UX looks like
+# before they bring their own project.
 
 services:
   dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.10.0
+    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
     container_name: orchestack-dbt
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        # Clone or update the operator's dbt project on every start so
-        # `docker exec orchestack-dbt dbt run` always sees the latest
-        # commit on the configured branch.
         set -e
+
+        # 1. Materialise profiles.yml from env vars. dbt looks for
+        #    ~/.dbt/profiles.yml; we generate it here so the profile
+        #    can interpolate fresh credentials on every start (handy
+        #    when the operator rotates DBT_DB_PASSWORD via Edit Config).
+        mkdir -p /root/.dbt
+        cat > /root/.dbt/profiles.yml <<'PROFILES'
+        default:
+          target: dev
+          outputs:
+            dev:
+              type: postgres
+              host: "{{ env_var('DBT_PG_HOST') }}"
+              port: "{{ env_var('DBT_PG_PORT') | int }}"
+              user: "{{ env_var('DBT_PG_USER') }}"
+              password: "{{ env_var('DBT_PG_PASSWORD') }}"
+              dbname: "{{ env_var('DBT_PG_DBNAME') }}"
+              schema: "{{ env_var('DBT_PG_SCHEMA') }}"
+              threads: 4
+              keepalives_idle: 0
+        PROFILES
+
+        # 2. Ensure a project exists. Three cases:
+        #    a) Operator set DBT_REPO_URL → clone/update from there.
+        #    b) Volume already has a project from a previous start.
+        #    c) Fresh install, no operator project → write a tiny demo
+        #       so dbt docs has something to show.
         if [ -n "$$DBT_REPO_URL" ]; then
           if [ -d /usr/app/dbt/.git ]; then
-            cd /usr/app/dbt && git fetch && git reset --hard origin/$${DBT_REPO_BRANCH:-main} || true
+            cd /usr/app/dbt && git fetch && git reset --hard "origin/$${DBT_REPO_BRANCH:-main}" || true
           else
-            git clone -b $${DBT_REPO_BRANCH:-main} $$DBT_REPO_URL /usr/app/dbt || true
+            git clone -b "$${DBT_REPO_BRANCH:-main}" "$$DBT_REPO_URL" /usr/app/dbt || true
           fi
+        elif [ ! -f /usr/app/dbt/dbt_project.yml ]; then
+          mkdir -p /usr/app/dbt/models
+          cat > /usr/app/dbt/dbt_project.yml <<'PROJECT'
+        name: orchestack_demo
+        version: '1.0.0'
+        config-version: 2
+        profile: default
+        model-paths: ["models"]
+        target-path: "target"
+        clean-targets: ["target", "dbt_packages"]
+        models:
+          orchestack_demo:
+            +materialized: view
+        PROJECT
+          cat > /usr/app/dbt/models/warehouse_tables.sql <<'MODEL'
+        -- Demo model: catalogue of every table in the warehouse.
+        -- Replace by mounting your own project at /usr/app/dbt.
+        select
+            schemaname,
+            tablename,
+            tableowner,
+            current_timestamp as ingested_at
+        from pg_catalog.pg_tables
+        where schemaname not in ('pg_catalog', 'information_schema')
+        MODEL
+          cat > /usr/app/dbt/models/schema.yml <<'SCHEMA'
+        version: 2
+        models:
+          - name: warehouse_tables
+            description: |
+              Catalogue of every operator-created table in the warehouse,
+              with the owner and ingest timestamp. This is a demo model —
+              replace it with your own by setting DBT_REPO_URL in the
+              dashboard's Edit Config page, or by mounting a project into
+              the dbt-repo volume.
+            columns:
+              - name: schemaname
+                description: PostgreSQL schema name.
+                tests: [not_null]
+              - name: tablename
+                description: Table name within the schema.
+                tests: [not_null]
+              - name: tableowner
+                description: PostgreSQL role that owns the table.
+              - name: ingested_at
+                description: Timestamp when this row was produced by dbt.
+        SCHEMA
         fi
-        # Keep the container running as a CLI host; dbt itself is not a
-        # daemon, the container exists so `docker exec` can invoke it.
-        exec sleep infinity
+
+        cd /usr/app/dbt
+
+        # 3. Best-effort: install deps + build + generate docs. Each
+        #    step is allowed to fail because the operator may bring a
+        #    project that needs sources we haven't loaded, or the
+        #    warehouse may not yet have the role we need. The docs
+        #    server still starts even if generate fails — it'll just
+        #    show whatever partial manifest was produced (often
+        #    nothing, which is still better than an offline tile).
+        dbt deps          2>&1 || echo "[orchestack] dbt deps failed (best-effort)"
+        dbt run           2>&1 || echo "[orchestack] dbt run failed (best-effort)"
+        dbt docs generate 2>&1 || echo "[orchestack] dbt docs generate failed (best-effort)"
+
+        # 4. Serve docs. dbt docs serve is blocking by design — this
+        #    becomes the container's foreground process. No need for
+        #    sleep infinity. Bind 0.0.0.0 so the host port mapping
+        #    works; --no-browser stops dbt from trying to open a tab
+        #    inside the container.
+        exec dbt docs serve --host 0.0.0.0 --port 8080 --no-browser
+
     environment:
       DBT_REPO_URL:    ${DBT_REPO_URL:-}
       DBT_REPO_BRANCH: ${DBT_REPO_BRANCH:-main}
-      # Connection profile pieces — used by the dbt CLI via profiles.yml
-      # mounted into /root/.dbt/profiles.yml.
+      # Connection profile pieces — referenced by ~/.dbt/profiles.yml
+      # via {{ env_var(...) }} so changes to DBT_DB_PASSWORD via Edit
+      # Config take effect on container restart without rebuilding.
       DBT_PG_HOST:     orchestack-postgres
       DBT_PG_PORT:     "5432"
       DBT_PG_USER:     dbt_user
-      DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:-}
+      DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:?DBT_DB_PASSWORD must be set}
       DBT_PG_DBNAME:   ${PIPELINE_DB_NAME:-data_warehouse}
       DBT_PG_SCHEMA:   ${DBT_SCHEMA:-marts}
     networks:
@@ -45,11 +148,29 @@ services:
     volumes:
       - dbt-repo:/usr/app/dbt
       - dbt-profiles:/root/.dbt
+    ports:
+      # Expose dbt-docs on host:8002. Direct-port deployment because
+      # dbt-docs is a static SPA emitting absolute-root asset paths
+      # (/manifest.json, /index.css, /static/*) — same constraint as
+      # MinIO and Airbyte. external_url in the catalogue points the
+      # dashboard Open button here.
+      - "8002:8080"
+    healthcheck:
+      # dbt-postgres image is Python-based with NO wget/curl/nc preinstalled.
+      # Use python's urllib directly — always present because dbt itself
+      # is Python. The dashboard's /api/dashboard/services/dbt/ready
+      # probe is the real readiness signal that gates the Open button;
+      # this healthcheck is just for docker's container-state display.
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 60s
     labels:
       - orchestack.service=dbt
       - orchestack.tier=cold
-      # dbt has no HTTP UI — no Traefik labels. The "Open" button in
-      # the dashboard shows a "no UI" placeholder for these tools.
 
 networks:
   orchestack-net:

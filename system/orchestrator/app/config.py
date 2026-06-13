@@ -119,7 +119,11 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # host accordingly. The S3 API on 9000 stays internal to the
     # docker network — Airbyte/dbt reach it as orchestack-minio:9000.
     "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
-    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True},
+    # dbt's tile Open routes to the embedded dbt-docs server (port
+    # 8002 on host) — dbt-docs is the closest thing to a UI dbt has.
+    # See system/docker/services/dbt.yml for the entrypoint that
+    # auto-generates docs on container start.
+    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True, "external_url": "http://{host}:8002"},
     "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
