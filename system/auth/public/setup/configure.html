@@ -267,14 +267,16 @@
         { name: "DBT_SCHEMA", label: "Production schema", type: "text", default: "marts",
           hint: "Schema (inside the database above) where dbt writes production outputs — typically 'marts'. This is what stakeholders see via Metabase." },
         { name: "DBT_USER", label: "dbt PG user", type: "text", default: "dbt_user", readonly: true,
-          hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role with READ on the 'raw' schema (where Airbyte lands) and WRITE on the production schema above. The name is fixed at 'dbt_user' — operators don't choose it." },
-        { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "••••••••",
-          hint: "Password for the dbt PG user. Set a strong value — OrcheStack writes it to profiles.yml and stores it in .env. If you leave this blank, OrcheStack auto-derives a password from your platform password so dbt still works on first install; you can come back later and replace it with your own." },
+          hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role and grants it OWNERSHIP of the production schema above (so dbt has ALL privileges on existing tables) plus ALTER DEFAULT PRIVILEGES so any future tables in that schema — whether created by dbt or by an admin manually patching a model — are accessible to dbt_user. The name is fixed at 'dbt_user'." },
+        { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "Click Generate to create a 32-char hex password",
+          generate: "hex",
+          hint: "Password for the dbt PG user. Click Generate — the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it. OrcheStack writes the value to profiles.yml at container start." },
       ],
-      note: "Two things to know:",
+      note: "Three things to know:",
       noteHtml: `
         <ul>
           <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code> — OrcheStack reads the file at container start and generates a matching <code>profiles.yml</code>. You don't need to enter the project name here.</li>
+          <li><strong>dbt runs against the <code>prod</code> target by default.</strong> The generated <code>profiles.yml</code> wires a single output named <code>prod</code> pointing at the database and schema above. <code>dbt run</code> (no <code>--target</code> flag) uses this; Airflow's <code>BashOperator(bash_command='dbt run')</code> uses this. The credentials and connection details for the <code>prod</code> target are exactly the fields you fill in here.</li>
           <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared schema stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
         </ul>
       `,

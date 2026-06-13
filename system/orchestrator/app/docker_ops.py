@@ -739,16 +739,30 @@ async def _ensure_openmetadata_setup() -> None:
 
 
 async def _ensure_dbt_setup() -> None:
-    """dbt: role in the warehouse DB, no separate database. dbt WRITES
-    to the warehouse (under the marts schema) so it just needs scoped
-    grants on the existing pipeline DB."""
+    """dbt: role + write/read grants on the chosen warehouse DB.
+
+    Privileges granted (operator-configurable target via DBT_DATABASE +
+    DBT_SCHEMA in .env):
+      - CONNECT on the target database
+      - OWNERSHIP of the target schema (CREATE/USAGE implicit)
+      - ALL on EXISTING + ALTER DEFAULT PRIVILEGES so any FUTURE objects
+        in the target schema (created by dbt OR by anyone else) are
+        accessible to dbt_user — the operator explicitly asked for this
+        so model rebuilds and CI-driven schema changes don't trip on
+        "permission denied for table foo" mid-run.
+      - USAGE + SELECT on the `raw` schema (Airbyte's landing zone) so
+        dbt can `select * from {{ source('raw', 'orders') }}` cleanly,
+        plus DEFAULT PRIVILEGES for future raw tables.
+    """
     from . import db as _db
     env = _read_env_file_or_empty()
-    pipeline_db = env.get("PIPELINE_DB_NAME")
-    if not pipeline_db:
-        log.warning("dbt pre-start: no PIPELINE_DB_NAME; skipping")
-        return
-    # Same password derivation pattern
+    pipeline_db = env.get("PIPELINE_DB_NAME") or "data_warehouse"
+    # Operator-overridable target. Defaults to the pipeline warehouse
+    # but can be a separate DB if the operator wants production tables
+    # in their own namespace.
+    target_db = env.get("DBT_DATABASE", "").strip() or pipeline_db
+    target_schema = env.get("DBT_SCHEMA", "").strip() or "marts"
+
     password = env.get("DBT_DB_PASSWORD", "").strip()
     if not password:
         platform_pw = env.get("ORCHESTACK_DB_PASSWORD", "")
@@ -778,34 +792,95 @@ async def _ensure_dbt_setup() -> None:
             await conn.execute(
                 f"ALTER ROLE dbt_user WITH LOGIN PASSWORD '{quoted_pw}'"
             )
-        await conn.execute(
-            f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_user'
-        )
 
-    # In-warehouse grants — connect to the pipeline DB to issue them.
+        # If the operator picked a different target DB, create it.
+        # CREATE DATABASE can't run inside a transaction so use a
+        # dedicated connection rather than the pool's pre-tx conn.
+        if target_db != pipeline_db:
+            db_exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_database WHERE datname = '{target_db}'"
+            )
+            if not db_exists:
+                log.info("dbt pre-start: creating target DB '%s'", target_db)
+                await conn.execute(f'CREATE DATABASE "{target_db}"')
+
+        await conn.execute(
+            f'GRANT CONNECT ON DATABASE "{target_db}" TO dbt_user'
+        )
+        # Also CONNECT on the pipeline DB if it's different — dbt sources
+        # may reference `raw.*` in the pipeline DB even when writing
+        # marts to a different DB.
+        if target_db != pipeline_db:
+            await conn.execute(
+                f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_user'
+            )
+
+    # In-target-DB grants. Connect as the platform superuser so we can
+    # issue GRANT statements on objects owned by anyone.
     import asyncpg
     wh_conn = await asyncpg.connect(
+        host=config.DB_HOST, port=config.DB_PORT,
+        user=config.DB_USER, password=config.DB_PASSWORD,
+        database=target_db,
+    )
+    try:
+        # Target schema (DBT_SCHEMA, default 'marts') OWNED BY dbt_user.
+        # Ownership gives full rights to anything dbt creates here.
+        await wh_conn.execute(
+            f'CREATE SCHEMA IF NOT EXISTS "{target_schema}" '
+            f'AUTHORIZATION dbt_user'
+        )
+        # Belt-and-suspenders: also GRANT ALL on the schema itself + on
+        # every existing object + ALTER DEFAULT PRIVILEGES for future
+        # objects. This covers the case where someone (e.g. an admin
+        # patching a model manually) creates a table in this schema —
+        # dbt_user still has full access to it.
+        await wh_conn.execute(
+            f'GRANT ALL ON SCHEMA "{target_schema}" TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'GRANT ALL ON ALL TABLES IN SCHEMA "{target_schema}" TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'GRANT ALL ON ALL SEQUENCES IN SCHEMA "{target_schema}" TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'GRANT ALL ON ALL FUNCTIONS IN SCHEMA "{target_schema}" TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
+            f'GRANT ALL ON TABLES TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
+            f'GRANT ALL ON SEQUENCES TO dbt_user'
+        )
+        await wh_conn.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
+            f'GRANT EXECUTE ON FUNCTIONS TO dbt_user'
+        )
+    finally:
+        await wh_conn.close()
+
+    # raw schema lives in the PIPELINE DB (Airbyte's landing). Different
+    # connection if target_db != pipeline_db.
+    raw_conn = await asyncpg.connect(
         host=config.DB_HOST, port=config.DB_PORT,
         user=config.DB_USER, password=config.DB_PASSWORD,
         database=pipeline_db,
     )
     try:
-        # marts schema is dbt's write target — create if absent.
-        await wh_conn.execute(
-            "CREATE SCHEMA IF NOT EXISTS marts AUTHORIZATION dbt_user"
-        )
-        # raw schema is the read source (Airbyte's target) — create if absent.
-        await wh_conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
-        await wh_conn.execute("GRANT USAGE ON SCHEMA raw TO dbt_user")
-        await wh_conn.execute(
+        await raw_conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
+        await raw_conn.execute("GRANT USAGE ON SCHEMA raw TO dbt_user")
+        await raw_conn.execute(
             "GRANT SELECT ON ALL TABLES IN SCHEMA raw TO dbt_user"
         )
-        await wh_conn.execute(
+        await raw_conn.execute(
             "ALTER DEFAULT PRIVILEGES IN SCHEMA raw "
             "GRANT SELECT ON TABLES TO dbt_user"
         )
     finally:
-        await wh_conn.close()
+        await raw_conn.close()
 
 
 PRE_START_HOOKS = {

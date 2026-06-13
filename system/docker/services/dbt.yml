@@ -152,13 +152,13 @@ services:
         if [ -z "$$DBT_PROFILE_NAME" ]; then
           DBT_PROFILE_NAME=default
         fi
-        echo "[orchestack] generating profiles.yml with profile name: $$DBT_PROFILE_NAME"
+        echo "[orchestack] generating profiles.yml with profile name: $$DBT_PROFILE_NAME (target: prod)"
         mkdir -p /root/.dbt
         cat > /root/.dbt/profiles.yml <<PROFILES
         $$DBT_PROFILE_NAME:
-          target: dev
+          target: prod
           outputs:
-            dev:
+            prod:
               type: postgres
               host: "{{ env_var('DBT_PG_HOST') }}"
               port: "{{ env_var('DBT_PG_PORT') | int }}"
