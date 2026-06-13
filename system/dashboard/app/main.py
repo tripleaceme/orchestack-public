@@ -1165,17 +1165,22 @@ async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
 #  Session lifecycle (Open / heartbeat / close)
 # ===========================================================================
 @app.post("/api/dashboard/services/{name}/open", name="open_service_session")
-async def open_service_session(request: Request, name: str) -> JSONResponse:
+async def open_service_session(
+    request: Request, name: str, action: str | None = None,
+) -> JSONResponse:
     """Open an orchestrator session against `name` and return the tool URL.
 
     Returns JSON `{token, tool_url, service}`. The dashboard's client-side
     JS stores `token` in localStorage so the heartbeat ticker can refresh
     it, and opens `tool_url` in a new tab.
 
-    The `tool_url` is constructed from the dashboard's ROOT_PATH (so it
-    works regardless of where Traefik mounts the dashboard) plus the
-    service name — e.g. `/app/metabase`. The actual tool container's
-    Traefik label decides what's there; the dashboard doesn't care.
+    Tool URL resolution, in priority order:
+      1. If `?action=<key>` is given AND the service has actions[],
+         use that action's external_url (dbt has 'docs' + 'cli').
+      2. Else if the service has external_url, use that (MinIO,
+         Airbyte, PostgreSQL).
+      3. Else fall back to ROOT_PATH/<name> via Traefik subpath
+         (Metabase, pgAdmin).
     """
     try:
         result = await orchestrator.open_session(name, auto_start=True)
@@ -1185,27 +1190,28 @@ async def open_service_session(request: Request, name: str) -> JSONResponse:
             status_code=502,
             content={"error": "orchestrator unreachable", "detail": str(e)},
         )
-    # Tool URL: default is /app/<name> via Traefik subpath. Services
-    # whose UI doesn't support subpath deployment cleanly (MinIO 2024+
-    # is the canonical example) override this via the service
-    # catalogue's `external_url` field — typically a host:port URL the
-    # tool's compose snippet exposes directly. The {host} placeholder
-    # gets substituted with the operator's hostname so the same
-    # template works on localhost during dev AND on the deployed
-    # hostname in production.
     try:
-        svc = await orchestrator.get_service(name)
-        external_url = (svc or {}).get("external_url")
+        svc = await orchestrator.get_service(name) or {}
     except httpx.HTTPError:
-        external_url = None
-    if external_url:
-        host = request.url.hostname or "localhost"
-        tool_url = external_url.replace("{host}", host)
-    else:
+        svc = {}
+
+    host = request.url.hostname or "localhost"
+    tool_url = None
+
+    if action and svc.get("actions"):
+        for a in svc["actions"]:
+            if a.get("key") == action and a.get("external_url"):
+                tool_url = a["external_url"].replace("{host}", host)
+                break
+    if tool_url is None and svc.get("external_url"):
+        tool_url = svc["external_url"].replace("{host}", host)
+    if tool_url is None:
         tool_url = f"{ROOT_PATH}/{name}"
+
     return JSONResponse({
         "token": result.get("token"),
         "service": name,
+        "action": action,
         "tool_url": tool_url,
         "started": result.get("started", False),
     })
@@ -1218,7 +1224,9 @@ SLOW_BOOTSTRAP_SERVICES = {"metabase"}
 
 
 @app.get("/api/dashboard/services/{name}/ready", name="service_ready_probe")
-async def service_ready_probe(request: Request, name: str) -> JSONResponse:
+async def service_ready_probe(
+    request: Request, name: str, action: str | None = None,
+) -> JSONResponse:
     """Service readiness check the dashboard's Open button polls.
 
     Returns:
@@ -1323,15 +1331,35 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
         # stack is ready" — the webapp's nginx returns 200 before the
         # API is up, so probing the webapp would race.
         "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),
-        # dbt-docs server. Container start runs `dbt deps + dbt run +
-        # dbt docs generate` (best-effort) before `dbt docs serve`
-        # takes over as PID 1; probing / confirms the docs server
-        # is actually serving (not just the container being up).
+        # dbt's default probe (no ?action= specified) hits the docs
+        # server — that's the older single-action behaviour. The
+        # action-specific probes below kick in when the dashboard JS
+        # passes ?action=docs or ?action=cli (matching the catalogue
+        # actions: list).
         "dbt":          ("orchestack-dbt",          8080, "/"),
         "openmetadata": ("orchestack-openmetadata", 8585, "/healthcheck"),
     }
-    if name in _M4_READY_PROBES:
-        host, port, path = _M4_READY_PROBES[name]
+    # Per-action probes for multi-action services. dbt-docs takes
+    # 30-90s to come up (runs `dbt deps + dbt run + dbt docs generate`
+    # in the entrypoint); ttyd is up in ~2s. Probing them separately
+    # means the Open Terminal button is usable as soon as ttyd is
+    # listening, even while docs is still generating — exactly the
+    # case where an analytics engineer needs to drop in fast to debug.
+    _M4_ACTION_PROBES = {
+        ("dbt", "docs"): ("orchestack-dbt", 8080, "/index.html"),
+        # ttyd serves at its --base-path, NOT at /. Probing /
+        # returns 404 because ttyd's router only matches the
+        # configured prefix. Match the Traefik subpath we set in
+        # services/dbt.yml: --base-path /app/dbt-terminal.
+        ("dbt", "cli"):  ("orchestack-dbt", 7681, "/app/dbt-terminal/"),
+    }
+    probe = None
+    if action is not None and (name, action) in _M4_ACTION_PROBES:
+        probe = _M4_ACTION_PROBES[(name, action)]
+    elif name in _M4_READY_PROBES:
+        probe = _M4_READY_PROBES[name]
+    if probe is not None:
+        host, port, path = probe
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.get(f"http://{host}:{port}{path}")

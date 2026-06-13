@@ -108,6 +108,20 @@ async def list_services() -> dict[str, object]:
             # to a related tool (PostgreSQL → pgAdmin). The dashboard's
             # Open handler reads this and overrides the default tool URL.
             "external_url": meta.get("external_url"),
+            # actions[] is set for services that expose multiple
+            # operator-facing surfaces (dbt: docs + terminal). When
+            # present, the dashboard renders one Open button per
+            # action; when absent, single Open button using
+            # external_url. Each action carries its own ready_probe
+            # so the dashboard can wait for the correct port before
+            # opening that action's tool URL. ready_probe is dropped
+            # here because tuples don't serialise cleanly to JSON and
+            # the probe is only used inside the dashboard's /ready
+            # handler — not by the JS.
+            "actions": [
+                {k: v for k, v in a.items() if k != "ready_probe"}
+                for a in meta.get("actions", [])
+            ] or None,
         })
     return {"services": items}
 

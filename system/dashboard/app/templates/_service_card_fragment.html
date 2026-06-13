@@ -128,30 +128,51 @@
          The toast shows "Starting…" and updates with phase copy from
          SLOW_BOOTSTRAP in base.html. Once the orchestrator confirms
          the container is healthy, window.open() fires and the toast
-         disappears — no extra "opened in a new tab" confirmation
-         that the new tab itself isn't enough of a signal.
+         disappears.
 
-         The href is rendered so middle-click / Cmd+click / right-click
+         Multi-action services (dbt: Open Docs + Open Terminal) declare
+         an `actions: [...]` array in the catalogue; the dashboard
+         renders one button per action, stacked. Single-action services
+         keep the legacy single-button rendering. The href is rendered
+         on every button so middle-click / Cmd+click / right-click
          "open in new tab" still works (browser's native gesture
          bypasses the wait). #}
       {% set _host = request.url.hostname or 'localhost' %}
-      {% set _tool_url = service.external_url|replace('{host}', _host)
-                         if service.external_url
-                         else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-      <a href="{{ _tool_url }}"
-         target="_blank"
-         rel="noopener noreferrer"
-         onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
-         class="block w-full text-sm font-medium py-1.5 rounded text-center
-                no-underline
-                bg-[var(--navy)] text-white
-                hover:bg-[var(--navy-2)] transition-colors">
-        Open
-      </a>
+      {% if service.actions %}
+        {% for action in service.actions %}
+          {% set _action_url = action.external_url|replace('{host}', _host)
+                               if action.external_url
+                               else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+          <a href="{{ _action_url }}"
+             target="_blank"
+             rel="noopener noreferrer"
+             onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}', '{{ action.key }}'); return false;"
+             class="block w-full text-sm font-medium py-1.5 rounded text-center
+                    no-underline
+                    bg-[var(--navy)] text-white
+                    hover:bg-[var(--navy-2)] transition-colors">
+            {{ action.label }}
+          </a>
+        {% endfor %}
+      {% else %}
+        {% set _tool_url = service.external_url|replace('{host}', _host)
+                           if service.external_url
+                           else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+        <a href="{{ _tool_url }}"
+           target="_blank"
+           rel="noopener noreferrer"
+           onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
+           class="block w-full text-sm font-medium py-1.5 rounded text-center
+                  no-underline
+                  bg-[var(--navy)] text-white
+                  hover:bg-[var(--navy-2)] transition-colors">
+          Open
+        </a>
+      {% endif %}
       {# Secondary action: Stop the service. Outline style. #}
       <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
-              hx-swap="outerHTML"
+              hx-swap="outerHTML swap:500ms"
               hx-disabled-elt="this"
               hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
               hx-on::before-request="this.textContent = 'Stopping…'; this.disabled = true"
@@ -164,7 +185,7 @@
     {% else %}
       <button hx-post="{{ url_for('start_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
-              hx-swap="outerHTML"
+              hx-swap="outerHTML swap:500ms"
               hx-disabled-elt="this"
               hx-on::before-request="this.textContent = 'Starting…'; this.disabled = true"
               class="w-full text-sm font-medium py-1.5 rounded

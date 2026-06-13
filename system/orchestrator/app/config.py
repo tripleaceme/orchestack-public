@@ -119,11 +119,52 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # host accordingly. The S3 API on 9000 stays internal to the
     # docker network — Airbyte/dbt reach it as orchestack-minio:9000.
     "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
-    # dbt's tile Open routes to the embedded dbt-docs server (port
-    # 8002 on host) — dbt-docs is the closest thing to a UI dbt has.
-    # See system/docker/services/dbt.yml for the entrypoint that
-    # auto-generates docs on container start.
-    "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True, "external_url": "http://{host}:8002"},
+    # dbt is the only multi-action service so far. Two operator
+    # workflows that genuinely deserve their own buttons:
+    #
+    #   - DOCS: read-only lineage + model + test documentation. What
+    #     stakeholders see in demos and what analytics engineers use
+    #     to confirm a column's meaning.
+    #   - CLI: in-browser bash terminal (via ttyd) at /usr/app/dbt
+    #     for production troubleshooting — "Airflow flagged a model
+    #     failure, let me dbt run --select that_model to repro and
+    #     iterate." Without this the operator's only path is SSH +
+    #     docker exec.
+    #
+    # Both run concurrently in the same container — see
+    # system/docker/services/dbt.yml. The catalogue's `actions: []`
+    # field tells the dashboard to render multiple Open buttons
+    # stacked on the same card. Services that omit `actions` keep
+    # working via the existing `external_url` single-button flow.
+    "dbt": {
+        "tier": "cold", "display_name": "dbt Core",
+        "layer": "transformation", "managed": True,
+        "actions": [
+            {
+                "key": "docs",
+                "label": "Open Docs",
+                "external_url": "http://{host}:8002",
+                # ready_probe is a (port, path) tuple inside the
+                # service container. The dashboard's /ready handler
+                # looks up per-action probes for multi-action
+                # services. None means "use the default state==running
+                # check" — matches how single-action services have
+                # always behaved.
+                "ready_probe": (8080, "/index.html"),
+            },
+            {
+                "key": "cli",
+                "label": "Open Terminal",
+                # ttyd is served at /app/dbt-terminal via Traefik
+                # subpath routing (it honors --base-path cleanly,
+                # unlike Airbyte/MinIO). That means the OrcheStack
+                # auth forward-auth chain gates the terminal too —
+                # no separate credentials, no exposed-shell-port.
+                "external_url": "http://{host}/app/dbt-terminal/",
+                "ready_probe": (7681, "/"),
+            },
+        ],
+    },
     "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)

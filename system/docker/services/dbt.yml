@@ -1,39 +1,57 @@
-# dbt Core — transformation runner with embedded docs server (cold-tier).
+# dbt Core — transformation runner with concurrent docs server + web terminal (cold-tier).
 #
-# Previously dbt was a pure sleeping-CLI container (no UI). The operator
-# had to know to `docker exec orchestack-dbt dbt run` — fine for users
-# who already know dbt, opaque for new operators. The dashboard's Open
-# button had nothing to navigate to.
+# Two operator-facing surfaces, both running in the same container:
 #
-# This version generates and serves dbt-docs on container start so the
-# Open button leads to the lineage graph + model + test documentation
-# that IS dbt's de-facto UI. Operators can still `docker exec` for
-# `dbt run`, `dbt test`, etc. — the docs server doesn't take that
-# capability away, it just adds a visual entry point.
+#   - dbt-docs   on port 8080 (host:8002 direct-port — dbt-docs emits
+#                absolute-root asset paths, can't use subpath routing).
+#                "Open Docs" button in the dashboard.
 #
-# Docs URL: http://{host}:8002 (direct-port, same pattern as MinIO and
-# Airbyte — dbt-docs is a static HTML+JS site that emits absolute
-# asset paths and doesn't work cleanly under Traefik subpath routing).
+#   - ttyd shell on port 7681 served at /app/dbt-terminal via Traefik
+#                subpath routing (ttyd honors --base-path cleanly,
+#                which means we route it through OrcheStack's
+#                forward-auth chain — no separate password, no
+#                exposed-shell-port). "Open Terminal" button.
 #
-# On first start with no DBT_REPO_URL set we materialise a minimal demo
-# project that introspects the postgres warehouse — gives the docs site
-# something to render so the operator can see what dbt UX looks like
-# before they bring their own project.
+# Why both surfaces matter:
+#
+#   - dbt-docs is what analytics engineers show stakeholders and what
+#     they consult to confirm a column's meaning.
+#   - The terminal is what they REACH FOR when production fails. An
+#     Airflow-flagged model failure means "drop in, dbt run --select
+#     that_model, dbt debug, dbt show --inline, edit a model, re-run."
+#     Without an in-browser terminal the only path is host SSH +
+#     docker exec — viable for someone running the host, opaque to a
+#     remote analyst.
+#
+# Process model: both servers run in the foreground via `wait -n` —
+# if either exits, the container exits and Docker restarts it.
 
 services:
   dbt:
     image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
     container_name: orchestack-dbt
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -e
 
-        # 1. Materialise profiles.yml from env vars. dbt looks for
-        #    ~/.dbt/profiles.yml; we generate it here so the profile
-        #    can interpolate fresh credentials on every start (handy
-        #    when the operator rotates DBT_DB_PASSWORD via Edit Config).
+        # ── 0. Install ttyd if not already present ─────────────────────
+        # ttyd is a static Go binary ~2MB. We fetch from the GitHub
+        # release on first start; subsequent starts skip the download
+        # because the file is in the volume-mounted /usr/local/bin
+        # — but we still re-check in case the image was rebuilt.
+        if ! command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] downloading ttyd…"
+          python -c "
+        import urllib.request
+        url = 'https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64'
+        urllib.request.urlretrieve(url, '/usr/local/bin/ttyd')
+        " || echo "[orchestack] ttyd download failed — terminal will be unavailable"
+          chmod +x /usr/local/bin/ttyd 2>/dev/null || true
+        fi
+
+        # ── 1. Materialise profiles.yml from env vars ──────────────────
         mkdir -p /root/.dbt
         cat > /root/.dbt/profiles.yml <<'PROFILES'
         default:
@@ -51,11 +69,7 @@ services:
               keepalives_idle: 0
         PROFILES
 
-        # 2. Ensure a project exists. Three cases:
-        #    a) Operator set DBT_REPO_URL → clone/update from there.
-        #    b) Volume already has a project from a previous start.
-        #    c) Fresh install, no operator project → write a tiny demo
-        #       so dbt docs has something to show.
+        # ── 2. Ensure a project exists ─────────────────────────────────
         if [ -n "$$DBT_REPO_URL" ]; then
           if [ -d /usr/app/dbt/.git ]; then
             cd /usr/app/dbt && git fetch && git reset --hard "origin/$${DBT_REPO_BRANCH:-main}" || true
@@ -113,30 +127,58 @@ services:
 
         cd /usr/app/dbt
 
-        # 3. Best-effort: install deps + build + generate docs. Each
-        #    step is allowed to fail because the operator may bring a
-        #    project that needs sources we haven't loaded, or the
-        #    warehouse may not yet have the role we need. The docs
-        #    server still starts even if generate fails — it'll just
-        #    show whatever partial manifest was produced (often
-        #    nothing, which is still better than an offline tile).
-        dbt deps          2>&1 || echo "[orchestack] dbt deps failed (best-effort)"
-        dbt run           2>&1 || echo "[orchestack] dbt run failed (best-effort)"
-        dbt docs generate 2>&1 || echo "[orchestack] dbt docs generate failed (best-effort)"
+        # ── 3. Build + generate docs (best-effort, in background) ──────
+        # Why background: ttyd should come up fast so the operator can
+        # drop in IMMEDIATELY when troubleshooting, even while docs is
+        # still generating. The dashboard's per-action /ready probe lets
+        # the Open Terminal button work as soon as ttyd is listening.
+        (
+          dbt deps          2>&1 | sed 's/^/[dbt deps] /'          || echo "[orchestack] dbt deps failed"
+          dbt run           2>&1 | sed 's/^/[dbt run] /'           || echo "[orchestack] dbt run failed"
+          dbt docs generate 2>&1 | sed 's/^/[dbt docs gen] /'      || echo "[orchestack] dbt docs generate failed"
+          echo "[orchestack] starting dbt docs serve on :8080"
+          exec dbt docs serve --host 0.0.0.0 --port 8080 --no-browser
+        ) &
+        DOCS_PID=$$!
 
-        # 4. Serve docs. dbt docs serve is blocking by design — this
-        #    becomes the container's foreground process. No need for
-        #    sleep infinity. Bind 0.0.0.0 so the host port mapping
-        #    works; --no-browser stops dbt from trying to open a tab
-        #    inside the container.
-        exec dbt docs serve --host 0.0.0.0 --port 8080 --no-browser
+        # ── 4. ttyd web terminal ──────────────────────────────────────
+        # --writable lets the operator actually type; without it ttyd
+        # serves a read-only feed.
+        # --base-path /app/dbt-terminal makes ttyd honor the Traefik
+        # subpath so the auth chain works (forward-auth via
+        # orchestack-auth gates the websocket).
+        # -t titleFixed='dbt CLI' sets the browser tab title.
+        # PROMPT_COMMAND sets a friendly bash prompt that shows the
+        # operator they're inside the dbt project directory.
+        export PS1='\[\e[36m\]dbt@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$$ '
+        cd /usr/app/dbt
+        if command -v ttyd >/dev/null 2>&1; then
+          echo "[orchestack] starting ttyd on :7681 (base-path /app/dbt-terminal)"
+          ttyd --writable \
+               --port 7681 \
+               --base-path /app/dbt-terminal \
+               -t titleFixed='dbt CLI' \
+               -t fontSize=14 \
+               bash &
+          TTYD_PID=$$!
+        else
+          echo "[orchestack] ttyd missing — Open Terminal will be unavailable"
+          TTYD_PID=""
+        fi
+
+        # ── 5. Wait for either to exit ────────────────────────────────
+        # If docs serve dies (e.g. operator interrupted with dbt run
+        # mid-generate), or ttyd dies (network blip), the container
+        # exits and Docker's restart=unless-stopped brings it back.
+        if [ -n "$$TTYD_PID" ]; then
+          wait -n $$DOCS_PID $$TTYD_PID
+        else
+          wait $$DOCS_PID
+        fi
 
     environment:
       DBT_REPO_URL:    ${DBT_REPO_URL:-}
       DBT_REPO_BRANCH: ${DBT_REPO_BRANCH:-main}
-      # Connection profile pieces — referenced by ~/.dbt/profiles.yml
-      # via {{ env_var(...) }} so changes to DBT_DB_PASSWORD via Edit
-      # Config take effect on container restart without rebuilding.
       DBT_PG_HOST:     orchestack-postgres
       DBT_PG_PORT:     "5432"
       DBT_PG_USER:     dbt_user
@@ -148,19 +190,15 @@ services:
     volumes:
       - dbt-repo:/usr/app/dbt
       - dbt-profiles:/root/.dbt
+      # ttyd binary lives in the volume so we only download it on the
+      # first start of each fresh install.
+      - dbt-bin:/usr/local/bin
     ports:
-      # Expose dbt-docs on host:8002. Direct-port deployment because
-      # dbt-docs is a static SPA emitting absolute-root asset paths
-      # (/manifest.json, /index.css, /static/*) — same constraint as
-      # MinIO and Airbyte. external_url in the catalogue points the
-      # dashboard Open button here.
+      # dbt-docs only — ttyd goes through Traefik subpath. Direct-port
+      # for dbt-docs because it emits absolute-root asset paths (same
+      # constraint as MinIO and Airbyte).
       - "8002:8080"
     healthcheck:
-      # dbt-postgres image is Python-based with NO wget/curl/nc preinstalled.
-      # Use python's urllib directly — always present because dbt itself
-      # is Python. The dashboard's /api/dashboard/services/dbt/ready
-      # probe is the real readiness signal that gates the Open button;
-      # this healthcheck is just for docker's container-state display.
       test:
         - CMD-SHELL
         - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
@@ -171,6 +209,14 @@ services:
     labels:
       - orchestack.service=dbt
       - orchestack.tier=cold
+      # Traefik labels for the ttyd terminal at /app/dbt-terminal.
+      # No stripprefix — ttyd honors --base-path internally so it
+      # generates URLs with the prefix already included.
+      - traefik.enable=true
+      - traefik.http.routers.dbt-terminal.rule=PathPrefix(`/app/dbt-terminal`)
+      - traefik.http.routers.dbt-terminal.entrypoints=web
+      - traefik.http.routers.dbt-terminal.priority=200
+      - traefik.http.services.dbt-terminal.loadbalancer.server.port=7681
 
 networks:
   orchestack-net:
@@ -182,3 +228,5 @@ volumes:
     name: orchestack-dbt-repo
   dbt-profiles:
     name: orchestack-dbt-profiles
+  dbt-bin:
+    name: orchestack-dbt-bin

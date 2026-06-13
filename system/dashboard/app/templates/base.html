@@ -370,14 +370,15 @@
     // the same service while one is in flight.
     const _openingNow = new Set();
 
-    async function waitForReady(serviceName, statusToast) {
+    async function waitForReady(serviceName, statusToast, actionKey) {
       const slow = SLOW_BOOTSTRAP[serviceName];
       const deadline = Date.now() + (slow ? READY_TIMEOUT_MS : FAST_TIMEOUT_MS);
       let lastPhase = null;
       while (Date.now() < deadline) {
         try {
+          const actionQ = actionKey ? `?action=${encodeURIComponent(actionKey)}` : '';
           const r = await fetch(
-            `${ROOT}/api/dashboard/services/${serviceName}/ready`,
+            `${ROOT}/api/dashboard/services/${serviceName}/ready${actionQ}`,
             { method: 'GET' },
           );
           if (r.ok) {
@@ -397,8 +398,21 @@
     }
 
     // Triggered by the per-card "Open" button (see _service_card_fragment).
-    window.orchestackOpenService = async function(serviceName) {
-      if (_openingNow.has(serviceName)) {
+    //
+    // Optional `actionKey` is for services with multiple Open buttons —
+    // dbt has 'docs' (Open Docs → dbt-docs site) and 'cli' (Open
+    // Terminal → ttyd in-browser shell). The orchestrator's /open and
+    // /ready endpoints both accept ?action=<key>; the dashboard's
+    // dispatcher reads it to pick the right tool_url and the right
+    // readiness probe (docs port 8080 vs ttyd port 7681).
+    //
+    // _openingNow guards per (serviceName, actionKey) so the operator
+    // CAN click Open Docs and Open Terminal in succession without the
+    // second click being suppressed as "already opening." We compose
+    // a synthetic guard key for this; the toast UX is unchanged.
+    window.orchestackOpenService = async function(serviceName, actionKey) {
+      const guardKey = actionKey ? `${serviceName}:${actionKey}` : serviceName;
+      if (_openingNow.has(guardKey)) {
         showToast(
           `<div><strong>${serviceName}</strong><br>` +
           `Already opening. Check the existing notification at the ` +
@@ -407,7 +421,7 @@
         );
         return;
       }
-      _openingNow.add(serviceName);
+      _openingNow.add(guardKey);
 
       // Single exit point clears the in-flight set — wrap the rest of
       // the body in try/finally so a thrown error doesn't leave the
@@ -424,9 +438,10 @@
         0,  // sticky — we dismiss when ready or timed out
       );
 
+      const actionQuery = actionKey ? `?action=${encodeURIComponent(actionKey)}` : '';
       let openBody = null;
       try {
-        const resp = await fetch(`${ROOT}/api/dashboard/services/${serviceName}/open`, {
+        const resp = await fetch(`${ROOT}/api/dashboard/services/${serviceName}/open${actionQuery}`, {
           method: 'POST',
         });
         if (!resp.ok) {
@@ -455,7 +470,7 @@
       // Now poll readiness — the orchestrator confirmed the start; we
       // don't actually want to open the tool URL until the container is
       // serving and (for Metabase) the bootstrap hook has finished.
-      const ready = await waitForReady(serviceName, statusToast);
+      const ready = await waitForReady(serviceName, statusToast, actionKey);
       dismissToast(statusToast);
 
       if (!ready.ok) {
@@ -485,7 +500,7 @@
       }
 
       } finally {
-        _openingNow.delete(serviceName);
+        _openingNow.delete(guardKey);
       }
     };
 
