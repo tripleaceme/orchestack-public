@@ -165,17 +165,17 @@
 
     // ------- Ingestion -------
     "Airbyte": {
-      desc: "Connector-based ingestion. Airbyte 0.50 OSS doesn't have its own user-login system — anyone reaching the URL gets the workspace. Access is gated by OrcheStack's platform auth (clicking <em>Open Airbyte</em> from the dashboard goes through the same forward-auth chain that protects every other tool). The credentials below are for Airbyte's OWN internal PostgreSQL where it stores sync state and connector configs.",
+      desc: "Connector-based ingestion. Airbyte 0.50 OSS doesn't have its own user-login system, so anyone reaching the URL gets the workspace. Access is gated by OrcheStack's platform auth (clicking <em>Open Airbyte</em> from the dashboard goes through the same forward-auth chain that protects every other tool). The credentials below are for Airbyte's OWN internal PostgreSQL where it stores sync state and connector configs.",
       fields: [
         { name: "AIRBYTE_DB_HOST", label: "Internal DB host", type: "text", default: "orchestack-postgres", readonly: true,
           hint: "Internal Docker hostname Airbyte uses to reach its state database. Fixed at the orchestack-postgres service name because that's where OrcheStack's shared Postgres instance lives. Cannot be changed from the wizard." },
         { name: "AIRBYTE_DB_USER", label: "Internal DB user", type: "text", default: "airbyte", readonly: true,
-          hint: "PostgreSQL username Airbyte connects as. OrcheStack auto-creates this role via the pre-start hook. Fixed at 'airbyte' so the hook knows what to provision — not operator-overridable." },
+          hint: "PostgreSQL username Airbyte connects as. OrcheStack auto-creates this role via the pre-start hook. Fixed at 'airbyte' so the hook knows what to provision, not operator-overridable." },
         { name: "AIRBYTE_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
           generate: "hex",
           hint: "Password for the Airbyte user. Click Generate — the browser produces a cryptographically random 32-character hex string. This is the only Airbyte-related credential the operator owns; the user, host, and DB name are platform-set." },
         { name: "AIRBYTE_DB_NAME", label: "Internal DB name", type: "text", default: "airbyte", readonly: true,
-          hint: "Internal database name where Airbyte tracks sync state. Fixed at 'airbyte' — the pre-start hook creates the database with this exact name; renaming would break the hook." },
+          hint: "Internal database name where Airbyte tracks sync state. Fixed at 'airbyte'. The pre-start hook creates the database with this exact name; renaming would break the hook." },
       ],
       note: "About logging into Airbyte:",
       noteHtml: `

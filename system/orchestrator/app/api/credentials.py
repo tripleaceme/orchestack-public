@@ -50,13 +50,19 @@ router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 
 # Read-only keys — the dashboard renders these as informational only.
 # Operators can SEE the value but the input is disabled with a "read-only"
-# badge. Used for two distinct concepts:
-#   - Platform decisions: image tags, internal Docker hostnames, ports
-#   - Things rotating would break: ORCHESTACK_DB_PASSWORD
-# Operator's principle: anything OrcheStack sets to a fixed value that
-# the operator doesn't choose should be shown but not editable. Saves
-# operators from mistakenly editing localhost:5432 into something
-# meaningless then debugging why nothing connects.
+# badge.
+#
+# Rule of thumb: lock anything the OPERATOR NEVER TYPES INTO A FORM.
+# Internal Postgres role names that tool sidecars use programmatically,
+# Docker hostnames, ports, image tags — these are platform decisions.
+# Operators should see the values (for verification, audit, debugging)
+# but can't edit them.
+#
+# Keep editable: anything the operator actually logs in with — pgAdmin
+# email, Metabase email, Airflow webserver username/email, MinIO root
+# user. Operators may want a unified `ayoade@orchestack.local` across
+# tools (one credential to remember) instead of per-service variants.
+# The convention <service>_admin is the default, not the lock.
 READ_ONLY_PATTERNS = (
     re.compile(r"_TAG$"),                     # AUTH_TAG, ORCHESTRATOR_TAG, …
     re.compile(r"^ORCHESTACK_DB_PASSWORD$"),  # rotating breaks the platform
@@ -64,6 +70,24 @@ READ_ONLY_PATTERNS = (
     # service-defined. Operator doesn't choose either.
     re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, PIPELINE_DB_HOST, AIRBYTE_DB_HOST, …
     re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
+    # Internal-only PG roles + DB names — used by the tool's container
+    # to connect to its own sidecar database. Operator never types these
+    # into any form; renaming would break the pre-start provisioning hook.
+    # Exact names listed rather than a broad `_DB_USER$` regex because
+    # PIPELINE_DB_USER (warehouse_admin) is operator-facing and stays
+    # editable — operators may need to log into the warehouse with psql
+    # or external tools using a name their team agreed on.
+    re.compile(r"^DBT_USER$"),                # dbt_admin — used by dbt container
+    re.compile(r"^AIRBYTE_DB_USER$"),         # airbyte — sidecar DB role
+    re.compile(r"^AIRBYTE_DB_NAME$"),         # airbyte — sidecar DB name
+    re.compile(r"^AIRFLOW_DB_USER$"),         # airflow — sidecar DB role
+    re.compile(r"^AIRFLOW_DB_NAME$"),         # airflow — sidecar DB name
+    re.compile(r"^METABASE_DB_USER$"),        # metabase — sidecar DB role
+    re.compile(r"^METABASE_DB_NAME$"),        # metabase — sidecar DB name
+    re.compile(r"^OPENMETADATA_DB_USER$"),    # openmetadata — sidecar DB role (when shipped)
+    re.compile(r"^OPENMETADATA_DB_NAME$"),    # openmetadata — sidecar DB name
+    re.compile(r"^GE_DB_USER$"),              # great_expectations — when it gains a sidecar DB
+    re.compile(r"^GE_DB_NAME$"),
 )
 
 # Sensitive patterns — values masked in GET responses unless reveal=true.
