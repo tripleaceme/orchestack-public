@@ -747,7 +747,7 @@ async def _ensure_dbt_setup() -> None:
       - OWNERSHIP of the target schema (CREATE/USAGE implicit)
       - ALL on EXISTING + ALTER DEFAULT PRIVILEGES so any FUTURE objects
         in the target schema (created by dbt OR by anyone else) are
-        accessible to dbt_user — the operator explicitly asked for this
+        accessible to dbt_admin — the operator explicitly asked for this
         so model rebuilds and CI-driven schema changes don't trip on
         "permission denied for table foo" mid-run.
       - USAGE + SELECT on the `raw` schema (Airbyte's landing zone) so
@@ -781,16 +781,30 @@ async def _ensure_dbt_setup() -> None:
 
     pool = _db.get_pool()
     async with pool.acquire() as conn:
-        role_exists = await conn.fetchval(
+        # Backward-compat: earlier installs used `dbt_user`. If that
+        # role exists and `dbt_admin` doesn't, rename it. ALTER ROLE
+        # RENAME updates all object permissions automatically because
+        # they're stored by OID, not by name — so any tables owned by
+        # dbt_user become owned by dbt_admin transparently and dbt's
+        # `dbt run` continues to work after the rename.
+        old_exists = await conn.fetchval(
             "SELECT 1 FROM pg_roles WHERE rolname = 'dbt_user'"
         )
-        if not role_exists:
+        new_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'dbt_admin'"
+        )
+        if old_exists and not new_exists:
+            log.info("dbt pre-start: renaming legacy 'dbt_user' role to 'dbt_admin'")
+            await conn.execute("ALTER ROLE dbt_user RENAME TO dbt_admin")
+            new_exists = True
+
+        if not new_exists:
             await conn.execute(
-                f"CREATE ROLE dbt_user WITH LOGIN PASSWORD '{quoted_pw}'"
+                f"CREATE ROLE dbt_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
         else:
             await conn.execute(
-                f"ALTER ROLE dbt_user WITH LOGIN PASSWORD '{quoted_pw}'"
+                f"ALTER ROLE dbt_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
 
         # If the operator picked a different target DB, create it.
@@ -805,14 +819,14 @@ async def _ensure_dbt_setup() -> None:
                 await conn.execute(f'CREATE DATABASE "{target_db}"')
 
         await conn.execute(
-            f'GRANT CONNECT ON DATABASE "{target_db}" TO dbt_user'
+            f'GRANT CONNECT ON DATABASE "{target_db}" TO dbt_admin'
         )
         # Also CONNECT on the pipeline DB if it's different — dbt sources
         # may reference `raw.*` in the pipeline DB even when writing
         # marts to a different DB.
         if target_db != pipeline_db:
             await conn.execute(
-                f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_user'
+                f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_admin'
             )
 
     # In-target-DB grants. Connect as the platform superuser so we can
@@ -824,40 +838,40 @@ async def _ensure_dbt_setup() -> None:
         database=target_db,
     )
     try:
-        # Target schema (DBT_SCHEMA, default 'marts') OWNED BY dbt_user.
+        # Target schema (DBT_SCHEMA, default 'marts') OWNED BY dbt_admin.
         # Ownership gives full rights to anything dbt creates here.
         await wh_conn.execute(
             f'CREATE SCHEMA IF NOT EXISTS "{target_schema}" '
-            f'AUTHORIZATION dbt_user'
+            f'AUTHORIZATION dbt_admin'
         )
         # Belt-and-suspenders: also GRANT ALL on the schema itself + on
         # every existing object + ALTER DEFAULT PRIVILEGES for future
         # objects. This covers the case where someone (e.g. an admin
         # patching a model manually) creates a table in this schema —
-        # dbt_user still has full access to it.
+        # dbt_admin still has full access to it.
         await wh_conn.execute(
-            f'GRANT ALL ON SCHEMA "{target_schema}" TO dbt_user'
+            f'GRANT ALL ON SCHEMA "{target_schema}" TO dbt_admin'
         )
         await wh_conn.execute(
-            f'GRANT ALL ON ALL TABLES IN SCHEMA "{target_schema}" TO dbt_user'
+            f'GRANT ALL ON ALL TABLES IN SCHEMA "{target_schema}" TO dbt_admin'
         )
         await wh_conn.execute(
-            f'GRANT ALL ON ALL SEQUENCES IN SCHEMA "{target_schema}" TO dbt_user'
+            f'GRANT ALL ON ALL SEQUENCES IN SCHEMA "{target_schema}" TO dbt_admin'
         )
         await wh_conn.execute(
-            f'GRANT ALL ON ALL FUNCTIONS IN SCHEMA "{target_schema}" TO dbt_user'
-        )
-        await wh_conn.execute(
-            f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
-            f'GRANT ALL ON TABLES TO dbt_user'
+            f'GRANT ALL ON ALL FUNCTIONS IN SCHEMA "{target_schema}" TO dbt_admin'
         )
         await wh_conn.execute(
             f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
-            f'GRANT ALL ON SEQUENCES TO dbt_user'
+            f'GRANT ALL ON TABLES TO dbt_admin'
         )
         await wh_conn.execute(
             f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
-            f'GRANT EXECUTE ON FUNCTIONS TO dbt_user'
+            f'GRANT ALL ON SEQUENCES TO dbt_admin'
+        )
+        await wh_conn.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
+            f'GRANT EXECUTE ON FUNCTIONS TO dbt_admin'
         )
     finally:
         await wh_conn.close()
@@ -871,13 +885,13 @@ async def _ensure_dbt_setup() -> None:
     )
     try:
         await raw_conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
-        await raw_conn.execute("GRANT USAGE ON SCHEMA raw TO dbt_user")
+        await raw_conn.execute("GRANT USAGE ON SCHEMA raw TO dbt_admin")
         await raw_conn.execute(
-            "GRANT SELECT ON ALL TABLES IN SCHEMA raw TO dbt_user"
+            "GRANT SELECT ON ALL TABLES IN SCHEMA raw TO dbt_admin"
         )
         await raw_conn.execute(
             "ALTER DEFAULT PRIVILEGES IN SCHEMA raw "
-            "GRANT SELECT ON TABLES TO dbt_user"
+            "GRANT SELECT ON TABLES TO dbt_admin"
         )
     finally:
         await raw_conn.close()

@@ -251,7 +251,11 @@ services:
       DBT_REPO_BRANCH: ${DBT_REPO_BRANCH:-main}
       DBT_PG_HOST:     orchestack-postgres
       DBT_PG_PORT:     "5432"
-      DBT_PG_USER:     dbt_user
+      # Service admin role created + managed by _ensure_dbt_setup hook.
+      # Naming convention: <service>_admin for the auto-provisioned role
+      # that runs the service's writes against the warehouse. Operators
+      # can override via DBT_PG_USER in Edit Config later.
+      DBT_PG_USER:     ${DBT_PG_USER:-dbt_admin}
       DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:?DBT_DB_PASSWORD must be set}
       # Target database. Defaults to the pipeline warehouse but operators
       # can override via DBT_DATABASE in Edit Config if they want dbt

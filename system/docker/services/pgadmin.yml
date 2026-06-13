@@ -15,7 +15,7 @@ services:
     environment:
       # M2 default admin credentials. Override via the wizard at M2.5 or
       # rotate via the dashboard once M3 lands.
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@orchestack.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-pgadmin_admin@orchestack.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-orchestack-dev-changeme}
       # Disable the multi-user "server mode" — for a single-tenant install,
       # the auth layer is OrcheStack itself, not pgAdmin's own user table.
