@@ -1,18 +1,44 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="max-w-xl mx-auto py-12 text-center">
-    <div class="text-6xl font-bold text-[var(--text-2)] mb-2">{{ status_code }}</div>
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)] mb-4">
-      {{ title }}
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mb-6">{{ message }}</p>
+  <div class="max-w-xl mx-auto py-12">
+    <div class="text-center">
+      <div class="text-6xl font-bold text-[var(--text-2)] mb-2">{{ status_code }}</div>
+      <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)] mb-4">
+        {{ title }}
+      </h1>
+      <p class="text-sm text-[var(--text-2)] mb-6">{{ message | safe }}</p>
+    </div>
+
+    {% if bullets %}
+      <div class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 mb-6">
+        <p class="text-sm font-semibold text-[var(--text)] mb-3">
+          {{ bullets_heading or "A few likely reasons:" }}
+        </p>
+        <ul class="space-y-2 text-sm text-[var(--text-2)]">
+          {% for b in bullets %}
+            <li class="flex items-start gap-2">
+              <span class="text-[var(--navy)] mt-0.5">•</span>
+              <span>{{ b | safe }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if admin_hint %}
+          <p class="text-xs text-[var(--text-2)] mt-4 pt-3 border-t border-[var(--border)]">
+            {{ admin_hint | safe }}
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+
     {% if back_url %}
-      <a href="{{ back_url }}"
-         class="inline-block text-sm font-medium px-4 py-2 rounded
-                bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
-        {{ back_label or 'Back' }}
-      </a>
+      <div class="text-center">
+        <a href="{{ back_url }}"
+           class="inline-block text-sm font-medium px-4 py-2 rounded
+                  bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
+          {{ back_label or 'Back' }}
+        </a>
+      </div>
     {% endif %}
   </div>
 {% endblock %}

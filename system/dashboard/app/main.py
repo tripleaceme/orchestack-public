@@ -155,14 +155,141 @@ async def require_admin(request: Request) -> dict[str, object]:
     return user
 
 
+def _extract_service_from_path(path: str) -> str | None:
+    """Best-effort: pull a service name out of a 404'd URL.
+
+    The most common 404 shape is `/app/<service>/<rest>` where the
+    operator clicked a bookmarked deep link (e.g.,
+    /app/metabase/browse/databases/2-pipeline-warehouse) but the
+    target service isn't running. Traefik's router for that prefix
+    only exists while the container is up — when it's stopped, the
+    request falls through to the dashboard's catchall and our
+    FastAPI returns a generic 404. We extract the service name so
+    the error page can name what the operator was trying to reach.
+
+    Returns None if the path doesn't match the /app/<service>/...
+    shape — caller renders a generic 404 in that case.
+    """
+    # Strip leading slash + the dashboard's root_path prefix.
+    p = path.lstrip("/")
+    prefix = (ROOT_PATH or "/app").strip("/")
+    if prefix and p.startswith(prefix + "/"):
+        p = p[len(prefix) + 1:]
+    parts = p.split("/", 1)
+    if not parts or not parts[0]:
+        return None
+    candidate = parts[0]
+    # Don't claim service-not-found for dashboard's own routes (e.g.
+    # /app/sessions, /app/login). The catalogue lookup downstream
+    # confirms this is actually a real service.
+    return candidate
+
+
+async def _service_404_response(request: Request, exc):
+    """Render a friendly HTML 404 with diagnosis bullets + back button.
+
+    Used both for FastAPI HTTPException(404) and Starlette's routing
+    404 (no matched path). Detects if the URL was aimed at a
+    catalogue service and tailors the bullets accordingly.
+
+    SECURITY: request.url.path is user-controllable. The error template
+    renders message + bullets with `| safe` (so we can use <code> and
+    <strong> formatting), which means we MUST html-escape `path` before
+    interpolating it into the strings — otherwise a crafted URL like
+    /<script>alert(1)</script> would execute. We escape once here at
+    the boundary, then trust the resulting string in the f-strings.
+    """
+    import html as _html
+    # FastAPI's request.url.path strips the ASGI root_path (Traefik
+    # subpath /app); we want to show what the operator actually typed
+    # in the address bar, so reattach the prefix for display purposes.
+    # Internal routing logic still uses the stripped path.
+    internal_path = request.url.path
+    display_path = (request.scope.get("root_path") or "") + internal_path
+    path = _html.escape(display_path)
+    candidate = _extract_service_from_path(internal_path)
+    svc = None
+    if candidate:
+        try:
+            svc = await orchestrator.get_service(candidate)
+        except Exception:
+            svc = None
+
+    if svc and svc.get("display_name"):
+        # Deep link to a known service — tailor the bullets to that
+        # service's specific state.
+        display_name = svc["display_name"]
+        state = svc.get("state", "unknown")
+        title = f"{display_name} isn't reachable"
+        message = (
+            f"OrcheStack couldn't route your request "
+            f"<code class=\"font-mono\">{path}</code> "
+            f"to <strong>{display_name}</strong>."
+        )
+        bullets = [
+            f"<strong>{display_name} is currently {state}.</strong> "
+            f"If it's stopped, go to the dashboard and click <em>Start</em> "
+            f"on the {display_name} tile, then try this link again.",
+            "<strong>The service just launched and isn't fully ready yet.</strong> "
+            "Tools like Metabase take 60–90s to come online after Start; "
+            "Airbyte's worker can take a couple of minutes on first boot.",
+            f"<strong>The URL was deep-linked from an old install.</strong> "
+            f"Container IDs and workspace slugs change between fresh deploys "
+            f"— the <code class=\"font-mono\">{path}</code> path may point to a "
+            f"resource that no longer exists.",
+            f"<strong>You don't have access to this {display_name} resource.</strong> "
+            f"Inside {display_name}, the resource exists but your account "
+            "isn't on the share list.",
+        ]
+    else:
+        # Generic 404 — no service detected from path.
+        title = "Page not found"
+        message = (
+            f"OrcheStack couldn't find a page at "
+            f"<code class=\"font-mono\">{path}</code>."
+        )
+        bullets = [
+            "<strong>The URL was typed or pasted with a typo.</strong> "
+            "Check the address bar for extra spaces or wrong slashes.",
+            "<strong>The page moved.</strong> The dashboard's URLs "
+            "occasionally change between OrcheStack versions — try "
+            "navigating from the home page.",
+            "<strong>You used a stale bookmark.</strong> If this link "
+            "came from an older install, the resource may no longer exist.",
+        ]
+
+    return templates.TemplateResponse(
+        "error.html",
+        {
+            "request": request,
+            "page_title": "Not found",
+            "user": None,
+            "status_code": 404,
+            "title": title,
+            "message": message,
+            "bullets_heading": "A few likely reasons:",
+            "bullets": bullets,
+            "admin_hint": (
+                "Still stuck? Reach out to your OrcheStack admin — they can "
+                "check the service state, see who has access, and look at "
+                "the orchestrator's audit log on the "
+                f"<a href=\"{ROOT_PATH}/audit\" class=\"text-[var(--navy)] hover:underline\">Audit page</a>."
+            ),
+            "back_url": ROOT_PATH or "/",
+            "back_label": "Back to dashboard",
+        },
+        status_code=404,
+    )
+
+
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     """Convert 307 login_required exceptions into real RedirectResponses.
 
-    For 403 raised on HTML page routes (everything NOT under /api/), render
-    an HTML error page rather than raw JSON — operators who typed a URL
-    directly should land on a readable page that tells them what's wrong
-    and how to get back, not a wall of {"detail": "..."}.
+    For 403/404 raised on HTML page routes (everything NOT under /api/),
+    render an HTML error page rather than raw JSON — operators who typed
+    a URL directly should land on a readable page that tells them what's
+    wrong and how to get back, not a wall of {"detail": "..."}.
     """
     if exc.status_code == 307 and exc.detail == "login_required":
         return RedirectResponse(url=exc.headers["Location"], status_code=307)
@@ -182,12 +309,33 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
             },
             status_code=403,
         )
+    if exc.status_code == 404 and not is_api:
+        return await _service_404_response(request, exc)
     # Fall through to FastAPI's default JSON response for everything else.
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers=dict(exc.headers or {}),
     )
+
+
+# Starlette's routing layer raises its own HTTPException when no route
+# matches. Register that exception class too so the path
+# /app/metabase/browse/... (no FastAPI route → Starlette 404) ends up
+# in the same helpful HTML handler instead of FastAPI's default JSON.
+try:
+    from starlette.exceptions import HTTPException as _StarletteHTTPException
+    @app.exception_handler(_StarletteHTTPException)
+    async def _starlette_http_handler(request: Request, exc):
+        is_api = request.url.path.startswith("/api/")
+        if exc.status_code == 404 and not is_api:
+            return await _service_404_response(request, exc)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": str(exc.detail)},
+        )
+except ImportError:
+    pass
 
 
 # ===========================================================================
