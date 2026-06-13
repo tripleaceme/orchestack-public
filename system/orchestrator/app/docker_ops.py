@@ -1144,8 +1144,94 @@ async def _bootstrap_metabase() -> None:
             )
 
 
+async def _bootstrap_airbyte() -> None:
+    """Skip Airbyte's first-run wizard + pre-set the workspace email.
+
+    Airbyte's webapp shows a "set your email" onboarding screen on
+    first visit when the default workspace has initialSetupComplete=false
+    or no email. The screen LOOKS like a login but is just analytics
+    opt-in. Operators expect "click Open → land on the workspace
+    dashboard" — the wizard breaks that expectation.
+
+    We poll for /api/v1/workspaces/list to come up (server may still
+    be initialising), find the default workspace, and POST
+    /api/v1/workspaces/update with the OrcheStack-collected admin
+    email + anonymousDataCollection=false. This is idempotent — if
+    the workspace is already set up, the update is a no-op.
+
+    Best-effort. Failure here doesn't block Open — the operator can
+    still click through the wizard manually.
+    """
+    import httpx
+    from . import audit
+    env = _read_env_file_or_empty()
+    admin_email = (
+        env.get("AIRBYTE_ADMIN_EMAIL", "").strip()
+        or env.get("METABASE_ADMIN_EMAIL", "").strip()
+        or env.get("PGADMIN_DEFAULT_EMAIL", "").strip()
+    )
+    if not admin_email:
+        log.info("airbyte bootstrap: no email in .env to seed workspace; skipping")
+        return
+
+    base = "http://orchestack-airbyte-server:8001"
+    workspace_id: str | None = None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for attempt in range(120):  # ~4 min — server can be slow to come up
+            try:
+                r = await client.post(
+                    f"{base}/api/v1/workspaces/list",
+                    headers={"Content-Type": "application/json"},
+                    content="{}",
+                )
+                if r.status_code == 200:
+                    workspaces = r.json().get("workspaces", [])
+                    if workspaces:
+                        workspace_id = workspaces[0]["workspaceId"]
+                        log.info(
+                            "airbyte bootstrap: workspace %s found after %ds",
+                            workspace_id, attempt * 2,
+                        )
+                        break
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(2)
+        if workspace_id is None:
+            log.info("airbyte bootstrap: workspace never came up; skipping")
+            return
+
+        update_payload = {
+            "workspaceId": workspace_id,
+            "initialSetupComplete": True,
+            "displaySetupWizard": False,
+            "anonymousDataCollection": False,
+            "email": admin_email,
+        }
+        try:
+            r = await client.post(
+                f"{base}/api/v1/workspaces/update",
+                json=update_payload,
+            )
+            if r.status_code in (200, 204):
+                log.info("airbyte bootstrap: workspace updated (email=%s)", admin_email)
+                await audit.write(
+                    "airbyte_bootstrapped",
+                    service_name="airbyte",
+                    user_id=None,
+                    details={"workspace_id": workspace_id, "email": admin_email},
+                )
+            else:
+                log.warning(
+                    "airbyte bootstrap: workspaces/update returned %d: %s",
+                    r.status_code, r.text[:300],
+                )
+        except httpx.HTTPError as e:
+            log.warning("airbyte bootstrap: workspaces/update raised: %s", e)
+
+
 POST_START_HOOKS = {
     "metabase": _bootstrap_metabase,
+    "airbyte":  _bootstrap_airbyte,
 }
 
 

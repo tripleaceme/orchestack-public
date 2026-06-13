@@ -1317,7 +1317,12 @@ async def service_ready_probe(request: Request, name: str) -> JSONResponse:
     _M4_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
         "airflow":      ("orchestack-airflow",      8080, "/health"),
-        "airbyte":      ("orchestack-airbyte",      8000, "/api/v1/health"),
+        # Airbyte's multi-container deployment exposes the API on
+        # orchestack-airbyte-server:8001 (not a single 'airbyte'
+        # container). The server is the right gate for "the whole
+        # stack is ready" — the webapp's nginx returns 200 before the
+        # API is up, so probing the webapp would race.
+        "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),
         "openmetadata": ("orchestack-openmetadata", 8585, "/healthcheck"),
     }
     if name in _M4_READY_PROBES:
