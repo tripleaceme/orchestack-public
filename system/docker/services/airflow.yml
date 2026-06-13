@@ -40,15 +40,15 @@ services:
       bash -c '
         airflow db migrate &&
         airflow users create --role Admin
-          --username "$$_AIRFLOW_WWW_USER_USERNAME"
-          --email "$$_AIRFLOW_WWW_USER_EMAIL"
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}"
+          --email "$${_AIRFLOW_WWW_USER_EMAIL}"
           --firstname Admin --lastname User
-          --password "$$_AIRFLOW_WWW_USER_PASSWORD" 2>&1 | tail -3 || true;
-        if [ -n "$$AIRFLOW_DAGS_REPO_URL" ]; then
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
+        if [ -n "$${AIRFLOW_DAGS_REPO_URL}" ]; then
           if [ -d /opt/airflow/dags/.git ]; then
             cd /opt/airflow/dags && git fetch && git reset --hard origin/$${AIRFLOW_DAGS_REPO_BRANCH:-main} || true;
           else
-            git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $$AIRFLOW_DAGS_REPO_URL /opt/airflow/dags-clone &&
+            git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $${AIRFLOW_DAGS_REPO_URL} /opt/airflow/dags-clone &&
             cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ || true;
           fi;
         fi;
