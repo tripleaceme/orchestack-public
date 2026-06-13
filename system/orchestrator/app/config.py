@@ -187,6 +187,15 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
             },
         ],
     },
+    # Airflow's webserver honors AIRFLOW__WEBSERVER__BASE_URL and works
+    # cleanly under Traefik's /app/airflow subpath (unlike MinIO/Airbyte
+    # whose React SPAs emit absolute-root asset paths). So no
+    # external_url override — the default ROOT_PATH/airflow flow
+    # resolves to the correct URL via the Traefik labels in
+    # services/airflow.yml. Single action (Open Webserver) is enough
+    # for the academic ship; a Terminal action via ttyd can be added
+    # later if engineers ask for it (the official apache/airflow image
+    # would need a ttyd-bundled custom image, same pattern as GE).
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
     # — same subpath-incompatibility class as MinIO. The compose snippet

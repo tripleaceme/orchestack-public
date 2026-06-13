@@ -1472,7 +1472,11 @@ async def service_ready_probe(
     # the real readiness instead of just container=running.
     _M4_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
-        "airflow":      ("orchestack-airflow",      8080, "/health"),
+        # Airflow's webserver enforces AIRFLOW__WEBSERVER__BASE_URL —
+        # /health (no prefix) returns 404 when BASE_URL is set to a
+        # subpath; the actual health endpoint is BASE_URL + /health.
+        # Match the Traefik subpath we set in services/airflow.yml.
+        "airflow":      ("orchestack-airflow",      8080, "/app/airflow/health"),
         # Airbyte's multi-container deployment exposes the API on
         # orchestack-airbyte-server:8001 (not a single 'airbyte'
         # container). The server is the right gate for "the whole

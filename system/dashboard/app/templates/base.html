@@ -340,8 +340,8 @@
         copy_done:     "pgAdmin is ready",
       },
       airflow: {
-        starting:      "Starting Apache Airflow. First boot runs DB migrations + scheduler init (~60s).",
-        copy_done:     "Airflow is ready",
+        starting:      "Starting Apache Airflow. First boot runs DB migrations + creates the admin user + scheduler init. Webserver + scheduler come up together (~90s on fresh install, ~30s warm restart).",
+        copy_done:     "Apache Airflow is ready",
       },
       airbyte: {
         starting:      "Starting Airbyte. First boot takes 60-90s while connector catalogue loads.",
