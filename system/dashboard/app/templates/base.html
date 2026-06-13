@@ -404,6 +404,18 @@
         return;
       }
       _openingNow.add(serviceName);
+
+      // Open the target tab SYNCHRONOUSLY on click. After the first
+      // `await` below, browsers strip the user-gesture flag and
+      // window.open() gets silently blocked by the popup blocker —
+      // the operator sees the success toast but no tab opens. Opening
+      // about:blank up-front preserves the gesture; we redirect this
+      // tab to the real tool URL once the orchestrator confirms ready.
+      // If the popup is blocked anyway (some aggressive blockers
+      // reject even about:blank), pendingTab is null and we fall back
+      // to surfacing the URL as a clickable toast link.
+      const pendingTab = window.open('about:blank', '_blank', 'noopener,noreferrer');
+
       // Single exit point clears the in-flight set — wrap the rest of
       // the body in try/finally so a thrown error doesn't leave the
       // service permanently "already opening."
@@ -469,14 +481,31 @@
         return;
       }
 
-      // Ready — open the tab + flash a success toast.
-      showToast(
-        `<div><strong>${serviceName}</strong> opened in a new tab.</div>`,
-        'ok',
-        2500,
-      );
+      // Ready — redirect the pre-opened tab to the actual tool URL.
+      // If the popup was blocked at click time (pendingTab is null),
+      // surface the URL as a clickable link in the toast so the
+      // operator can complete the open with one click.
       if (openBody && openBody.tool_url) {
-        window.open(openBody.tool_url, '_blank', 'noopener,noreferrer');
+        if (pendingTab && !pendingTab.closed) {
+          pendingTab.location.href = openBody.tool_url;
+          showToast(
+            `<div><strong>${serviceName}</strong> opened in a new tab.</div>`,
+            'ok',
+            2500,
+          );
+        } else {
+          // Popup blocker active OR user closed the blank tab. Give them
+          // a fallback link.
+          showToast(
+            `<div><strong>${serviceName}</strong> is ready.<br>` +
+            `Your browser blocked the new tab. ` +
+            `<a href="${openBody.tool_url}" target="_blank" rel="noopener noreferrer" ` +
+            `style="color: var(--navy); text-decoration: underline;">` +
+            `Click here to open it</a>.</div>`,
+            'info',
+            10_000,
+          );
+        }
       }
 
       } finally {
