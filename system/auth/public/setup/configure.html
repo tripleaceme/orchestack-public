@@ -256,21 +256,26 @@
 
     // ------- Transformation -------
     "dbt Core": {
-      desc: "SQL transformations. OrcheStack provisions a <code>dbt_user</code> PG role and generates a <code>profiles.yml</code> that points at your warehouse. The project itself comes from your GitHub repo — paste the URL below.",
+      desc: "SQL transformations. OrcheStack provisions a PG role for dbt and generates a <code>profiles.yml</code> that points at your warehouse. The project itself comes from your GitHub repo — paste the URL below.",
       fields: [
         { name: "DBT_REPO_URL", label: "dbt project Git repository (optional)", type: "text", placeholder: "https://github.com/your-org/dbt-analytics.git",
           hint: "If your dbt project is already on GitHub, paste the HTTPS or SSH URL. OrcheStack clones it into the dbt container on first deploy and refreshes it on every run. The project's name, profile, models, and tests all come from the repo. If not on GitHub yet, skip this now and add it later from the dashboard → Services → dbt Core → Edit config." },
         { name: "DBT_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
           hint: "Which branch OrcheStack pulls on each run. 'main' for most production setups. Only matters once you've connected a repo." },
+        { name: "DBT_DATABASE", label: "Target database", type: "text", default: "data_warehouse",
+          hint: "PostgreSQL database where dbt writes its outputs. Defaults to the pipeline warehouse OrcheStack creates ('data_warehouse'). Override only if you want dbt's production tables in a separate database from where Airbyte lands raw data." },
         { name: "DBT_SCHEMA", label: "Production schema", type: "text", default: "marts",
-          hint: "Schema where dbt writes its production outputs — typically 'marts'. This is what stakeholders see via Metabase. Defaults to 'marts' if you leave it blank." },
+          hint: "Schema (inside the database above) where dbt writes production outputs — typically 'marts'. This is what stakeholders see via Metabase." },
+        { name: "DBT_USER", label: "dbt PG user", type: "text", default: "dbt_user", readonly: true,
+          hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role with READ on the 'raw' schema (where Airbyte lands) and WRITE on the production schema above. The name is fixed at 'dbt_user' — operators don't choose it." },
+        { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "••••••••",
+          hint: "Password for the dbt PG user. Set a strong value — OrcheStack writes it to profiles.yml and stores it in .env. If you leave this blank, OrcheStack auto-derives a password from your platform password so dbt still works on first install; you can come back later and replace it with your own." },
       ],
       note: "Two things to know:",
       noteHtml: `
         <ul>
-          <li><strong>OrcheStack auto-provisions the dbt user.</strong> A PG role named <code>dbt_user</code> is created with READ on the <code>raw</code> schema (where Airbyte lands data) and WRITE on the schema above. You don't enter a password — OrcheStack generates and stores one.</li>
-          <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code> — OrcheStack honors it. The generated <code>profiles.yml</code> uses the profile name your repo expects.</li>
-          <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared marts schema that stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
+          <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code> — OrcheStack reads the file at container start and generates a matching <code>profiles.yml</code>. You don't need to enter the project name here.</li>
+          <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared schema stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
         </ul>
       `,
     },

@@ -29,6 +29,27 @@ services:
       AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: 'True'
       AIRFLOW__WEBSERVER__PROXY_FIX_X_PROTO: '1'
       AIRFLOW__WEBSERVER__PROXY_FIX_X_HOST: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_FOR: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PORT: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PREFIX: '1'
+      # CSRF + session cookie fixes.
+      #
+      # Without an explicit SECRET_KEY, Airflow generates a new random
+      # one on every container start — which invalidates every existing
+      # session cookie AND breaks any CSRF token mid-form-submit. Result
+      # is "Bad Request: The CSRF session token is missing" when the
+      # operator submits the login form across a container restart.
+      # Setting it explicitly makes sessions + CSRF tokens stable.
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?AIRFLOW_SECRET_KEY must be set in .env}
+      # We serve Airflow over plain HTTP behind Traefik in dev. Cookie
+      # Secure flag would require HTTPS; default-False allows the
+      # cookie to be sent over HTTP. Production deployments with
+      # HTTPS-terminating reverse proxies can override to True.
+      AIRFLOW__WEBSERVER__COOKIE_SECURE: 'False'
+      # SameSite=Lax is the right default for a subpath-deployed UI
+      # behind the dashboard's auth chain — CSRF tokens are protected,
+      # form posts from the dashboard's own origin still work.
+      AIRFLOW__WEBSERVER__COOKIE_SAMESITE: 'Lax'
       # First-run admin user — read by our entrypoint wrapper below.
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
       _AIRFLOW_WWW_USER_EMAIL:    ${AIRFLOW_ADMIN_EMAIL:?AIRFLOW_ADMIN_EMAIL must be set in .env}

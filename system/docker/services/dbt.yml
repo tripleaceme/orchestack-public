@@ -68,25 +68,13 @@ services:
           chmod +x /usr/local/bin/ttyd 2>/dev/null || true
         fi
 
-        # ── 1. Materialise profiles.yml from env vars ──────────────────
-        mkdir -p /root/.dbt
-        cat > /root/.dbt/profiles.yml <<'PROFILES'
-        default:
-          target: dev
-          outputs:
-            dev:
-              type: postgres
-              host: "{{ env_var('DBT_PG_HOST') }}"
-              port: "{{ env_var('DBT_PG_PORT') | int }}"
-              user: "{{ env_var('DBT_PG_USER') }}"
-              password: "{{ env_var('DBT_PG_PASSWORD') }}"
-              dbname: "{{ env_var('DBT_PG_DBNAME') }}"
-              schema: "{{ env_var('DBT_PG_SCHEMA') }}"
-              threads: 4
-              keepalives_idle: 0
-        PROFILES
-
-        # ── 2. Ensure a project exists ─────────────────────────────────
+        # ── 1. Ensure a project exists FIRST ───────────────────────────
+        # We need the project's dbt_project.yml on disk before we can
+        # generate profiles.yml — the profile name in profiles.yml MUST
+        # match the `profile:` field in dbt_project.yml or dbt refuses
+        # to run with "could not find profile named '<name>'". So
+        # clone the repo first, THEN read the profile name and write
+        # the profile.
         if [ -n "$$DBT_REPO_URL" ]; then
           if [ -d /usr/app/dbt/.git ]; then
             cd /usr/app/dbt && git fetch && git reset --hard "origin/$${DBT_REPO_BRANCH:-main}" || true
@@ -143,6 +131,44 @@ services:
         fi
 
         cd /usr/app/dbt
+
+        # ── 1b. Materialise profiles.yml using the project's profile name ─
+        # Read the `profile:` field from dbt_project.yml so the generated
+        # profiles.yml matches whatever name the operator's repo uses.
+        # If the repo doesn't have a profile field (malformed) or
+        # dbt_project.yml is missing for any reason, fall back to
+        # "default" which matches our demo project.
+        DBT_PROFILE_NAME=$$(
+          python -c "
+        import sys, re, yaml
+        try:
+            with open('/usr/app/dbt/dbt_project.yml') as f:
+                p = yaml.safe_load(f)
+            print((p or {}).get('profile', 'default'))
+        except Exception:
+            print('default')
+        " 2>/dev/null
+        )
+        if [ -z "$$DBT_PROFILE_NAME" ]; then
+          DBT_PROFILE_NAME=default
+        fi
+        echo "[orchestack] generating profiles.yml with profile name: $$DBT_PROFILE_NAME"
+        mkdir -p /root/.dbt
+        cat > /root/.dbt/profiles.yml <<PROFILES
+        $$DBT_PROFILE_NAME:
+          target: dev
+          outputs:
+            dev:
+              type: postgres
+              host: "{{ env_var('DBT_PG_HOST') }}"
+              port: "{{ env_var('DBT_PG_PORT') | int }}"
+              user: "{{ env_var('DBT_PG_USER') }}"
+              password: "{{ env_var('DBT_PG_PASSWORD') }}"
+              dbname: "{{ env_var('DBT_PG_DBNAME') }}"
+              schema: "{{ env_var('DBT_PG_SCHEMA') }}"
+              threads: 4
+              keepalives_idle: 0
+        PROFILES
 
         # ── 3. Build + generate docs (best-effort, in background) ──────
         # Why background: ttyd should come up fast so the operator can
@@ -227,7 +253,10 @@ services:
       DBT_PG_PORT:     "5432"
       DBT_PG_USER:     dbt_user
       DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:?DBT_DB_PASSWORD must be set}
-      DBT_PG_DBNAME:   ${PIPELINE_DB_NAME:-data_warehouse}
+      # Target database. Defaults to the pipeline warehouse but operators
+      # can override via DBT_DATABASE in Edit Config if they want dbt
+      # to write to a dedicated analytics DB instead of the shared one.
+      DBT_PG_DBNAME:   ${DBT_DATABASE:-${PIPELINE_DB_NAME:-data_warehouse}}
       DBT_PG_SCHEMA:   ${DBT_SCHEMA:-marts}
     networks:
       - orchestack-net
