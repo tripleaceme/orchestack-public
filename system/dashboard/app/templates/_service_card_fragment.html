@@ -121,38 +121,27 @@
         Open in pgAdmin
       </a>
     {% elif is_running %}
-      {# Two open paths depending on whether the tool needs a wait:
+      {# Primary action: Open the tool in a new tab via orchestackOpenService.
+         Every service goes through this path so the operator gets
+         consistent progress feedback regardless of whether the tool
+         is instant (Airbyte, MinIO) or slow (Metabase first-boot).
+         The toast shows "Starting…" and updates with phase copy from
+         SLOW_BOOTSTRAP in base.html. Once the orchestrator confirms
+         the container is healthy, window.open() fires and the toast
+         disappears — no extra "opened in a new tab" confirmation
+         that the new tab itself isn't enough of a signal.
 
-         SLOW services (metabase, pgadmin):
-           - Metabase: first-boot Liquibase + bootstrap hook (4-5 min)
-           - pgAdmin:  cold-tier, may not be running yet
-           Use orchestackOpenService which shows a "Starting…" toast,
-           opens about:blank synchronously to preserve the user gesture,
-           polls /ready, and redirects the pre-opened tab when the
-           tool is actually serving requests.
-
-         FAST services (airbyte, minio, others):
-           Tool is already running and ready instantly. The anchor
-           navigates directly via target="_blank"; we fire the /open
-           POST as a side-effect so the orchestrator still tracks
-           the session for audit and reconciliation.
-
-         Both paths use <a target="_blank"> as the underlying element
-         — the anchor's gesture is what beats popup blockers. The slow
-         path just preventDefaults and runs the wait. #}
+         The href is rendered so middle-click / Cmd+click / right-click
+         "open in new tab" still works (browser's native gesture
+         bypasses the wait). #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% set _tool_url = service.external_url|replace('{host}', _host)
                          if service.external_url
                          else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-      {% set _needs_wait = service.name in ['metabase', 'pgadmin'] %}
       <a href="{{ _tool_url }}"
          target="_blank"
          rel="noopener noreferrer"
-         {% if _needs_wait %}
          onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
-         {% else %}
-         onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
-         {% endif %}
          class="block w-full text-sm font-medium py-1.5 rounded text-center
                 no-underline
                 bg-[var(--navy)] text-white

@@ -405,25 +405,6 @@
       }
       _openingNow.add(serviceName);
 
-      // Open the target tab SYNCHRONOUSLY on click. After the first
-      // `await` below, browsers strip the user-gesture flag and
-      // window.open() gets silently blocked by the popup blocker —
-      // the operator sees the success toast but no tab opens. Opening
-      // about:blank up-front preserves the gesture; we redirect this
-      // tab to the real tool URL once the orchestrator confirms ready.
-      //
-      // IMPORTANT: do NOT pass 'noopener' or 'noreferrer' here. Per
-      // MDN, those features make window.open() return null — the new
-      // tab opens but we can't control it afterwards, so the redirect
-      // to tool_url silently fails and the operator stares at
-      // about:blank forever. The tradeoff is that the opened tab
-      // CAN access window.opener; we accept that because the tab
-      // navigates to a known internal URL (localhost:<port> serving
-      // a tool we deploy ourselves), so opener-leak is not a real
-      // threat. Tools that need stricter isolation should use
-      // rel="noopener" on the <a> anchor in the fallback path instead.
-      const pendingTab = window.open('about:blank', '_blank');
-
       // Single exit point clears the in-flight set — wrap the rest of
       // the body in try/finally so a thrown error doesn't leave the
       // service permanently "already opening."
@@ -489,31 +470,14 @@
         return;
       }
 
-      // Ready — redirect the pre-opened tab to the actual tool URL.
-      // If the popup was blocked at click time (pendingTab is null),
-      // surface the URL as a clickable link in the toast so the
-      // operator can complete the open with one click.
+      // Ready — open the new tab. window.open is the LAST thing we do
+      // so the gesture chain from the click is as short as possible.
+      // No success toast: the new tab IS the success signal — extra
+      // toast noise gets in the way. No fallback toast either —
+      // operators don't need a "your browser blocked..." message
+      // cluttering the screen when the common case works.
       if (openBody && openBody.tool_url) {
-        if (pendingTab && !pendingTab.closed) {
-          pendingTab.location.href = openBody.tool_url;
-          showToast(
-            `<div><strong>${serviceName}</strong> opened in a new tab.</div>`,
-            'ok',
-            2500,
-          );
-        } else {
-          // Popup blocker active OR user closed the blank tab. Give them
-          // a fallback link.
-          showToast(
-            `<div><strong>${serviceName}</strong> is ready.<br>` +
-            `Your browser blocked the new tab. ` +
-            `<a href="${openBody.tool_url}" target="_blank" rel="noopener noreferrer" ` +
-            `style="color: var(--navy); text-decoration: underline;">` +
-            `Click here to open it</a>.</div>`,
-            'info',
-            10_000,
-          );
-        }
+        window.open(openBody.tool_url, '_blank');
       }
 
       } finally {
