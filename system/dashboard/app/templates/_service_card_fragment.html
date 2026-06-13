@@ -102,15 +102,18 @@
     {% elif service.control_plane %}
       {# Control-plane service (PostgreSQL): always-on, no Start/Stop.
          Open routes to the external_url (pgAdmin) since the warehouse
-         has no UI of its own. #}
+         has no UI of its own. Click goes through orchestackOpenService
+         targeting 'pgadmin' (not 'postgresql') so the toast tracks
+         pgAdmin's cold-start readiness — pgAdmin is cold-tier and
+         may need to be started. #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% set _tool_url = service.external_url|replace('{host}', _host)
                          if service.external_url
-                         else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+                         else (request.scope.root_path or '/app') ~ '/pgadmin' %}
       <a href="{{ _tool_url }}"
          target="_blank"
          rel="noopener noreferrer"
-         onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
+         onclick="event.preventDefault(); orchestackOpenService('pgadmin'); return false;"
          class="block w-full text-sm font-medium py-1.5 rounded text-center
                 no-underline
                 bg-[var(--navy)] text-white
@@ -118,25 +121,38 @@
         Open in pgAdmin
       </a>
     {% elif is_running %}
-      {# Primary action: Open the tool in a new tab.
-         Implemented as a native <a target="_blank"> anchor — that's the
-         only reliable way to open a new tab from a click. window.open()
-         after an async fetch loses the user-gesture flag and gets
-         silently blocked; window.open('about:blank') first then
-         redirecting works UNTIL you add 'noopener' (which makes
-         window.open return null). An anchor sidesteps all of it.
-         The onclick handler fires the orchestrator's /open POST as
-         fire-and-forget so session-tracking + audit still happen,
-         but we don't wait for the response — the tab navigates
-         immediately via the href. #}
+      {# Two open paths depending on whether the tool needs a wait:
+
+         SLOW services (metabase, pgadmin):
+           - Metabase: first-boot Liquibase + bootstrap hook (4-5 min)
+           - pgAdmin:  cold-tier, may not be running yet
+           Use orchestackOpenService which shows a "Starting…" toast,
+           opens about:blank synchronously to preserve the user gesture,
+           polls /ready, and redirects the pre-opened tab when the
+           tool is actually serving requests.
+
+         FAST services (airbyte, minio, others):
+           Tool is already running and ready instantly. The anchor
+           navigates directly via target="_blank"; we fire the /open
+           POST as a side-effect so the orchestrator still tracks
+           the session for audit and reconciliation.
+
+         Both paths use <a target="_blank"> as the underlying element
+         — the anchor's gesture is what beats popup blockers. The slow
+         path just preventDefaults and runs the wait. #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% set _tool_url = service.external_url|replace('{host}', _host)
                          if service.external_url
                          else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+      {% set _needs_wait = service.name in ['metabase', 'pgadmin'] %}
       <a href="{{ _tool_url }}"
          target="_blank"
          rel="noopener noreferrer"
+         {% if _needs_wait %}
+         onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
+         {% else %}
          onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
+         {% endif %}
          class="block w-full text-sm font-medium py-1.5 rounded text-center
                 no-underline
                 bg-[var(--navy)] text-white
