@@ -122,7 +122,12 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     "dbt":          {"tier": "cold", "display_name": "dbt Core",            "layer": "transformation","managed": True},
     "ge":           {"tier": "cold", "display_name": "Great Expectations",  "layer": "quality",      "managed": True},
     "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
-    "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True},
+    # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
+    # — same subpath-incompatibility class as MinIO. The compose snippet
+    # exposes the webapp on host port 8001; external_url tells the
+    # dashboard's Open button to send operators there instead of to
+    # the broken /app/airbyte subpath.
+    "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True, "external_url": "http://{host}:8001"},
     "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": True},
     # PostgreSQL is special — it's part of the base control plane (already
     # running as orchestack-postgres), so the orchestrator does NOT start

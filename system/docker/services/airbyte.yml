@@ -264,8 +264,16 @@ services:
       - traefik.http.middlewares.airbyte-strip.stripprefix.prefixes=/app/airbyte
       - traefik.http.routers.airbyte.middlewares=airbyte-strip@docker
       - traefik.http.services.airbyte.loadbalancer.server.port=80
-    # ports:
-    #   - "8001:80"  # uncomment for direct-port access on host
+    # Direct-port exposure on host — same pattern as MinIO. Airbyte's
+    # webapp emits absolute-root paths for its JS bundle and CSS
+    # (`<script src="/assets/index-XXX.js">`), which Traefik's
+    # stripprefix can't rewrite (those URLs leave the HTML before
+    # they hit Traefik again). The catalogue's external_url points
+    # operators here so Open lands them on a working UI. The Traefik
+    # labels above stay as a fallback — /app/airbyte serves a
+    # degraded HTML-only response which is at least testable.
+    ports:
+      - "8001:80"
 
 networks:
   orchestack-net:
