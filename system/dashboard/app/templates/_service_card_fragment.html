@@ -111,7 +111,8 @@
          target="_blank"
          rel="noopener noreferrer"
          onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
-         class="w-full text-sm font-medium py-1.5 rounded text-center
+         class="block w-full text-sm font-medium py-1.5 rounded text-center
+                no-underline
                 bg-[var(--navy)] text-white
                 hover:bg-[var(--navy-2)] transition-colors">
         Open in pgAdmin
@@ -136,7 +137,8 @@
          target="_blank"
          rel="noopener noreferrer"
          onclick="fetch('{{ request.scope.root_path or '/app' }}/api/dashboard/services/{{ service.name }}/open', {method: 'POST'}).catch(()=>{})"
-         class="w-full text-sm font-medium py-1.5 rounded text-center
+         class="block w-full text-sm font-medium py-1.5 rounded text-center
+                no-underline
                 bg-[var(--navy)] text-white
                 hover:bg-[var(--navy-2)] transition-colors">
         Open
