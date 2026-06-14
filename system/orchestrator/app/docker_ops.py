@@ -578,6 +578,55 @@ async def _ensure_pgadmin_servers_json() -> None:
             target, e,
         )
 
+    # pgAdmin imports servers.json ONLY on first start (when its internal
+    # SQLite cache is empty). Subsequent starts ignore the JSON and read
+    # from the cache. So if the operator renames a role (e.g.
+    # warehouse_user → warehouse_admin via the convention pass), the
+    # JSON gets updated but pgAdmin's stored server config doesn't —
+    # and the operator sees a password prompt for the now-nonexistent
+    # legacy role.
+    #
+    # Best-effort: patch the pgAdmin SQLite cache directly so the
+    # stored username matches what's in servers.json. Runs only if the
+    # pgadmin volume + database exist (skipped silently on fresh
+    # installs where pgAdmin hasn't started yet).
+    if warehouse_db and pipeline_user:
+        # pgAdmin's data dir is volume-mounted; we reach it via the
+        # platform's shared bind-mount. Standard location inside the
+        # pgadmin container is /var/lib/pgadmin/pgadmin4.db — but the
+        # orchestrator doesn't bind that volume. Instead we shell out
+        # via the docker CLI to run a tiny python snippet inside the
+        # pgadmin container. Same pattern as start_service uses for
+        # compose; no new tooling needed.
+        sync_script = (
+            "import sqlite3, os; "
+            "p='/var/lib/pgadmin/pgadmin4.db'; "
+            "os.path.exists(p) or exit(0); "
+            "con=sqlite3.connect(p); cur=con.cursor(); "
+            "cur.execute(\"UPDATE server SET username=? WHERE name=?\", "
+            f"  ('{pipeline_user}', '{warehouse_db}')); "
+            "con.commit(); con.close()"
+        )
+        try:
+            res = await asyncio.to_thread(
+                _run_sync,
+                ["docker", "exec", "orchestack-pgadmin",
+                 "python3", "-c", sync_script],
+                15,
+            )
+            if res.ok:
+                log.info(
+                    "pre-start hook: synced pgadmin sqlite cache "
+                    "(server '%s' username=%s)", warehouse_db, pipeline_user,
+                )
+            else:
+                log.debug(
+                    "pre-start hook: pgadmin sqlite sync skipped — "
+                    "container not running yet (%s)", res.short_stderr,
+                )
+        except Exception as e:
+            log.debug("pre-start hook: pgadmin sqlite sync skipped: %s", e)
+
 
 # ===========================================================================
 #  M4 service hooks — generic per-service DB + role provisioning
