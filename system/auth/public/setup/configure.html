@@ -173,7 +173,7 @@
           hint: "PostgreSQL role Airbyte connects as. OrcheStack auto-creates this role via the pre-start hook. Follows the service_admin naming convention, operators never type this name anywhere, so it's locked." },
         { name: "AIRBYTE_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Click Generate to create a 32-char hex password", required: true,
           generate: "hex",
-          hint: "Password for the Airbyte internal DB role. Operators never type this — Airbyte's container reads it from .env to connect to its sidecar PostgreSQL. Click Generate to produce a cryptographically random 32-character hex string. Replace with your own value only if your security policy specifically requires it." },
+          hint: "Password for the Airbyte internal DB role. Operators never type this since Airbyte's container reads it from .env to connect to its sidecar PostgreSQL. Click Generate to produce a cryptographically random 32-character hex string. Replace with your own value only if your security policy specifically requires it." },
         { name: "AIRBYTE_DB_NAME", label: "Internal DB name", type: "text", default: "airbyte", readonly: true,
           hint: "Internal database name where Airbyte tracks sync state. Fixed at 'airbyte'. The pre-start hook creates the database with this exact name; renaming would break the hook." },
       ],
@@ -203,15 +203,15 @@
         { name: "AIRFLOW_ADMIN_USERNAME", label: "Webserver admin username", type: "text", default: "airflow_admin", required: true,
           hint: "Username for the Airflow webserver admin account. OrcheStack's naming convention is service_admin so service accounts are consistent across the catalogue. Override with any name your security policy requires." },
         { name: "AIRFLOW_ADMIN_EMAIL", label: "Webserver admin email", type: "email", default: "airflow_admin@orchestack.local", required: true,
-          hint: "Email shown on the Airflow admin profile. Convention is service_admin@orchestack.local; no mail is ever sent to it. Override if your audit logging requires a real address." },
+          hint: "Email shown on the Airflow admin profile. Convention is service_admin@orchestack.local. Override if your audit logging requires a real address." },
         { name: "AIRFLOW_ADMIN_PASSWORD", label: "Webserver admin password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
           hint: "Password for the Airflow webserver admin, you'll type this every time you log into Airflow. Pick something memorable. Min 12 characters recommended." },
         { name: "AIRFLOW_FERNET_KEY", label: "Fernet key", type: "text", placeholder: "Click Generate to create a Fernet key", required: true,
           readonly: true, generate: "fernet-key",
-          hint: "Encryption key for connection passwords inside Airflow. Click Generate — the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
+          hint: "Encryption key for connection passwords inside Airflow. Click Generate, the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
         { name: "AIRFLOW_SECRET_KEY", label: "Webserver secret key", type: "text", placeholder: "Click Generate to create a 64-char hex secret", required: true,
           readonly: true, generate: "hex",
-          hint: "Used by Airflow's webserver to sign session cookies and CSRF tokens. Setting this explicitly (vs Airflow's per-process random default) means sessions survive container restarts — without it operators see 'Bad Request: The CSRF session token is missing' across deploys." },
+          hint: "Used by Airflow's webserver to sign session cookies and CSRF tokens. Setting this explicitly (vs Airflow's per-process random default) means sessions survive container restarts without it operators see 'Bad Request: The CSRF session token is missing' across deploys." },
         { name: "AIRFLOW_DAGS_REPO_URL", label: "DAGs Git repository", type: "text", placeholder: "Leave blank if your DAGs aren't on GitHub yet",
           hint: "If your team's Airflow DAGs are already on GitHub, paste the HTTPS or SSH URL. OrcheStack clones it into the Airflow container on first deploy and refreshes it on every scheduler tick. If you haven't set up a repo yet, skip this now and add it later from the dashboard → Services → Airflow → Edit config." },
         { name: "AIRFLOW_DAGS_REPO_BRANCH", label: "Branch to track", type: "text", default: "main",
@@ -239,7 +239,7 @@
         { name: "WAREHOUSE_DB_USER", label: "Warehouse admin user", type: "text", default: "warehouse_admin", required: true,
           hint: "PostgreSQL role that owns the warehouse database. Distinct from OrcheStack's internal user. Created during deploy by the orchestrator with privileges scoped to the warehouse DB only, it cannot read or modify OrcheStack's platform tables. Naming convention: service_admin (default as warehouse_admin). Override only if your security policy requires a different role name." },
         { name: "WAREHOUSE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
-          hint: "Password for the warehouse admin user. Type a value you'll remember — you'll use it to connect to the warehouse from external tools (psql, DBeaver, your team's dbt-local setups). Min 12 characters recommended. Used by dbt, Airflow, and Airbyte to connect internally too; rotating it later requires updating those services' configs." },
+          hint: "Password for the warehouse admin user. Type a value you'll remember. You'll use it to connect to the warehouse from external tools (psql, DBeaver, your team's dbt-local setups). Min 12 characters recommended. Used by dbt, Airflow, and Airbyte to connect internally too; rotating it later requires updating those services' configs." },
         { name: "WAREHOUSE_DB_NAME", label: "Warehouse database name", type: "text", default: "data_warehouse", required: true,
           hint: "Name of the database created for your warehouse data. Lowercase recommended. Postgres folds unquoted identifiers to lowercase. The default 'data_warehouse' fits most setups; override only if you want a name that reflects your organisation (e.g. 'acme_warehouse', 'acme_prod')." },
       ],
@@ -283,7 +283,7 @@
 
     // ------- Transformation -------
     "dbt Core": {
-      desc: "SQL transformations. OrcheStack provisions a PG role for dbt and generates a <code>profiles.yml</code> that points at your warehouse. The project itself comes from your GitHub repo — paste the URL below.",
+      desc: "SQL transformations. OrcheStack provisions a PG role for dbt and generates a <code>profiles.yml</code> that points at your warehouse. The project itself comes from your GitHub repo so paste the URL below.",
       fields: [
         { name: "DBT_REPO_URL", label: "dbt project Git repository (optional)", type: "text", placeholder: "https://github.com/your-org/dbt-analytics.git",
           hint: "If your dbt project is already on GitHub, paste the HTTPS or SSH URL. OrcheStack clones it into the dbt container on first deploy and refreshes it on every run. The project's name, profile, models, and tests all come from the repo. If not on GitHub yet, skip this now and add it later from the dashboard → Services → dbt Core → Edit config." },
@@ -292,21 +292,23 @@
         { name: "DBT_DATABASE", label: "Target database", type: "text", default: "data_warehouse",
           hint: "PostgreSQL database where dbt writes its outputs. Defaults to the pipeline warehouse OrcheStack creates ('data_warehouse'). Override only if you want dbt's production tables in a separate database from where Airbyte lands raw data." },
         { name: "DBT_SCHEMA", label: "Production schema", type: "text", default: "marts",
-          hint: "Schema (inside the database above) where dbt writes production outputs — typically 'marts'. This is what stakeholders see via Metabase." },
-        { name: "DBT_USER", label: "dbt PG user", type: "text", default: "dbt_admin", readonly: true,
-          hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role and grants it OWNERSHIP of the production schema above (so dbt has ALL privileges on existing tables) plus ALTER DEFAULT PRIVILEGES so any future tables in that schema — whether created by dbt or by an admin manually patching a model — are accessible to dbt_admin. The default follows OrcheStack's service_admin naming convention; you can override later via Edit Config." },
+          hint: "Schema (inside the database above) where dbt writes production outputs, typically 'marts'. This is what stakeholders see via Metabase." },
+        { name: "DBT_USER", label: "dbt Warehouse User", type: "text", default: "dbt_admin", readonly: true,
+          hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role and grants it OWNERSHIP of the production schema above (so dbt has ALL privileges on existing tables) plus ALTER DEFAULT PRIVILEGES so any future tables in that schema, whether created by dbt or by an admin manually patching a model are accessible to dbt_admin. The default follows OrcheStack's service_admin naming convention." },
         { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "Strong password (12+ chars)",
-          hint: "Password for the dbt PG user. Type a value you'll remember — OrcheStack writes it to profiles.yml at container start. If you leave it blank, the pre-start hook auto-derives a password from your platform password as a fallback (so dbt still works on first install)." },
+          hint: "Password for the dbt PG user. Type a value you'll remember. OrcheStack writes it to profiles.yml at container start. If you leave it blank, the pre-start hook auto-derives a password from your platform password as a fallback (so dbt still works on first install)." },
       ],
       note: "Three things to know:",
       noteHtml: `
         <ul>
-          <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code> — OrcheStack reads the file at container start and generates a matching <code>profiles.yml</code>. You don't need to enter the project name here.</li>
+          <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code>. OrcheStack reads the file at container start and generates a matching <code>profiles.yml</code>. You don't need to enter the project name here.</li>
           <li><strong>dbt runs against the <code>prod</code> target by default.</strong> The generated <code>profiles.yml</code> wires a single output named <code>prod</code> pointing at the database and schema above. <code>dbt run</code> (no <code>--target</code> flag) uses this; Airflow's <code>BashOperator(bash_command='dbt run')</code> uses this. The credentials and connection details for the <code>prod</code> target are exactly the fields you fill in here.</li>
           <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared schema stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
         </ul>
       `,
     },
+    
+    
     "SQLMesh": {
       desc: "Modern dbt alternative with virtual data environments and better incremental semantics.",
       fields: [
@@ -321,6 +323,7 @@
       ],
     },
 
+    
     // ------- Data quality -------
     "Great Expectations": {
       desc: "Declarative data quality checks. Runs after every dbt build. Great Expectations reuses your PostgreSQL warehouse credentials (it validates the same database dbt writes to), and stores its checkpoints in a standard project-relative directory.",
@@ -332,19 +335,22 @@
         { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory (relative to your install dir)", type: "text",
           default: "config/great_expectations/checkpoints",
           readonly: true,
-          hint: "Path inside your OrcheStack install dir where GE writes checkpoint definitions. Mounted into the GE container so checkpoints persist between runs and can be version-controlled alongside your dbt project. On disk: <your-install-dir>/config/great_expectations/checkpoints/ — for example, ~/orchestack/config/great_expectations/checkpoints/ if you installed there." },
+          hint: "Path inside your OrcheStack install dir where GE writes checkpoint definitions. Mounted into the GE container so checkpoints persist between runs and can be version-controlled alongside your dbt project. On disk: <your-install-dir>/config/great_expectations/checkpoints/, e.g, ~/orchestack/config/great_expectations/checkpoints/ if you installed there." },
       ],
     },
+
+
     "Soda Core": {
       desc: "YAML-first data quality. Simpler setup; less powerful than Great Expectations. Configuration file lives at a standard project-relative path; no manual input needed.",
       fields: [
         { name: "SODA_CONFIG_PATH", label: "soda.yml path (relative to your install dir)", type: "text",
           default: "config/soda/soda.yml",
           readonly: true,
-          hint: "Path inside your OrcheStack install dir to Soda's main config file. Edit this file after install to add your connection info and check definitions. On disk: <your-install-dir>/config/soda/soda.yml — for example, ~/orchestack/config/soda/soda.yml if you installed there." },
+          hint: "Path inside your OrcheStack install dir to Soda's main config file. Edit this file after install to add your connection info and check definitions. On disk: <your-install-dir>/config/soda/soda.yml, e.g, ~/orchestack/config/soda/soda.yml if you installed there." },
       ],
     },
 
+    
     // ------- Governance -------
     "OpenMetadata": {
       desc: "Governance and column-level lineage. Admin credentials plus a long JWT secret for internal auth.",
@@ -360,6 +366,8 @@
           hint: "Secret used to sign JWT tokens for OpenMetadata's internal API. Click Generate to create a cryptographically random 64-character hex string (equivalent to 'openssl rand -hex 32'). The value is created in your browser and never leaves your machine until you submit this form." },
       ],
     },
+    
+    
     "DataHub": {
       desc: "LinkedIn-origin metadata platform. Broader connector library; heavier operational burden.",
       fields: [
@@ -370,6 +378,8 @@
       ],
     },
 
+    
+    
     // ------- BI -------
     "Metabase": {
       desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself. Metabase uses an email-shaped identifier as the login, no mail is ever sent unless you configure SMTP yourself.",
@@ -377,11 +387,13 @@
         { name: "METABASE_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
           default: "metabase_admin@orchestack.local",
           required: true,
-          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. OrcheStack's naming convention is <code>&lt;service&gt;_admin@orchestack.local</code> so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer (e.g. your work address)." },
+          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. OrcheStack's naming convention is service_admin@orchestack.local so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer (e.g. your work address)." },
         { name: "METABASE_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "Metabase admin password. Can differ from your OrcheStack platform login." },
       ],
     },
+
+
     "Apache Superset": {
       desc: "Advanced BI with SQL Lab and richer chart types. Heavier and steeper learning curve.",
       fields: [
@@ -393,6 +405,8 @@
           hint: "Admin password." },
       ],
     },
+
+    
     "Lightdash": {
       desc: "BI-as-code driven by dbt models. Metrics live in your dbt project; dashboards sync automatically.",
       fields: [
@@ -409,12 +423,12 @@
 
     // ------- Admin UI -------
     "pgAdmin": {
-      desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username, no mail is ever sent to it. Anything that looks like an email works.",
+      desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username.",
       fields: [
         { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin login (email format)", type: "email",
           default: "pgadmin_admin@orchestack.local",
           required: true,
-          hint: "pgAdmin's login identifier. Must look like an email (the app refuses to start if it doesn't), but it's never used to send mail. OrcheStack's naming convention is <code>&lt;service&gt;_admin@orchestack.local</code> so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer." },
+          hint: "pgAdmin's login identifier. Must look like an email (the app refuses to start if it doesn't), but it's never used to send mail. OrcheStack's naming convention is service_admin@orchestack.local so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer." },
         { name: "PGADMIN_DEFAULT_PASSWORD", label: "Admin password", type: "password", required: true,
           hint: "pgAdmin login password. Min 12 characters recommended." },
       ],

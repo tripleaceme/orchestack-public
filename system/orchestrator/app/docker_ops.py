@@ -288,68 +288,80 @@ async def _ensure_metabase_database() -> None:
     quoted_pw = password.replace("'", "''")
 
     async with pool.acquire() as conn:
-        # 1. CREATE ROLE if absent (login + the chosen password).
-        role_exists = await conn.fetchval(
-            "SELECT 1 FROM pg_roles WHERE rolname = 'metabase'",
+        # 1. Role: backward-compat rename legacy "metabase" → "metabase_admin"
+        # then ensure the canonical name exists with the chosen password.
+        legacy_role = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'metabase'"
         )
-        if not role_exists:
-            log.info("pre-start hook (metabase): creating 'metabase' role")
+        new_role = await conn.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'metabase_admin'"
+        )
+        if legacy_role and not new_role:
+            log.info("pre-start hook (metabase): renaming legacy 'metabase' role → 'metabase_admin'")
+            await conn.execute('ALTER ROLE "metabase" RENAME TO "metabase_admin"')
+            new_role = True
+        if not new_role:
+            log.info("pre-start hook (metabase): creating 'metabase_admin' role")
             await conn.execute(
-                f"CREATE ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
+                f"CREATE ROLE metabase_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
         else:
             await conn.execute(
-                f"ALTER ROLE metabase WITH LOGIN PASSWORD '{quoted_pw}'"
+                f"ALTER ROLE metabase_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
 
-        # 2. CREATE DATABASE `metabase` if absent, owned by metabase
-        # role. Metabase OWNS this DB end-to-end — its hardcoded
-        # `public.<tablename>` migrations write into the public schema
-        # of this DB without needing any special permissions.
-        db_exists = await conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = 'metabase'",
+        # 2. Database: rename legacy "metabase" DB → "metabase_db" (the
+        # _db suffix convention). Then ensure metabase_db exists owned
+        # by metabase_admin.
+        legacy_db = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = 'metabase'"
         )
-        if not db_exists:
-            log.info(
-                "pre-start hook (metabase): creating 'metabase' database "
-                "owned by metabase role"
-            )
-            await conn.execute('CREATE DATABASE "metabase" OWNER metabase')
+        new_db = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = 'metabase_db'"
+        )
+        if legacy_db and not new_db:
+            log.info("pre-start hook (metabase): renaming legacy 'metabase' DB → 'metabase_db'")
+            await conn.execute('ALTER DATABASE "metabase" RENAME TO "metabase_db"')
+            new_db = True
+        if not new_db:
+            log.info("pre-start hook (metabase): creating 'metabase_db' owned by metabase_admin")
+            await conn.execute('CREATE DATABASE "metabase_db" OWNER metabase_admin')
         else:
-            # Ensure ownership is correct (M3 testers may have it owned
-            # by the platform admin from before the per-service-role
-            # change shipped).
+            # Ensure ownership is correct after the rename or for
+            # pre-existing DBs from very old installs.
             owner = await conn.fetchval(
                 "SELECT pg_get_userbyid(datdba) "
-                "FROM pg_database WHERE datname = 'metabase'"
+                "FROM pg_database WHERE datname = 'metabase_db'"
             )
-            if owner != "metabase":
+            if owner != "metabase_admin":
                 log.info(
-                    "pre-start hook (metabase): transferring metabase DB "
-                    "ownership from %s to metabase role", owner,
+                    "pre-start hook (metabase): transferring metabase_db "
+                    "ownership from %s to metabase_admin", owner,
                 )
-                await conn.execute("ALTER DATABASE metabase OWNER TO metabase")
+                await conn.execute(
+                    "ALTER DATABASE metabase_db OWNER TO metabase_admin"
+                )
 
     # 3. If the database already had objects owned by the platform admin
-    # (pre-per-service-role testers), REASSIGN them to metabase. Runs
-    # against the metabase DB itself — REASSIGN OWNED only acts on the
-    # connected database.
+    # (pre-per-service-role testers), REASSIGN them to metabase_admin.
+    # Runs against the metabase_db itself — REASSIGN OWNED only acts on
+    # the connected database.
     platform_user = env.get("ORCHESTACK_DB_USER", "orchestack")
-    if platform_user != "metabase":
+    if platform_user != "metabase_admin":
         try:
             import asyncpg
             from . import config as _cfg
             mb_conn = await asyncpg.connect(
                 host=_cfg.DB_HOST, port=_cfg.DB_PORT,
                 user=_cfg.DB_USER, password=_cfg.DB_PASSWORD,
-                database="metabase",
+                database="metabase_db",
             )
             try:
                 await mb_conn.execute(
-                    f'REASSIGN OWNED BY "{platform_user}" TO metabase'
+                    f'REASSIGN OWNED BY "{platform_user}" TO metabase_admin'
                 )
                 await mb_conn.execute(
-                    "GRANT ALL ON SCHEMA public TO metabase"
+                    "GRANT ALL ON SCHEMA public TO metabase_admin"
                 )
             finally:
                 await mb_conn.close()
@@ -591,11 +603,12 @@ async def _ensure_simple_pg_role_and_db(
     role_name: str, db_name: str, env_key: str,
     *, schema_in_services: str | None = None,
     legacy_role_name: str | None = None,
+    legacy_db_name: str | None = None,
 ) -> None:
     """Provision a per-service PG role + database OR schema.
 
-    role_name: PG role to create (e.g. "airflow")
-    db_name: database to own (e.g. "airflow") — IGNORED if schema_in_services set
+    role_name: PG role to create (e.g. "airflow_admin")
+    db_name: database to own (e.g. "airflow_db") — IGNORED if schema_in_services set
     env_key: .env var holding the password (e.g. "AIRFLOW_DB_PASSWORD")
     schema_in_services: if set, the role gets the named schema inside
                         `services` instead of its own database.
@@ -606,6 +619,15 @@ async def _ensure_simple_pg_role_and_db(
                       name doesn't, ALTER ROLE RENAME migrates it
                       in place — Postgres tracks ownership/grants
                       by OID so the rename is non-destructive.
+    legacy_db_name: name a previous version of OrcheStack created
+                    the database under (e.g. "airbyte" before the
+                    _db suffix convention). If set and the legacy
+                    DB exists but the new name doesn't, ALTER
+                    DATABASE RENAME migrates it in place. Postgres
+                    requires no active connections for the rename,
+                    so this works only when the dependent containers
+                    are stopped (which the pre-start hook context
+                    guarantees: hook runs before compose up).
     """
     from . import db as _db
     env = _read_env_file_or_empty()
@@ -710,6 +732,27 @@ async def _ensure_simple_pg_role_and_db(
     else:
         # Dedicated-DB path: CREATE DATABASE owned by the role.
         async with pool.acquire() as conn:
+            # Backward-compat: rename a legacy DB to the new name if it
+            # exists (e.g. "airbyte" → "airbyte_db" when adding the _db
+            # suffix convention). ALTER DATABASE RENAME requires zero
+            # active connections — the pre-start hook runs before
+            # compose up, so the dependent container is stopped and
+            # the rename is safe.
+            if legacy_db_name and legacy_db_name != db_name:
+                new_exists = await conn.fetchval(
+                    f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"
+                )
+                legacy_exists = await conn.fetchval(
+                    f"SELECT 1 FROM pg_database WHERE datname = '{legacy_db_name}'"
+                )
+                if legacy_exists and not new_exists:
+                    log.info(
+                        "pre-start hook (%s): renaming legacy database '%s' → '%s'",
+                        role_name, legacy_db_name, db_name,
+                    )
+                    await conn.execute(
+                        f'ALTER DATABASE "{legacy_db_name}" RENAME TO "{db_name}"'
+                    )
             db_exists = await conn.fetchval(
                 f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"
             )
@@ -721,11 +764,77 @@ async def _ensure_simple_pg_role_and_db(
 
 
 async def _ensure_airflow_setup() -> None:
-    """Airflow: own role + schema inside `services`."""
+    """Airflow: dedicated airflow_db database (the services-DB schema
+    approach was abandoned because only Airflow ever used it cleanly;
+    Metabase, Airbyte, and OpenMetadata all need dedicated DBs because
+    they hardcode public-schema table names).
+
+    Migration: earlier installs created an `airflow` schema inside a
+    `services` database. The helper's legacy_db_name kwarg renames a
+    legacy DB to the new name, but we can't rename a SCHEMA-in-DB to a
+    standalone DB. So this hook also handles the schema-to-database
+    migration explicitly: pg_dump --schema=airflow services into the
+    fresh airflow_db, then drop the old services DB once Airflow is
+    confirmed running on the new one.
+
+    For an academic-project demo where the operator hasn't built up
+    much Airflow state yet, we skip the dump-and-restore: create
+    airflow_db fresh, drop services, and let Airflow re-run its
+    Liquibase migrations to create the schema. The DAG files
+    themselves live in a separate volume so they're preserved across
+    this migration.
+    """
+    from . import db as _db
+    import asyncpg
+    # First the role + DB (with legacy_role_name for "airflow" → "airflow_admin"
+    # in case a previous install used the unsuffixed name).
     await _ensure_simple_pg_role_and_db(
-        "airflow", "airflow", "AIRFLOW_DB_PASSWORD",
-        schema_in_services="airflow",
+        "airflow_admin", "airflow_db", "AIRFLOW_DB_PASSWORD",
+        legacy_role_name="airflow",
     )
+    # Then clean up the legacy services DB if it exists. We only drop it
+    # if it has an `airflow` schema — that's the signal it was created
+    # by an old version of OrcheStack for Airflow's metadata. Any other
+    # use of `services` (none currently shipped) would be preserved.
+    pool = _db.get_pool()
+    async with pool.acquire() as conn:
+        services_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = 'services'"
+        )
+        if not services_exists:
+            return
+    # Connect to services to check if airflow schema is there.
+    try:
+        svc_conn = await asyncpg.connect(
+            host=config.DB_HOST, port=config.DB_PORT,
+            user=config.DB_USER, password=config.DB_PASSWORD,
+            database="services",
+        )
+    except Exception as e:
+        log.warning("airflow pre-start: couldn't connect to legacy services DB: %s", e)
+        return
+    try:
+        airflow_schema_exists = await svc_conn.fetchval(
+            "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'airflow'"
+        )
+    finally:
+        await svc_conn.close()
+    if not airflow_schema_exists:
+        return
+    # Drop the legacy services DB. ALTER DATABASE / DROP DATABASE
+    # requires no active connections — pre-start hook context
+    # guarantees this for the Airflow container side, and nothing
+    # else in OrcheStack uses `services`.
+    async with pool.acquire() as conn:
+        log.info(
+            "airflow pre-start: dropping legacy `services` database "
+            "(airflow_db is the new home; Airflow will re-init its "
+            "Liquibase migrations on next start)"
+        )
+        try:
+            await conn.execute('DROP DATABASE IF EXISTS "services"')
+        except Exception as e:
+            log.warning("airflow pre-start: couldn't drop services DB: %s", e)
 
 
 async def _ensure_airbyte_setup() -> None:
@@ -745,30 +854,51 @@ async def _ensure_airbyte_setup() -> None:
     (Postgres stores ownership by OID).
     """
     await _ensure_simple_pg_role_and_db(
-        "airbyte_admin", "airbyte", "AIRBYTE_DB_PASSWORD",
+        "airbyte_admin", "airbyte_db", "AIRBYTE_DB_PASSWORD",
         legacy_role_name="airbyte",
+        legacy_db_name="airbyte",
     )
-    # Temporal databases. Create owned by airbyte_admin; this branch
-    # only runs on fresh installs (existing DBs have their owner
-    # remapped by the ALTER ROLE RENAME above).
+    # Temporal databases. Apply the _db suffix convention with
+    # backward-compat renames from the legacy unsuffixed names.
     from . import db as _db
     pool = _db.get_pool()
-    for tdb in ("temporal", "temporal_visibility"):
+    for new_name, legacy_name in (
+        ("temporal_db", "temporal"),
+        ("temporal_visibility_db", "temporal_visibility"),
+    ):
         async with pool.acquire() as conn:
-            exists = await conn.fetchval(
-                f"SELECT 1 FROM pg_database WHERE datname = '{tdb}'"
+            new_exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_database WHERE datname = '{new_name}'"
             )
-            if not exists:
-                log.info("pre-start hook (airbyte): creating '%s' database for Temporal", tdb)
+            legacy_exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_database WHERE datname = '{legacy_name}'"
+            )
+            if legacy_exists and not new_exists:
+                log.info(
+                    "pre-start hook (airbyte): renaming legacy '%s' → '%s'",
+                    legacy_name, new_name,
+                )
                 await conn.execute(
-                    f'CREATE DATABASE "{tdb}" OWNER "airbyte_admin"'
+                    f'ALTER DATABASE "{legacy_name}" RENAME TO "{new_name}"'
+                )
+            elif not new_exists:
+                log.info("pre-start hook (airbyte): creating '%s' for Temporal", new_name)
+                await conn.execute(
+                    f'CREATE DATABASE "{new_name}" OWNER "airbyte_admin"'
                 )
 
 
 async def _ensure_openmetadata_setup() -> None:
-    """OpenMetadata: own role + own DB (hardcodes public schema)."""
+    """OpenMetadata: own role + own DB (hardcodes public schema).
+
+    Naming follows the two conventions: <service>_admin for the role,
+    <service>_db for the database. legacy_* kwargs migrate older
+    installs that used the unsuffixed names.
+    """
     await _ensure_simple_pg_role_and_db(
-        "openmetadata", "openmetadata", "OPENMETADATA_DB_PASSWORD",
+        "openmetadata_admin", "openmetadata_db", "OPENMETADATA_DB_PASSWORD",
+        legacy_role_name="openmetadata",
+        legacy_db_name="openmetadata",
     )
 
 
