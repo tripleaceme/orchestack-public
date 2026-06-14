@@ -128,14 +128,14 @@ PROD   : DAG   → dbt run --target prod → writes to marts.fct_orders  (merged
 <h2 id="admin-setup">Admin creates the dev schemas</h2>
 <p>From pgAdmin (or psql on the host), the platform admin runs this once per engineer:</p>
 <pre>-- Create a personal dev schema for each engineer
-CREATE SCHEMA dev_ayoade AUTHORIZATION dbt_user;
-CREATE SCHEMA dev_alice  AUTHORIZATION dbt_user;
-CREATE SCHEMA dev_bob    AUTHORIZATION dbt_user;
+CREATE SCHEMA dev_ayoade AUTHORIZATION dbt_admin;
+CREATE SCHEMA dev_alice  AUTHORIZATION dbt_admin;
+CREATE SCHEMA dev_bob    AUTHORIZATION dbt_admin;
 
--- Grant the dbt_user full control over each schema
-GRANT ALL ON SCHEMA dev_ayoade TO dbt_user;
-GRANT ALL ON SCHEMA dev_alice  TO dbt_user;
-GRANT ALL ON SCHEMA dev_bob    TO dbt_user;
+-- Grant the dbt_admin full control over each schema
+GRANT ALL ON SCHEMA dev_ayoade TO dbt_admin;
+GRANT ALL ON SCHEMA dev_alice  TO dbt_admin;
+GRANT ALL ON SCHEMA dev_bob    TO dbt_admin;
 
 -- Optionally grant read access to analysts for inspection
 GRANT USAGE ON SCHEMA dev_ayoade TO analyst_user;
@@ -154,7 +154,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
     dev:
       type: postgres
       host: localhost    # or the IP / localhost for self-host
-      user: dbt_user
+      user: dbt_admin
       password: "{{ env_var('DBT_PASSWORD') }}"
       port: 5432
       dbname: OrcheStack
@@ -163,7 +163,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA dev_ayoade
     prod:
       type: postgres
       host: localhost
-      user: dbt_user
+      user: dbt_admin
       password: "{{ env_var('DBT_PASSWORD') }}"
       port: 5432
       dbname: OrcheStack
@@ -210,7 +210,7 @@ dbt build --target prod</pre>
 <ul>
   <li><strong>profiles.yml in the repo.</strong> Do not commit it. Commit <code class="inline">profiles.yml.example</code> as a template and list <code class="inline">profiles.yml</code> in <code class="inline">.gitignore</code>.</li>
   <li><strong>Forgotten dev schemas.</strong> Old engineers leave; their dev schemas accumulate. Periodically run <code class="inline">DROP SCHEMA dev_&lt;leaver&gt; CASCADE;</code>.</li>
-  <li><strong>Running <code class="inline">--target prod</code> locally by mistake.</strong> Painful when it happens. Defend against it by giving the dbt_user only SELECT on <code class="inline">marts</code> for developer-facing PostgreSQL roles; the nightly DAG uses a different user with write access.</li>
+  <li><strong>Running <code class="inline">--target prod</code> locally by mistake.</strong> Painful when it happens. Defend against it by giving the dbt_admin only SELECT on <code class="inline">marts</code> for developer-facing PostgreSQL roles; the nightly DAG uses a different user with write access.</li>
   <li><strong>Schema per branch</strong> (Snowflake-only pattern) doesn't translate to PostgreSQL. Stick with per-engineer schemas.</li>
 </ul>
 

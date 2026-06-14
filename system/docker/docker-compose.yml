@@ -155,7 +155,7 @@ services:
     environment:
       POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack}
       POSTGRES_PASSWORD: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
-      POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack}
+      POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack_db}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # postgres-init/ files run once on first container creation (lexical order).
@@ -289,7 +289,7 @@ services:
       POSTGRES_HOST: orchestack-postgres
       POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack}
       POSTGRES_PASSWORD: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
-      POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack}
+      POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack_db}
       # Logging verbosity. Stays low by default; bump to "debug" when
       # tracing reconciler behaviour or investigating a stuck service.
       ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-info}

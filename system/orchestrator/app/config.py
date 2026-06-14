@@ -35,7 +35,7 @@ DB_HOST: str = os.environ.get("POSTGRES_HOST", "orchestack-postgres")
 DB_PORT: int = _int("POSTGRES_PORT", 5432)
 DB_USER: str = os.environ.get("POSTGRES_USER", "orchestack")
 DB_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "")
-DB_NAME: str = os.environ.get("POSTGRES_DB", "orchestack")
+DB_NAME: str = os.environ.get("POSTGRES_DB", "orchestack_db")
 
 # Pool size: 5 is enough for the reconciler tick + a handful of concurrent
 # API requests. Not a high-QPS service. Bump if we add dashboard features
