@@ -1037,6 +1037,55 @@ async def _ensure_dbt_setup() -> None:
             f'ALTER DEFAULT PRIVILEGES IN SCHEMA "{target_schema}" '
             f'GRANT EXECUTE ON FUNCTIONS TO dbt_admin'
         )
+
+        # Read access for warehouse_admin (the role that owns the
+        # warehouse database itself). Without this, an operator
+        # connecting to the warehouse via pgAdmin as warehouse_admin
+        # gets "permission denied for schema marts" — even though
+        # they own the database — because dbt's pre-start hook
+        # transferred ownership of `marts` to dbt_admin. Granting
+        # warehouse_admin USAGE + SELECT on the existing schema +
+        # ALTER DEFAULT PRIVILEGES so future dbt-created tables
+        # are queryable lets the warehouse owner browse dbt's
+        # output without elevating to a superuser.
+        warehouse_role = "warehouse_admin"
+        try:
+            await wh_conn.execute(
+                f'GRANT USAGE ON SCHEMA "{target_schema}" TO {warehouse_role}'
+            )
+            await wh_conn.execute(
+                f'GRANT SELECT ON ALL TABLES IN SCHEMA "{target_schema}" '
+                f'TO {warehouse_role}'
+            )
+            await wh_conn.execute(
+                f'GRANT SELECT ON ALL SEQUENCES IN SCHEMA "{target_schema}" '
+                f'TO {warehouse_role}'
+            )
+            # Future tables created by dbt_admin in this schema → also
+            # SELECT for warehouse_admin. The "FOR ROLE dbt_admin"
+            # qualifier is important: ALTER DEFAULT PRIVILEGES is
+            # per-creating-role, so we set it specifically for the
+            # role that will create the objects.
+            await wh_conn.execute(
+                f'ALTER DEFAULT PRIVILEGES FOR ROLE dbt_admin '
+                f'IN SCHEMA "{target_schema}" '
+                f'GRANT SELECT ON TABLES TO {warehouse_role}'
+            )
+            await wh_conn.execute(
+                f'ALTER DEFAULT PRIVILEGES FOR ROLE dbt_admin '
+                f'IN SCHEMA "{target_schema}" '
+                f'GRANT SELECT ON SEQUENCES TO {warehouse_role}'
+            )
+        except Exception as e:
+            # warehouse_admin role may not exist on a totally fresh
+            # install where the wizard hasn't run yet. Log + move on
+            # — the grants will succeed on next start when the role
+            # is created.
+            log.info(
+                "dbt pre-start: warehouse_admin grants skipped (%s) — "
+                "fresh install; will apply on next start",
+                type(e).__name__,
+            )
     finally:
         await wh_conn.close()
 
