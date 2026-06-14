@@ -33,7 +33,7 @@ LOG_LEVEL: str = os.environ.get("ORCHESTRATOR_LOG_LEVEL", "info").upper()
 # The orchestrator NEVER connects to the customer warehouse DB.
 DB_HOST: str = os.environ.get("POSTGRES_HOST", "orchestack-postgres")
 DB_PORT: int = _int("POSTGRES_PORT", 5432)
-DB_USER: str = os.environ.get("POSTGRES_USER", "orchestack")
+DB_USER: str = os.environ.get("POSTGRES_USER", "orchestack_admin")
 DB_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "")
 DB_NAME: str = os.environ.get("POSTGRES_DB", "orchestack_db")
 

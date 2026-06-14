@@ -153,7 +153,7 @@ services:
     container_name: orchestack-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack}
+      POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack_admin}
       POSTGRES_PASSWORD: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack_db}
     volumes:
@@ -287,7 +287,7 @@ services:
       # from the setup wizard and are passed to the per-service containers
       # the orchestrator spawns (dbt, Airflow, Airbyte) at M4.
       POSTGRES_HOST: orchestack-postgres
-      POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack}
+      POSTGRES_USER: ${ORCHESTACK_DB_USER:-orchestack_admin}
       POSTGRES_PASSWORD: ${ORCHESTACK_DB_PASSWORD:?ORCHESTACK_DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack_db}
       # Logging verbosity. Stays low by default; bump to "debug" when

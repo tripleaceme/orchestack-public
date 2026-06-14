@@ -346,7 +346,7 @@ async def _ensure_metabase_database() -> None:
     # (pre-per-service-role testers), REASSIGN them to metabase_admin.
     # Runs against the metabase_db itself — REASSIGN OWNED only acts on
     # the connected database.
-    platform_user = env.get("ORCHESTACK_DB_USER", "orchestack")
+    platform_user = env.get("ORCHESTACK_DB_USER", "orchestack_admin")
     if platform_user != "metabase_admin":
         try:
             import asyncpg
