@@ -233,18 +233,19 @@
       desc: "Your <strong>warehouse</strong> database is separate from OrcheStack's internal database. This is where raw landings from Airbyte, dbt's marts, and analytics tables live, the database every BI and analyst tool connects to.",
       fields: [
         { name: "WAREHOUSE_DB_HOST", label: "Warehouse host", type: "text", default: "orchestack-postgres", readonly: true,
-          hint: "Internal Docker hostname of the warehouse — fixed by the platform because every service connects via the orchestack-net network using this exact name. Cannot be changed from the wizard or Edit Config; rebuild the stack with a different base compose file if you need an external warehouse." },
+          hint: "Internal Docker hostname of the warehouse, fixed by the platform because every service connects via the orchestack-net network using this exact name. Cannot be changed from the wizard or Edit Config; rebuild the stack with a different base compose file if you need an external warehouse." },
         { name: "WAREHOUSE_DB_PORT", label: "Warehouse port", type: "text", default: "5432", readonly: true,
           hint: "PostgreSQL's port. Fixed at 5432 by the postgres image's default, overriding it here would just break every internal connection without changing what's actually listening." },
         { name: "WAREHOUSE_DB_USER", label: "Warehouse admin user", type: "text", default: "warehouse_admin", required: true,
-          hint: "PostgreSQL role that owns the warehouse database. Distinct from OrcheStack's internal user. Created during deploy by the orchestrator with privileges scoped to the warehouse DB only — it cannot read or modify OrcheStack's platform tables. Naming convention: service_admin (default as warehouse_admin). Override only if your security policy requires a different role name." },
-        { name: "WAREHOUSE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
-          generate: "hex",
-          hint: "Password for the warehouse admin user. Click Generate, the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it. Used by dbt, Airflow, and Airbyte to connect; rotating it requires updating those services' configs too." },
+          hint: "PostgreSQL role that owns the warehouse database. Distinct from OrcheStack's internal user. Created during deploy by the orchestrator with privileges scoped to the warehouse DB only, it cannot read or modify OrcheStack's platform tables. Naming convention: service_admin (default as warehouse_admin). Override only if your security policy requires a different role name." },
+        { name: "WAREHOUSE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Password for the warehouse admin user. Type a value you'll remember — you'll use it to connect to the warehouse from external tools (psql, DBeaver, your team's dbt-local setups). Min 12 characters recommended. Used by dbt, Airflow, and Airbyte to connect internally too; rotating it later requires updating those services' configs." },
         { name: "WAREHOUSE_DB_NAME", label: "Warehouse database name", type: "text", default: "data_warehouse", required: true,
           hint: "Name of the database created for your warehouse data. Lowercase recommended. Postgres folds unquoted identifiers to lowercase. The default 'data_warehouse' fits most setups; override only if you want a name that reflects your organisation (e.g. 'acme_warehouse', 'acme_prod')." },
       ],
     },
+    
+    
     "ClickHouse": {
       desc: "Column-store warehouse for analytical workloads above ~1 TB. Heavier than PostgreSQL.",
       fields: [
@@ -256,22 +257,25 @@
           hint: "Default ClickHouse database. Your marts tables will live here." },
       ],
     },
+    
+    
     "DuckDB": {
-      desc: "In-process analytical engine. No separate server — just a file path.",
+      desc: "In-process analytical engine. No separate server, just a file path.",
       fields: [
         { name: "DUCKDB_PATH", label: "Database file path", type: "text", default: "./config/duckdb/OrcheStack.duckdb", required: true,
           hint: "Path to the DuckDB file on the host. OrcheStack creates the file on first run. Single-file databases don't need a server." },
       ],
     },
 
+
     // ------- Data lake -------
     "MinIO": {
       desc: "S3-compatible object store. Root credentials protect every bucket in the instance.",
       fields: [
         { name: "MINIO_ROOT_USER", label: "Root user (access key)", type: "text", default: "minio_admin", required: true,
-          hint: "Access key — works like an AWS access key ID. Used by Airbyte and any external S3 clients connecting to MinIO. OrcheStack's naming convention is service_admin for every auto-provisioned service account so they're easy to recognise across the catalogue. You can override this with any name your security policy requires." },
+          hint: "Access key: works like an AWS access key ID. Used by Airbyte and any external S3 clients connecting to MinIO. OrcheStack's naming convention is service_admin for every auto-provisioned service account so they're easy to recognise across the catalogue. You can override this with any name your security policy requires." },
         { name: "MINIO_ROOT_PASSWORD", label: "Root password (secret key)", type: "password", placeholder: "At least 16 characters", required: true,
-          hint: "Secret key — treat like a password. Rotate from the admin dashboard when necessary. Required to be 8+ chars; 16+ recommended." },
+          hint: "Secret key: treat like a password. Rotate from the admin dashboard when necessary. Required to be 8+ chars; 16+ recommended." },
         { name: "MINIO_BUCKET", label: "Default bucket", type: "text", default: "OrcheStack",
           hint: "Default bucket created on first boot. Raw data from Airbyte lands here at /raw/<source>/<date>/." },
       ],
