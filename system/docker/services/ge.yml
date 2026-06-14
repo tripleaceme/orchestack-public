@@ -162,8 +162,8 @@ services:
       GE_PG_HOST:     orchestack-postgres
       GE_PG_PORT:     "5432"
       GE_PG_USER:     warehouse_user
-      GE_PG_PASSWORD: ${PIPELINE_DB_PASSWORD:?PIPELINE_DB_PASSWORD must be set}
-      GE_PG_DBNAME:   ${PIPELINE_DB_NAME:-data_warehouse}
+      GE_PG_PASSWORD: ${WAREHOUSE_DB_PASSWORD:?WAREHOUSE_DB_PASSWORD must be set}
+      GE_PG_DBNAME:   ${WAREHOUSE_DB_NAME:-data_warehouse}
     networks:
       - orchestack-net
     volumes:

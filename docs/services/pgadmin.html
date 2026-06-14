@@ -130,7 +130,7 @@
 <h2 id="preloaded-server">The pre-loaded server connection</h2>
 <p>You don't have to add a server connection by hand. The orchestrator's pre-start hook materialises a <code class="inline">servers.json</code> and a <code class="inline">.pgpass</code> file into a shared volume that pgAdmin reads on startup. When you open pgAdmin you see:</p>
 <ul>
-  <li>One pre-loaded server connection named after your <code class="inline">PIPELINE_DB_NAME</code> (e.g. <strong>data_warehouse</strong>), grouped under <strong>OrcheStack</strong>.</li>
+  <li>One pre-loaded server connection named after your <code class="inline">WAREHOUSE_DB_NAME</code> (e.g. <strong>data_warehouse</strong>), grouped under <strong>OrcheStack</strong>.</li>
   <li>Clicking it connects without a password prompt — the <code class="inline">.pgpass</code> file auto-fills the <code class="inline">warehouse_user</code> password read from <code class="inline">.env</code>.</li>
   <li>All four databases (<code class="inline">data_warehouse</code>, <code class="inline">metabase</code>, <code class="inline">orchestack</code>, <code class="inline">postgres</code>) are visible in the Object Explorer because you sign in as the platform admin.</li>
   <li>Clicking the <code class="inline">metabase</code> or <code class="inline">orchestack</code> databases may return <em>"permission denied"</em>. That is correct — PostgreSQL is enforcing role-level scoping so the warehouse user can't poke at the platform's internal databases.</li>

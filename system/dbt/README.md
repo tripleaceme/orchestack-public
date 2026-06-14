@@ -18,7 +18,7 @@ A minimal but production-shaped dbt project an operator can fork:
 ```
 system/dbt/
 ├── dbt_project.yml         Project config + paths + targets
-├── profiles.yml.template    Templated profile pointing at the pipeline DB
+├── profiles.yml.template    Templated profile pointing at the warehouse DB
 ├── packages.yml             dbt_utils + 1-2 helpful packages
 ├── models/
 │   ├── staging/
@@ -80,7 +80,7 @@ When Airflow's `dbt run` task fires, the dbt container (M4) does:
 2. If empty → use the starter project from this folder (mounted into the
    container at `/dbt/project/`)
 3. If set → `git clone <url> --branch <DBT_REPO_BRANCH>` into `/dbt/project/`
-4. Generate `profiles.yml` from the operator's PIPELINE_DB_* credentials
+4. Generate `profiles.yml` from the operator's WAREHOUSE_DB_* credentials
 5. `dbt deps && dbt run --target $DBT_TARGET`
 
 The starter project exists so operators can use OrcheStack on day one

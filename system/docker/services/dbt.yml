@@ -260,7 +260,7 @@ services:
       # Target database. Defaults to the pipeline warehouse but operators
       # can override via DBT_DATABASE in Edit Config if they want dbt
       # to write to a dedicated analytics DB instead of the shared one.
-      DBT_PG_DBNAME:   ${DBT_DATABASE:-${PIPELINE_DB_NAME:-data_warehouse}}
+      DBT_PG_DBNAME:   ${DBT_DATABASE:-${WAREHOUSE_DB_NAME:-data_warehouse}}
       DBT_PG_SCHEMA:   ${DBT_SCHEMA:-marts}
     networks:
       - orchestack-net

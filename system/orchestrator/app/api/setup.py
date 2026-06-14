@@ -4,8 +4,8 @@ Called once when the operator clicks "Create services" on deploying.html.
 This is the moment localStorage state becomes real database state.
 
 What this does:
-  1. Validate request body shape (Pydantic) + pipeline DB inputs (regex).
-  2. Create the pipeline database + scoped role inside postgres.
+  1. Validate request body shape (Pydantic) + warehouse DB inputs (regex).
+  2. Create the warehouse database + scoped role inside postgres.
   3. Upsert platform.setup_state for the actor user (current_step='completed').
   4. Upsert one platform.installed_services row per selected, catalogued tool.
   5. Persist wizard-collected credentials to the operator's .env file
@@ -50,7 +50,7 @@ log = logging.getLogger("orchestrator.setup")
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
-# Pipeline DB identifier regex — restrictive because these get interpolated
+# Warehouse DB identifier regex — restrictive because these get interpolated
 # into CREATE DATABASE / CREATE ROLE statements (asyncpg won't parameterise
 # identifiers). The wizard's client-side validation enforces this already;
 # re-validating here is defence in depth — never trust the network.
@@ -80,17 +80,17 @@ class DeployRequest(BaseModel):
     )
 
 
-def _validate_pipeline_db_inputs(creds: dict[str, str]) -> tuple[str, str, str]:
-    """Extract + sanity-check pipeline DB credentials before any SQL."""
-    user = creds.get("PIPELINE_DB_USER", "")
-    name = creds.get("PIPELINE_DB_NAME", "")
-    password = creds.get("PIPELINE_DB_PASSWORD", "")
+def _validate_warehouse_db_inputs(creds: dict[str, str]) -> tuple[str, str, str]:
+    """Extract + sanity-check warehouse DB credentials before any SQL."""
+    user = creds.get("WAREHOUSE_DB_USER", "")
+    name = creds.get("WAREHOUSE_DB_NAME", "")
+    password = creds.get("WAREHOUSE_DB_PASSWORD", "")
     if not _SAFE_IDENT.fullmatch(user):
-        raise HTTPException(400, f"PIPELINE_DB_USER {user!r} must match {_SAFE_IDENT.pattern}")
+        raise HTTPException(400, f"WAREHOUSE_DB_USER {user!r} must match {_SAFE_IDENT.pattern}")
     if not _SAFE_IDENT.fullmatch(name):
-        raise HTTPException(400, f"PIPELINE_DB_NAME {name!r} must match {_SAFE_IDENT.pattern}")
+        raise HTTPException(400, f"WAREHOUSE_DB_NAME {name!r} must match {_SAFE_IDENT.pattern}")
     if len(password) < 12:
-        raise HTTPException(400, "PIPELINE_DB_PASSWORD must be at least 12 chars")
+        raise HTTPException(400, "WAREHOUSE_DB_PASSWORD must be at least 12 chars")
     return user, name, password
 
 
@@ -98,14 +98,14 @@ def _validate_pipeline_db_inputs(creds: dict[str, str]) -> tuple[str, str, str]:
 async def deploy(req: DeployRequest) -> dict[str, object]:
     """Materialise the wizard's plan into database state."""
     user_id = req.user_id if req.user_id is not None else config.DEFAULT_USER_ID
-    user, name, password = _validate_pipeline_db_inputs(req.credentials)
+    user, name, password = _validate_warehouse_db_inputs(req.credentials)
 
     await audit.write(
         "setup_deploy_started", user_id=user_id,
         details={"selections": req.selections},
     )
 
-    # ---- 1. Create the pipeline database + scoped role ----------------
+    # ---- 1. Create the warehouse database + scoped role ----------------
     # PostgreSQL DDL statements DO NOT accept $N parameter placeholders —
     # the parameterized-query protocol works only on DML grammar slots.
     # CREATE ROLE ... PASSWORD $1 fails with "syntax error at or near $1".
@@ -132,7 +132,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
                 "SELECT 1 FROM pg_roles WHERE rolname = $1", user,
             )
 
-            # IDEMPOTENT semantics — if the pipeline DB + role already exist
+            # IDEMPOTENT semantics — if the warehouse DB + role already exist
             # from a previous successful deploy, skip the CREATE statements.
             # This is what makes "+ Configure" on a NEW service card from
             # the dashboard (re-entering the wizard to add a service) work
@@ -171,7 +171,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             "setup_deploy_db_failed", user_id=user_id,
             details={"error": str(e)},
         )
-        raise HTTPException(500, f"pipeline DB creation failed: {e}") from e
+        raise HTTPException(500, f"warehouse DB creation failed: {e}") from e
 
     # ---- 2. Mark this user's wizard as completed ---------------------
     # setup_state has user_id as primary key — UPSERT semantics. We store
@@ -248,7 +248,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     #   4. Write atomically (tmpfile + rename) so a partial write can't
     #      leave .env half-rewritten.
     #
-    # PIPELINE_DB_PASSWORD is already validated above; everything else
+    # WAREHOUSE_DB_PASSWORD is already validated above; everything else
     # in req.credentials is operator-typed and we trust the wizard's
     # client-side validation (#2 from M3 testing feedback).
     # Wrapped in try/except because credential persistence is a "best
@@ -272,7 +272,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     await audit.write(
         "setup_deploy_complete", user_id=user_id,
         details={
-            "pipeline_db": name,
+            "warehouse_db": name,
             "pipeline_user": user,
             "registered": registered,
             "skipped": skipped,
@@ -283,7 +283,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     )
     return {
         "status": "ready",
-        "pipeline_db": name,
+        "warehouse_db": name,
         "pipeline_user": user,
         "registered_services": registered,
         "skipped_services": skipped,

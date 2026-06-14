@@ -45,7 +45,7 @@ async def write(
 
     `action` is a short snake_case verb describing what happened, e.g.
     "service_started", "service_stopped_idle", "session_opened",
-    "pipeline_db_created". Keep the action names stable across phases;
+    "warehouse_db_created". Keep the action names stable across phases;
     M5's evaluation queries filter by action.
 
     `details` is a free-form dict — request body excerpts, container IDs,

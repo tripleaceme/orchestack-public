@@ -68,13 +68,13 @@ READ_ONLY_PATTERNS = (
     re.compile(r"^ORCHESTACK_DB_PASSWORD$"),  # rotating breaks the platform
     # Internal Docker network: hostnames are container names, ports are
     # service-defined. Operator doesn't choose either.
-    re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, PIPELINE_DB_HOST, AIRBYTE_DB_HOST, …
+    re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, WAREHOUSE_DB_HOST, AIRBYTE_DB_HOST, …
     re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
     # Internal-only PG roles + DB names — used by the tool's container
     # to connect to its own sidecar database. Operator never types these
     # into any form; renaming would break the pre-start provisioning hook.
     # Exact names listed rather than a broad `_DB_USER$` regex because
-    # PIPELINE_DB_USER (warehouse_admin) is operator-facing and stays
+    # WAREHOUSE_DB_USER (warehouse_admin) is operator-facing and stays
     # editable — operators may need to log into the warehouse with psql
     # or external tools using a name their team agreed on.
     re.compile(r"^DBT_USER$"),                # dbt_admin — used by dbt container
@@ -175,8 +175,8 @@ class TestRequest(BaseModel):
 #
 # What the test does, key-by-key:
 #
-#   PIPELINE_DB_PASSWORD — open a PostgreSQL connection as
-#     PIPELINE_DB_USER against PIPELINE_DB_NAME on orchestack-postgres
+#   WAREHOUSE_DB_PASSWORD — open a PostgreSQL connection as
+#     WAREHOUSE_DB_USER against WAREHOUSE_DB_NAME on orchestack-postgres
 #     using the PROPOSED password. Close immediately. Success means the
 #     password is correct from postgres's perspective.
 #
@@ -202,7 +202,7 @@ class TestRequest(BaseModel):
 # ----------------------------------------------------------------------
 _DB_TEST_TABLE: dict[str, tuple[str, str, str]] = {
     # key: (user_key, db_key, user_default — used if user_key is unset)
-    "PIPELINE_DB_PASSWORD":  ("PIPELINE_DB_USER",  "PIPELINE_DB_NAME", ""),
+    "WAREHOUSE_DB_PASSWORD":  ("WAREHOUSE_DB_USER",  "WAREHOUSE_DB_NAME", ""),
     "METABASE_DB_PASSWORD":  ("__literal_metabase__", "__literal_metabase__", "metabase"),
 }
 

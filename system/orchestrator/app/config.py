@@ -30,7 +30,7 @@ LOG_LEVEL: str = os.environ.get("ORCHESTRATOR_LOG_LEVEL", "info").upper()
 
 # ----- Database (OrcheStack internal DB) ------------------------------------
 # These come from the compose file, sourced from ORCHESTACK_DB_* in .env.
-# The orchestrator NEVER connects to the customer pipeline DB.
+# The orchestrator NEVER connects to the customer warehouse DB.
 DB_HOST: str = os.environ.get("POSTGRES_HOST", "orchestack-postgres")
 DB_PORT: int = _int("POSTGRES_PORT", 5432)
 DB_USER: str = os.environ.get("POSTGRES_USER", "orchestack")
@@ -78,7 +78,7 @@ COMPOSE_PROJECT_PREFIX: str = "orchestack-service"
 # Path INSIDE the orchestrator container where the operator's `.env` is
 # bind-mounted (see system/docker/docker-compose.yml). Passed to every
 # `docker compose --env-file <path>` invocation so per-service compose
-# snippets can interpolate ${ORCHESTACK_DB_PASSWORD}, ${PIPELINE_DB_*},
+# snippets can interpolate ${ORCHESTACK_DB_PASSWORD}, ${WAREHOUSE_DB_*},
 # etc. without those variables having to live in the orchestrator's own
 # process environment. Override via ORCHESTRATOR_ENV_FILE if the mount
 # location ever changes.

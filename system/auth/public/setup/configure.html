@@ -171,9 +171,8 @@
           hint: "Internal Docker hostname Airbyte uses to reach its state database. Fixed at the orchestack-postgres service name because that's where OrcheStack's shared Postgres instance lives. Cannot be changed from the wizard." },
         { name: "AIRBYTE_DB_USER", label: "Internal DB user", type: "text", default: "airbyte", readonly: true,
           hint: "PostgreSQL username Airbyte connects as. OrcheStack auto-creates this role via the pre-start hook. Fixed at 'airbyte' so the hook knows what to provision, not operator-overridable." },
-        { name: "AIRBYTE_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
-          generate: "hex",
-          hint: "Password for the Airbyte user. Click Generate — the browser produces a cryptographically random 32-character hex string. This is the only Airbyte-related credential the operator owns; the user, host, and DB name are platform-set." },
+        { name: "AIRBYTE_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Password for the Airbyte user. Type a value you'll remember — OrcheStack writes it to .env at deploy time and Airbyte uses it to connect to its sidecar PostgreSQL. This is the only Airbyte-related credential the operator owns; the user, host, and DB name are platform-set." },
         { name: "AIRBYTE_DB_NAME", label: "Internal DB name", type: "text", default: "airbyte", readonly: true,
           hint: "Internal database name where Airbyte tracks sync state. Fixed at 'airbyte'. The pre-start hook creates the database with this exact name; renaming would break the hook." },
       ],
@@ -204,9 +203,8 @@
           hint: "Username for the Airflow webserver admin account. OrcheStack's naming convention is <code>&lt;service&gt;_admin</code> so service accounts are consistent across the catalogue. Override with any name your security policy requires." },
         { name: "AIRFLOW_ADMIN_EMAIL", label: "Webserver admin email", type: "email", default: "airflow_admin@orchestack.local", required: true,
           hint: "Email shown on the Airflow admin profile. Convention is <code>&lt;service&gt;_admin@orchestack.local</code>; no mail is ever sent to it. Override if your audit logging requires a real address." },
-        { name: "AIRFLOW_ADMIN_PASSWORD", label: "Webserver admin password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
-          generate: "hex",
-          hint: "Password for the Airflow webserver admin. Click Generate — the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it." },
+        { name: "AIRFLOW_ADMIN_PASSWORD", label: "Webserver admin password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Password for the Airflow webserver admin — you'll type this every time you log into Airflow. Pick something memorable. Min 12 characters recommended." },
         { name: "AIRFLOW_FERNET_KEY", label: "Fernet key", type: "text", placeholder: "Click Generate to create a Fernet key", required: true,
           readonly: true, generate: "fernet-key",
           hint: "Encryption key for connection passwords inside Airflow. Click Generate — the browser produces a urlsafe-base64-encoded 32-byte key in the exact format Airflow expects (equivalent to Python's Fernet.generate_key()). Back this value up: if you lose it, all stored connection passwords become unrecoverable." },
@@ -233,16 +231,16 @@
     "PostgreSQL": {
       desc: "Your <strong>warehouse</strong> database is separate from OrcheStack's internal database. This is where raw landings from Airbyte, dbt's marts, and analytics tables live — the database every BI and analyst tool connects to.",
       fields: [
-        { name: "PIPELINE_DB_HOST", label: "Warehouse host", type: "text", default: "orchestack-postgres", readonly: true,
+        { name: "WAREHOUSE_DB_HOST", label: "Warehouse host", type: "text", default: "orchestack-postgres", readonly: true,
           hint: "Internal Docker hostname of the warehouse — fixed by the platform because every service connects via the orchestack-net network using this exact name. Cannot be changed from the wizard or Edit Config; rebuild the stack with a different base compose file if you need an external warehouse." },
-        { name: "PIPELINE_DB_PORT", label: "Warehouse port", type: "text", default: "5432", readonly: true,
+        { name: "WAREHOUSE_DB_PORT", label: "Warehouse port", type: "text", default: "5432", readonly: true,
           hint: "PostgreSQL's port. Fixed at 5432 by the postgres image's default — overriding it here would just break every internal connection without changing what's actually listening." },
-        { name: "PIPELINE_DB_USER", label: "Warehouse admin user", type: "text", default: "warehouse_admin", required: true,
+        { name: "WAREHOUSE_DB_USER", label: "Warehouse admin user", type: "text", default: "warehouse_admin", required: true,
           hint: "PostgreSQL role that owns the warehouse database. Distinct from OrcheStack's internal user. Created during deploy by the orchestrator with privileges scoped to the warehouse DB only — it cannot read or modify OrcheStack's platform tables. Naming convention: <code>&lt;service&gt;_admin</code> (default <code>warehouse_admin</code>). Override only if your security policy requires a different role name." },
-        { name: "PIPELINE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
+        { name: "WAREHOUSE_DB_PASSWORD", label: "Warehouse admin password", type: "password", placeholder: "Click Generate to create a 32-char password", required: true,
           generate: "hex",
           hint: "Password for the warehouse admin user. Click Generate — the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it. Used by dbt, Airflow, and Airbyte to connect; rotating it requires updating those services' configs too." },
-        { name: "PIPELINE_DB_NAME", label: "Warehouse database name", type: "text", default: "data_warehouse", required: true,
+        { name: "WAREHOUSE_DB_NAME", label: "Warehouse database name", type: "text", default: "data_warehouse", required: true,
           hint: "Name of the database created for your warehouse data. Lowercase recommended — Postgres folds unquoted identifiers to lowercase. The default 'data_warehouse' fits most setups; override only if you want a name that reflects your organisation (e.g. 'acme_warehouse', 'acme_prod')." },
       ],
     },
@@ -292,9 +290,8 @@
           hint: "Schema (inside the database above) where dbt writes production outputs — typically 'marts'. This is what stakeholders see via Metabase." },
         { name: "DBT_USER", label: "dbt PG user", type: "text", default: "dbt_admin", readonly: true,
           hint: "PostgreSQL role dbt authenticates as. OrcheStack creates this role and grants it OWNERSHIP of the production schema above (so dbt has ALL privileges on existing tables) plus ALTER DEFAULT PRIVILEGES so any future tables in that schema — whether created by dbt or by an admin manually patching a model — are accessible to dbt_admin. The default follows OrcheStack's <code>&lt;service&gt;_admin</code> naming convention; you can override later via Edit Config." },
-        { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "Click Generate to create a 32-char hex password",
-          generate: "hex",
-          hint: "Password for the dbt PG user. Click Generate — the browser produces a cryptographically random 32-character hex string. You can replace this with your own value if your security policy requires it. OrcheStack writes the value to profiles.yml at container start." },
+        { name: "DBT_DB_PASSWORD", label: "dbt PG password", type: "password", placeholder: "Strong password (12+ chars)",
+          hint: "Password for the dbt PG user. Type a value you'll remember — OrcheStack writes it to profiles.yml at container start. If you leave it blank, the pre-start hook auto-derives a password from your platform password as a fallback (so dbt still works on first install)." },
       ],
       note: "Three things to know:",
       noteHtml: `
@@ -324,9 +321,9 @@
       desc: "Declarative data quality checks. Runs after every dbt build. Great Expectations reuses your PostgreSQL warehouse credentials (it validates the same database dbt writes to), and stores its checkpoints in a standard project-relative directory.",
       fields: [
         { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text",
-          default: "postgresql://${PIPELINE_DB_USER}:***@postgres:5432/${PIPELINE_DB_NAME}",
+          default: "postgresql://${WAREHOUSE_DB_USER}:***@postgres:5432/${WAREHOUSE_DB_NAME}",
           readonly: true,
-          hint: "Auto-derived from the pipeline DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with PIPELINE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts), it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
+          hint: "Auto-derived from the warehouse DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with WAREHOUSE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts), it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
         { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory (relative to your install dir)", type: "text",
           default: "config/great_expectations/checkpoints",
           readonly: true,
@@ -533,7 +530,7 @@
     // ALREADY completed the initial wizard at some prior point — re-
     // rendering tabs for every other service they previously configured
     // is (a) redundant (we already have those credentials in .env), and
-    // (b) used to wedge deploy with a 409 on the existing pipeline DB.
+    // (b) used to wedge deploy with a 409 on the existing warehouse DB.
     //
     // Backend deploy is now idempotent so the 409 won't fire even if
     // we send everything; but UX-wise the right answer is to ONLY show

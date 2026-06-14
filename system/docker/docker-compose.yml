@@ -138,7 +138,7 @@ services:
   #
   # The customer's PIPELINE database (raw.*, marts.*, Airflow metadata) is
   # created later, after the operator completes the setup wizard — the
-  # orchestrator (M2) runs `CREATE DATABASE <pipeline_db>;` against this same
+  # orchestrator (M2) runs `CREATE DATABASE <warehouse_db>;` against this same
   # instance using the values collected in the wizard's PostgreSQL section.
   # That keeps OrcheStack metadata and customer data cleanly separated even
   # though they share one Postgres process.
@@ -160,7 +160,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       # postgres-init/ files run once on first container creation (lexical order).
       # 00-init.sql creates the platform schema; 10-platform-schema.sql adds tables.
-      # The pipeline database/schemas are added later by the orchestrator (M2).
+      # The warehouse database/schemas are added later by the orchestrator (M2).
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - orchestack-net
@@ -283,7 +283,7 @@ services:
     environment:
       # Orchestrator connects to OrcheStack's INTERNAL database to read
       # platform.* tables (users, service_sessions, pinning). It does NOT
-      # connect to the customer pipeline DB. Pipeline-DB credentials come
+      # connect to the customer warehouse DB. Pipeline-DB credentials come
       # from the setup wizard and are passed to the per-service containers
       # the orchestrator spawns (dbt, Airflow, Airbyte) at M4.
       POSTGRES_HOST: orchestack-postgres

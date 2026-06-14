@@ -115,7 +115,7 @@ def _service_compose_args(service: str, *, need_env: bool = True) -> list[str]:
     `--env-file` is passed for subcommands that interpolate ${VARS} from
     .env at parse time (up, run, exec, config) — most importantly the
     `up -d` that starts a service like metabase which depends on
-    ${ORCHESTACK_DB_PASSWORD} and ${PIPELINE_DB_*}. The `.env` file
+    ${ORCHESTACK_DB_PASSWORD} and ${WAREHOUSE_DB_*}. The `.env` file
     itself is bind-mounted into the orchestrator at config.ENV_FILE.
 
     Pass `need_env=False` for subcommands that don't interpolate (stop,
@@ -214,7 +214,7 @@ async def _ensure_metabase_database() -> None:
     Architecture (per design/m4-multi-db.md, revised twice):
 
       - `orchestack`     — platform internals (users, audit, sessions)
-      - `data_warehouse` — operator's analytical data (PIPELINE_DB_NAME)
+      - `data_warehouse` — operator's analytical data (WAREHOUSE_DB_NAME)
       - `metabase`       — Metabase's own state (its own DB, see below)
       - `services`       — shared DB for tools that HONOR a configurable
                            schema setting (Airflow, OpenMetadata when M4
@@ -461,11 +461,11 @@ async def _ensure_pgadmin_servers_json() -> None:
     # password every session. pgpass format: host:port:dbname:user:pw,
     # one entry per line. pgAdmin's libpq reads the path from the
     # PassFile attribute on each server entry below.
-    pipeline_db   = env.get("PIPELINE_DB_NAME")
-    pipeline_user = env.get("PIPELINE_DB_USER")
-    pipeline_pass = env.get("PIPELINE_DB_PASSWORD")
+    warehouse_db   = env.get("WAREHOUSE_DB_NAME")
+    pipeline_user = env.get("WAREHOUSE_DB_USER")
+    pipeline_pass = env.get("WAREHOUSE_DB_PASSWORD")
     pgpass_inner_path: str | None = None
-    if pipeline_db and pipeline_user and pipeline_pass:
+    if warehouse_db and pipeline_user and pipeline_pass:
         try:
             os.makedirs(os.path.dirname(_PGADMIN_PGPASS_FILE), exist_ok=True)
             # Strip embedded colons from the password — pgpass uses ':' as
@@ -501,12 +501,12 @@ async def _ensure_pgadmin_servers_json() -> None:
                 log.warning("pgadmin pgpass chown skipped: %s", ce)
             pgpass_inner_path = f"{_PGADMIN_INNER_CONF_DIR}/pgadmin/.pgpass"
             log.info("pre-start hook: wrote pgadmin pgpass for %s@%s",
-                      pipeline_user, pipeline_db)
+                      pipeline_user, warehouse_db)
         except OSError as e:
             log.warning("pgadmin pgpass write failed: %s — operator will "
                           "be prompted for password on first connect", e)
 
-    # Pipeline warehouse — the only server we pre-load by default.
+    # Warehouse — the only server we pre-load by default.
     #
     # We deliberately do NOT pre-load the OrcheStack platform DB
     # (platform.users, platform.audit_log, etc). Day-2 admin access to
@@ -523,13 +523,13 @@ async def _ensure_pgadmin_servers_json() -> None:
     # display name with a real PostgreSQL database name — surfacing the
     # actual name removes that ambiguity at the cost of a slightly less
     # operator-friendly label.
-    if pipeline_db and pipeline_user:
+    if warehouse_db and pipeline_user:
         entry = {
-            "Name":          pipeline_db,
+            "Name":          warehouse_db,
             "Group":         "OrcheStack",
             "Host":          "orchestack-postgres",
             "Port":          5432,
-            "MaintenanceDB": pipeline_db,
+            "MaintenanceDB": warehouse_db,
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
             # NO DBRestriction — operator is the platform admin and
@@ -756,11 +756,11 @@ async def _ensure_dbt_setup() -> None:
     """
     from . import db as _db
     env = _read_env_file_or_empty()
-    pipeline_db = env.get("PIPELINE_DB_NAME") or "data_warehouse"
+    warehouse_db = env.get("WAREHOUSE_DB_NAME") or "data_warehouse"
     # Operator-overridable target. Defaults to the pipeline warehouse
     # but can be a separate DB if the operator wants production tables
     # in their own namespace.
-    target_db = env.get("DBT_DATABASE", "").strip() or pipeline_db
+    target_db = env.get("DBT_DATABASE", "").strip() or warehouse_db
     target_schema = env.get("DBT_SCHEMA", "").strip() or "marts"
 
     password = env.get("DBT_DB_PASSWORD", "").strip()
@@ -810,7 +810,7 @@ async def _ensure_dbt_setup() -> None:
         # If the operator picked a different target DB, create it.
         # CREATE DATABASE can't run inside a transaction so use a
         # dedicated connection rather than the pool's pre-tx conn.
-        if target_db != pipeline_db:
+        if target_db != warehouse_db:
             db_exists = await conn.fetchval(
                 f"SELECT 1 FROM pg_database WHERE datname = '{target_db}'"
             )
@@ -821,12 +821,12 @@ async def _ensure_dbt_setup() -> None:
         await conn.execute(
             f'GRANT CONNECT ON DATABASE "{target_db}" TO dbt_admin'
         )
-        # Also CONNECT on the pipeline DB if it's different — dbt sources
-        # may reference `raw.*` in the pipeline DB even when writing
+        # Also CONNECT on the warehouse DB if it's different — dbt sources
+        # may reference `raw.*` in the warehouse DB even when writing
         # marts to a different DB.
-        if target_db != pipeline_db:
+        if target_db != warehouse_db:
             await conn.execute(
-                f'GRANT CONNECT ON DATABASE "{pipeline_db}" TO dbt_admin'
+                f'GRANT CONNECT ON DATABASE "{warehouse_db}" TO dbt_admin'
             )
 
     # In-target-DB grants. Connect as the platform superuser so we can
@@ -877,11 +877,11 @@ async def _ensure_dbt_setup() -> None:
         await wh_conn.close()
 
     # raw schema lives in the PIPELINE DB (Airbyte's landing). Different
-    # connection if target_db != pipeline_db.
+    # connection if target_db != warehouse_db.
     raw_conn = await asyncpg.connect(
         host=config.DB_HOST, port=config.DB_PORT,
         user=config.DB_USER, password=config.DB_PASSWORD,
-        database=pipeline_db,
+        database=warehouse_db,
     )
     try:
         await raw_conn.execute("CREATE SCHEMA IF NOT EXISTS raw")
@@ -986,9 +986,9 @@ async def _bootstrap_metabase() -> None:
         )
         return
 
-    pipeline_name = env.get("PIPELINE_DB_NAME")
-    pipeline_user = env.get("PIPELINE_DB_USER")
-    pipeline_pass = env.get("PIPELINE_DB_PASSWORD")
+    pipeline_name = env.get("WAREHOUSE_DB_NAME")
+    pipeline_user = env.get("WAREHOUSE_DB_USER")
+    pipeline_pass = env.get("WAREHOUSE_DB_PASSWORD")
 
     site_name = "OrcheStack"
     try:
@@ -1135,7 +1135,7 @@ async def _bootstrap_metabase() -> None:
         # by hand from Metabase Admin → Databases.
         if not (pipeline_name and pipeline_user and pipeline_pass):
             log.info(
-                "metabase bootstrap: no PIPELINE_DB_* in .env; skipping "
+                "metabase bootstrap: no WAREHOUSE_DB_* in .env; skipping "
                 "warehouse register"
             )
             return
@@ -1174,7 +1174,7 @@ async def _bootstrap_metabase() -> None:
 
         db_payload = {
             "engine": "postgres",
-            "name":   "Pipeline warehouse",
+            "name":   "Warehouse",
             "details": {
                 "host":     "orchestack-postgres",
                 "port":     5432,
@@ -1214,7 +1214,7 @@ async def _bootstrap_metabase() -> None:
                 "metabase_warehouse_registered",
                 service_name="metabase",
                 user_id=None,
-                details={"name": "Pipeline warehouse", "dbname": pipeline_name},
+                details={"name": "Warehouse", "dbname": pipeline_name},
             )
         else:
             log.warning(
