@@ -590,6 +590,7 @@ async def _ensure_pgadmin_servers_json() -> None:
 async def _ensure_simple_pg_role_and_db(
     role_name: str, db_name: str, env_key: str,
     *, schema_in_services: str | None = None,
+    legacy_role_name: str | None = None,
 ) -> None:
     """Provision a per-service PG role + database OR schema.
 
@@ -598,6 +599,13 @@ async def _ensure_simple_pg_role_and_db(
     env_key: .env var holding the password (e.g. "AIRFLOW_DB_PASSWORD")
     schema_in_services: if set, the role gets the named schema inside
                         `services` instead of its own database.
+    legacy_role_name: name a previous version of OrcheStack created
+                      this role under (e.g. "airbyte" before the
+                      <service>_admin convention). If set and the
+                      legacy name exists in pg_roles but the new
+                      name doesn't, ALTER ROLE RENAME migrates it
+                      in place — Postgres tracks ownership/grants
+                      by OID so the rename is non-destructive.
     """
     from . import db as _db
     env = _read_env_file_or_empty()
@@ -633,6 +641,24 @@ async def _ensure_simple_pg_role_and_db(
         role_exists = await conn.fetchval(
             f"SELECT 1 FROM pg_roles WHERE rolname = '{role_name}'"
         )
+        # Backward-compat: if the operator's install used a legacy role
+        # name (e.g. "airbyte" before the <service>_admin convention),
+        # rename it in place rather than creating a new one. Postgres
+        # tracks ownership + grants by OID so the rename preserves
+        # every database/schema/table the legacy role owned.
+        if legacy_role_name and not role_exists:
+            legacy_exists = await conn.fetchval(
+                f"SELECT 1 FROM pg_roles WHERE rolname = '{legacy_role_name}'"
+            )
+            if legacy_exists:
+                log.info(
+                    "pre-start hook (%s): renaming legacy role '%s' → '%s'",
+                    role_name, legacy_role_name, role_name,
+                )
+                await conn.execute(
+                    f'ALTER ROLE "{legacy_role_name}" RENAME TO "{role_name}"'
+                )
+                role_exists = True
         if not role_exists:
             log.info("pre-start hook (%s): creating role", role_name)
             await conn.execute(
@@ -703,20 +729,28 @@ async def _ensure_airflow_setup() -> None:
 
 
 async def _ensure_airbyte_setup() -> None:
-    """Airbyte: own role + own DB + two extra DBs for Temporal.
+    """Airbyte: airbyte_admin role + airbyte DB + two extra DBs for Temporal.
 
     The multi-container Airbyte deployment includes Temporal as the
     workflow engine, and Temporal stores its workflow history and
-    visibility queries in two separate Postgres databases. Both share
-    the airbyte role for simplicity; logical isolation is by database,
-    not by user.
+    visibility queries in two separate Postgres databases. All three
+    DBs (airbyte, temporal, temporal_visibility) share the
+    airbyte_admin role for simplicity; logical isolation is by
+    database, not by user.
+
+    Backward compat: earlier installs created the role as plain
+    "airbyte". The shared helper handles the ALTER ROLE rename via
+    its legacy_role_name kwarg — once renamed, ownership of the
+    airbyte/temporal/temporal_visibility DBs transfers automatically
+    (Postgres stores ownership by OID).
     """
     await _ensure_simple_pg_role_and_db(
-        "airbyte", "airbyte", "AIRBYTE_DB_PASSWORD",
+        "airbyte_admin", "airbyte", "AIRBYTE_DB_PASSWORD",
+        legacy_role_name="airbyte",
     )
-    # Temporal needs its own pair of databases owned by the airbyte
-    # role. CREATE DATABASE can't run inside a transaction so we use a
-    # dedicated connection.
+    # Temporal databases. Create owned by airbyte_admin; this branch
+    # only runs on fresh installs (existing DBs have their owner
+    # remapped by the ALTER ROLE RENAME above).
     from . import db as _db
     pool = _db.get_pool()
     for tdb in ("temporal", "temporal_visibility"):
@@ -727,7 +761,7 @@ async def _ensure_airbyte_setup() -> None:
             if not exists:
                 log.info("pre-start hook (airbyte): creating '%s' database for Temporal", tdb)
                 await conn.execute(
-                    f'CREATE DATABASE "{tdb}" OWNER "airbyte"'
+                    f'CREATE DATABASE "{tdb}" OWNER "airbyte_admin"'
                 )
 
 
