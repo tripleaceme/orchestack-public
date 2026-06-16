@@ -39,7 +39,7 @@ services:
       # MB_DB_SCHEMA is honored only for runtime queries, not for the
       # first-boot Liquibase migration. Tested empirically June 12; see
       # design/m4-multi-db.md §1 for the diagnostic that surfaced this.
-      MB_DB_USER: metabase_admin
+      MB_DB_USER: ${METABASE_DB_USER:-metabase_admin}
       MB_DB_PASS: ${METABASE_DB_PASSWORD:-}
       MB_DB_DBNAME: metabase_db
       # Subpath deployment — Metabase is served at /app/metabase/ via Traefik

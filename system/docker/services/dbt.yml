@@ -254,8 +254,11 @@ services:
       # Service admin role created + managed by _ensure_dbt_setup hook.
       # Naming convention: <service>_admin for the auto-provisioned role
       # that runs the service's writes against the warehouse. Operators
-      # can override via DBT_PG_USER in Edit Config later.
-      DBT_PG_USER:     ${DBT_PG_USER:-dbt_admin}
+      # can override via DBT_DB_USER in .env / Edit Config later.
+      # DBT_PG_USER is the inside-container env var that profiles.yml
+      # reads via env_var('DBT_PG_USER'); we map it from the canonical
+      # DBT_DB_USER for .env-naming consistency across services.
+      DBT_PG_USER:     ${DBT_DB_USER:-dbt_admin}
       DBT_PG_PASSWORD: ${DBT_DB_PASSWORD:?DBT_DB_PASSWORD must be set}
       # Target database. Defaults to the pipeline warehouse but operators
       # can override via DBT_DATABASE in Edit Config if they want dbt

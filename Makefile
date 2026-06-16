@@ -88,6 +88,35 @@ bundle: ## Build a runtime tarball locally (same as the CI release workflow)
 bundle-clean: ## Remove any leftover bundle files at the repo root
 	rm -f orchestack-runtime*.tar.gz orchestack-runtime*.tar.gz.sha256
 
+.PHONY: verify-runtime
+verify-runtime: ## Diff Test/<latest-bundle>/services + .env.example against system/docker — fails if any drift
+	@LATEST_BUNDLE=$$(ls -1d Test/orchestack-runtime-dev-*/ 2>/dev/null | sort -V | tail -1); \
+	if [ -z "$$LATEST_BUNDLE" ]; then \
+		echo "❌ no extracted runtime bundle found under Test/orchestack-runtime-dev-*/" >&2; \
+		echo "   build one with: make bundle && (cd Test && tar xzf orchestack-runtime.tar.gz)" >&2; \
+		exit 1; \
+	fi; \
+	echo "Checking drift between system/docker and $$LATEST_BUNDLE"; \
+	DRIFT=0; \
+	for f in system/docker/services/*.yml; do \
+		name=$$(basename $$f); \
+		if ! diff -q "$$f" "$$LATEST_BUNDLE/services/$$name" > /dev/null 2>&1; then \
+			echo "  ✗ services/$$name drifted"; DRIFT=1; \
+		fi; \
+	done; \
+	for f in system/docker/.env.example system/docker/docker-compose.yml; do \
+		name=$$(basename $$f); \
+		if ! diff -q "$$f" "$$LATEST_BUNDLE/$$name" > /dev/null 2>&1; then \
+			echo "  ✗ $$name drifted"; DRIFT=1; \
+		fi; \
+	done; \
+	if [ $$DRIFT -eq 1 ]; then \
+		echo "❌ runtime bundle is stale — rebuild with: make bundle" >&2; \
+		echo "   (the running install may be loading old compose files; this is the bug pattern that bit M4)" >&2; \
+		exit 1; \
+	fi; \
+	echo "✓ runtime bundle matches source (no drift)"
+
 # ---------- Releases --------------------------------------------------------
 
 .PHONY: tag-release

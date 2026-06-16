@@ -112,44 +112,99 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Get started</a> › Run first pipeline</div>
     <h1>Step 4 — Run your first pipeline</h1>
-    <p class="lede">With OrcheStack configured, trigger your first end-to-end data pipeline (ingest, transform, test, serve) and verify the results land in Metabase or your chosen data visualization tool.</p>
+    <p class="lede">With OrcheStack configured, drive the demo pipeline end-to-end: <strong>dbt</strong> materialises a model into the warehouse, <strong>Great Expectations</strong> validates the result, <strong>Metabase</strong> visualises it, <strong>Airflow</strong> can schedule it. This page walks through every step against the demo project that ships pre-configured — no GitHub repo required.</p>
 
-<h2 id="demo-dataset">Load the demo dataset</h2>
-<p>OrcheStack ships a demo dataset — a smallholder agricultural cooperative with yield records, market prices, and supply-chain events — to let you run the pipeline end-to-end without connecting a real source first.</p>
-<p>From the OrcheStack admin dashboard, click <strong>Load demo data</strong>. OrcheStack does three things:</p>
-<ol>
-  <li>Drops the demo CSVs into MinIO under <code class="inline">s3://OrcheStack/raw/demo/</code>.</li>
-  <li>Configures an Airbyte connector that watches that bucket for new files.</li>
-  <li>Creates a pre-built dbt project under <code class="inline">./dbt/</code> with staging and marts models for the demo schema.</li>
-</ol>
+<h2 id="demo-dataset">What ships pre-configured</h2>
+<p>OrcheStack provisions a working data-quality cycle out of the box, so you can verify the whole pipeline runs before connecting your own data:</p>
+<table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:14px;">
+  <thead>
+    <tr style="background:var(--surface); border-bottom:1px solid var(--border);">
+      <th style="text-align:left; padding:8px 12px;">Service</th>
+      <th style="text-align:left; padding:8px 12px;">Demo content</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>dbt</strong></td><td style="padding:8px 12px;">A built-in project at <code class="inline">/usr/app/dbt</code> with one model — <code class="inline">marts.warehouse_tables</code> — that materialises a catalogue of every table in your warehouse, plus a <code class="inline">not_null</code> test on the table-name column.</td></tr>
+    <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Great Expectations</strong></td><td style="padding:8px 12px;">A built-in context at <code class="inline">/gx</code> with one suite — <code class="inline">demo_warehouse_tables</code> — that validates an inline SQL query against <code class="inline">pg_catalog.pg_tables</code>: row count between 1 and 100 000, non-null table names, schema names mostly in OrcheStack's whitelist.</td></tr>
+    <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Metabase</strong></td><td style="padding:8px 12px;">No demo dashboards — you connect Metabase to the warehouse the first time you open it (a 30-second flow described below).</td></tr>
+    <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Airflow</strong></td><td style="padding:8px 12px;">No pre-loaded DAGs — point Airflow at a Git repo via <code class="inline">AIRFLOW_DAGS_REPO_URL</code> in <code class="inline">.env</code> (or the dashboard's Edit config) and it syncs the repo's <code class="inline">dags/</code> folder on every scheduler tick.</td></tr>
+  </tbody>
+</table>
+<p>The remaining sections walk through running each tool against the demo data. Total time for a first pass is about 10 minutes.</p>
 
-<h2 id="trigger-run">Trigger the pipeline</h2>
-<p>Click <strong>▶ Run pipeline now</strong> on the admin dashboard. The Orchestrator:</p>
-<ol>
-  <li>Spins up Airbyte (cold tier) and syncs the demo CSVs into PostgreSQL <code class="inline">raw</code> schema.</li>
-  <li>Spins up dbt (cold tier) and runs <code class="inline">dbt build --select tag:demo</code>, which builds <code class="inline">stg_yields</code>, <code class="inline">stg_prices</code>, and <code class="inline">fct_coop_performance</code> in the <code class="inline">marts</code> schema.</li>
-  <li>Runs Great Expectations on the mart — checks that yields are positive, prices are not null, and the state column matches the 36 Nigerian states plus FCT.</li>
-  <li>Records dbt test results into the run-history tables in PostgreSQL. (When OpenMetadata lands in M4.6, the same results will also flow there for lineage and anomaly views.)</li>
-  <li>Shuts down the cold services.</li>
-</ol>
+<h2 id="trigger-run">Step 1 — Run dbt against the warehouse</h2>
+<p>From the dashboard's Services panel, click <strong>Open Terminal</strong> on the dbt tile. A web terminal opens at <code class="inline">/usr/app/dbt</code> with the demo project loaded and a generated <code class="inline">profiles.yml</code> pointing at your warehouse.</p>
+<p>Run the model and its test in one shot:</p>
+<pre><code>$ dbt build
+12:00:01  Running with dbt=1.7.13
+12:00:01  Found 1 model, 1 test, 0 snapshots, 0 analyses
+12:00:03  Concurrency: 1 threads (target='prod')
+12:00:03  1 of 2 START sql view model marts.warehouse_tables ........... [RUN]
+12:00:03  1 of 2 OK created sql view model marts.warehouse_tables ...... [CREATE VIEW in 0.18s]
+12:00:03  2 of 2 START test not_null_warehouse_tables_tablename ........ [RUN]
+12:00:04  2 of 2 PASS not_null_warehouse_tables_tablename .............. [PASS in 0.05s]
+12:00:04  Finished running 1 view model, 1 test in 0 hours 0 minutes and 0.85 seconds (0.85s).
+12:00:04  Completed successfully
+12:00:04  Done. PASS=2 WARN=0 ERROR=0 SKIP=0 TOTAL=2</code></pre>
+<p>The view <code class="inline">marts.warehouse_tables</code> now exists in your warehouse — every other tool in OrcheStack can read it.</p>
 
-<h2 id="monitor">Monitor the run</h2>
-<p>While the pipeline runs, the dashboard shows live progress. Each stage streams logs into the dashboard. You can also watch individual task states in the Airflow UI — click <strong>Open Airflow</strong> in the dashboard.</p>
-<p>A full run of the demo pipeline typically takes 45–90 seconds on a 4-core laptop. Your first run will be slower (~3 minutes) because Airbyte and dbt container images are being pulled.</p>
-
-<h2 id="verify">Verify the output</h2>
-<p>When the run completes, click <strong>Open Metabase</strong>. The demo dashboard shows:</p>
+<h2 id="monitor">Step 2 — Browse the lineage in dbt-docs</h2>
+<p>From the dashboard, click <strong>Open Docs</strong> on the dbt tile. The generated docs site loads in a new tab. You'll see:</p>
 <ul>
-  <li>Total yield by state (bar chart)</li>
-  <li>Average market price by crop (trend line)</li>
-  <li>Cooperative performance scorecard</li>
+  <li><strong>Project tree</strong> in the sidebar with the demo model.</li>
+  <li><strong>Model page</strong> for <code class="inline">warehouse_tables</code> with its description, columns, compiled SQL, and the column-level <code class="inline">not_null</code> test.</li>
+  <li><strong>Lineage graph</strong> showing the model and its <code class="inline">pg_catalog.pg_tables</code> source.</li>
 </ul>
-<p>If you see numbers, your pipeline is live. You've proven the end-to-end path: raw CSV → MinIO → PostgreSQL raw → dbt marts → Metabase dashboard.</p>
+<p>If you set <code class="inline">DBT_REPO_URL</code> later (dashboard → Services → dbt → Edit config), OrcheStack clones that repo on every container start, regenerates docs from the new project's <code class="inline">dbt_project.yml</code>, and serves them at the same Docs URL. Your dbt-docs URL is stable across project changes.</p>
 
-<h2 id="schedule">Schedule nightly runs</h2>
-<p>By default, OrcheStack creates an Airflow DAG called <code class="inline">OrcheStack_nightly</code> that runs at 02:00 local time. You can edit its schedule from the dashboard's <strong>Pipelines</strong> page or directly in the Airflow UI. The DAG re-runs the full pipeline and emails a summary if tests fail.</p>
+<h2 id="verify">Step 3 — Validate the warehouse with Great Expectations</h2>
+<p>Click <strong>Open Data Docs</strong> on the Great Expectations tile. The demo suite has already run once on container start; you'll land on the docs index showing:</p>
+<ul>
+  <li><strong>Validation Results</strong> tab — one entry for <code class="inline">demo_warehouse_tables</code> with the timestamp from container boot and a <strong>2 of 3 expectations met (66.7%)</strong> badge.</li>
+  <li><strong>Expectation Suites</strong> tab — the <code class="inline">demo_warehouse_tables</code> suite with its three expectations laid out, including the kwargs (min/max row counts, value sets, "mostly" thresholds).</li>
+</ul>
+<p>Click into the validation result to see exactly which expectation failed and why. The demo intentionally ships with one failing expectation so you can see what a failure looks like — real validation suites surface real issues, and a 100%-passing demo would mislead you about how the tool reports problems.</p>
+<p>To re-run the checkpoint against the latest warehouse state (e.g. after a dbt build), open the GE tile's <strong>Open Terminal</strong> action:</p>
+<pre><code>$ great_expectations checkpoint run demo_checkpoint
+Calculating Metrics: 100%|██████████| 19/19 [00:00&lt;00:00, 38.81it/s]
+Validation failed!
+
+Suite Name                                   Status     Expectations met
+- demo_warehouse_tables                      ✖ Failed   2 of 3 (66.67 %)</code></pre>
+<p>Refresh the Data Docs page in your other tab — the new validation result is at the top of the index.</p>
+
+<h2 id="schedule">Step 4 — Connect Metabase + schedule with Airflow</h2>
+<p>Open Metabase from the dashboard. On first open, Metabase asks you to add a data source:</p>
+<ol>
+  <li><strong>Database type</strong>: PostgreSQL</li>
+  <li><strong>Host</strong>: <code class="inline">orchestack-postgres</code></li>
+  <li><strong>Port</strong>: <code class="inline">5432</code></li>
+  <li><strong>Database name</strong>: <code class="inline">data_warehouse</code></li>
+  <li><strong>Username</strong>: <code class="inline">warehouse_admin</code></li>
+  <li><strong>Password</strong>: your <code class="inline">WAREHOUSE_DB_PASSWORD</code> from <code class="inline">.env</code> (or the dashboard's <strong>Credentials</strong> page)</li>
+</ol>
+<p>Metabase scans the warehouse and finds the <code class="inline">marts</code> schema. Click <strong>+ New question</strong> → <strong>Native query</strong> and run:</p>
+<pre><code>SELECT schemaname, COUNT(*) AS tables
+FROM marts.warehouse_tables
+GROUP BY schemaname
+ORDER BY tables DESC;</code></pre>
+<p>You should see a row per schema, with row counts. Save it as a question, add it to a dashboard — that's the full <em>raw → marts → dashboard</em> path on real data, in under a minute.</p>
+<p>To schedule the dbt build to run nightly:</p>
+<ol>
+  <li>Create a Git repo with a <code class="inline">dags/</code> folder containing a DAG that triggers <code class="inline">dbt build</code> (you can use the <code class="inline">BashOperator</code> or the official <code class="inline">DbtCloudRunJobOperator</code>; for OrcheStack's containerised dbt, BashOperator + <code class="inline">docker compose exec dbt dbt build</code> is the simplest path).</li>
+  <li>From the dashboard → Services → Airflow → <strong>Edit config</strong>, paste the repo URL into <code class="inline">AIRFLOW_DAGS_REPO_URL</code> and pick the branch.</li>
+  <li>Restart Airflow from the dashboard. On boot, Airflow clones the repo into <code class="inline">/opt/airflow/dags/</code>; the scheduler picks up your DAG within 30 seconds.</li>
+  <li>Open Airflow from the dashboard, enable the DAG, set the schedule (e.g. <code class="inline">0 2 * * *</code>), and you're done.</li>
+</ol>
 <div class="callout">
-  <p><strong>Using your own data?</strong> Replace the demo connector with an Airbyte connector for your source (Postgres, Google Sheets, Stripe, etc.), update the dbt models under <code class="inline">./dbt/models/</code>, and run the same pipeline. Everything else stays the same.</p>
+  <p><strong>Using your own data?</strong> The flow above generalises trivially:</p>
+  <ul>
+    <li>Add an Airbyte connector (dashboard → Services → Airbyte → Open) to ingest from your real source into the warehouse's <code class="inline">raw</code> schema.</li>
+    <li>Replace the demo dbt project by setting <code class="inline">DBT_REPO_URL</code> to your own project; the next dbt-docs refresh shows your models.</li>
+    <li>Replace the demo GE project by setting <code class="inline">GE_REPO_URL</code> to your own great_expectations directory; the next container restart picks it up.</li>
+    <li>Add Metabase questions/dashboards from the marts your real models produce.</li>
+    <li>Add the appropriate DAG to your DAGs repo to keep it all scheduled.</li>
+  </ul>
 </div>
 
     <div class="next-prev">
@@ -167,11 +222,11 @@
   <aside class="docs-toc">
     <div class="toc-title">On this page</div>
     <ul>
-      <li><a class="active" href="#demo-dataset">Load the demo dataset</a></li>
-      <li><a href="#trigger-run">Trigger the pipeline</a></li>
-      <li><a href="#monitor">Monitor the run</a></li>
-      <li><a href="#verify">Verify the output</a></li>
-      <li><a href="#schedule">Schedule nightly runs</a></li>
+      <li><a class="active" href="#demo-dataset">What ships pre-configured</a></li>
+      <li><a href="#trigger-run">Run dbt against the warehouse</a></li>
+      <li><a href="#monitor">Browse dbt-docs lineage</a></li>
+      <li><a href="#verify">Validate with Great Expectations</a></li>
+      <li><a href="#schedule">Connect Metabase + schedule</a></li>
     </ul>
   </aside>
 

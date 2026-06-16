@@ -17,12 +17,15 @@ services:
     container_name: orchestack-openmetadata
     restart: unless-stopped
     environment:
-      # Database
-      DB_USER:     openmetadata
+      # Database — uses the openmetadata_admin role + openmetadata_db
+      # database that the orchestrator's _ensure_openmetadata_setup hook
+      # provisions on first start. User defaults match the convention
+      # but can be overridden via OPENMETADATA_DB_USER in .env.
+      DB_USER:     ${OPENMETADATA_DB_USER:-openmetadata_admin}
       DB_USER_PASSWORD: ${OPENMETADATA_DB_PASSWORD:-}
       DB_HOST:     orchestack-postgres
       DB_PORT:     "5432"
-      OM_DATABASE: openmetadata
+      OM_DATABASE: openmetadata_db
       DB_DRIVER_CLASS: org.postgresql.Driver
       DB_SCHEME:   postgresql
       # Auth — JWT + basic
