@@ -1,0 +1,86 @@
+# Build and push the orchestack-ge image to Docker Hub.
+#
+# Triggered by pushes to main that change anything under system/docker/ge-image/
+# (where the GE Dockerfile lives), or by manual workflow_dispatch.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   - DOCKERHUB_USERNAME  — your Docker Hub account name (tripleaceme)
+#   - DOCKERHUB_TOKEN     — a personal access token from
+#                            hub.docker.com/settings/security (NOT your password)
+#
+# Multi-arch (amd64 + arm64) so Apple Silicon dev machines and ARM VPSes can
+# pull the same image as standard x86_64 hosts.
+#
+# This image bundles ttyd + great_expectations 0.18.21 + psycopg2-binary +
+# sqlalchemy<2 + the apt editors (nano/vim-tiny/less/git) into a single
+# layer-cached artefact. Pre-baking moves the ~30-60min pip-install cost
+# from every operator's machine to a one-time CI build.
+
+name: Build and push orchestack-ge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'system/docker/ge-image/**'
+      - '.github/workflows/build-orchestack-ge.yml'
+  workflow_dispatch:  # allow manual triggering from the Actions tab
+
+env:
+  # GitHub Actions deprecated Node 20 actions on 2026-06-16 and removes the
+  # runtime on 2026-09-16. This env var opts every JavaScript action in this
+  # workflow into Node 24 without requiring per-action major-version bumps.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch build support)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for tagging
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: tripleaceme/orchestack-ge
+          # Tags produced:
+          #   - latest             (always on every push to main)
+          #   - 0.18.21-1          (the GE upstream version + our build counter;
+          #                         bump the suffix manually when rebuilding the
+          #                         same GE version against a different python
+          #                         base or apt set)
+          #   - 0.18-rev{short SHA} (immutable per-commit tag for reproducibility)
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=0.18.21-1,enable={{is_default_branch}}
+            type=sha,prefix=0.18-rev,format=short
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v5
+        with:
+          # Build context is the ge-image dir itself — the Dockerfile has no
+          # dependencies outside it. Smaller context = faster build + push.
+          context: ./system/docker/ge-image
+          file: ./system/docker/ge-image/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

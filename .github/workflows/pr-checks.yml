@@ -1,0 +1,77 @@
+# PR-gated checks for OrcheStack — catches build/compose regressions
+# before they merge.
+#
+# What this verifies:
+#   1. `make bundle` produces a runtime tarball without errors. Catches
+#      breakage in scripts/build-bundle.sh or missing source files.
+#   2. The bundle's compose files match source (`make verify-runtime`).
+#      Catches the stale-bundle pattern that bit M4 testing — where a
+#      runtime install loaded compose files that didn't match the source
+#      everyone was reading.
+#   3. `docker compose config` parses the bundle's docker-compose.yml +
+#      service snippets with a placeholder .env. Catches yaml errors,
+#      missing env-var references, and bad ${VAR:?must-be-set} chains
+#      before an operator sees them.
+#
+# Runs on every PR targeting main. Multi-platform (matrix) would be nice
+# but isn't worth the runner-minutes for a static-text validation.
+
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  bundle-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build runtime bundle
+        run: make bundle
+
+      - name: Extract bundle into Test/
+        run: |
+          mkdir -p Test
+          cd Test && tar xzf ../orchestack-runtime.tar.gz
+
+      - name: Verify bundle matches source (no drift)
+        run: make verify-runtime
+
+      - name: Validate compose with placeholder .env
+        run: |
+          # Fill in everything the top-level + service composes need.
+          # Real values come from the wizard at install time; for static
+          # parsing we just need the keys to interpolate without error.
+          cd Test/orchestack-runtime-*
+          cp .env.example .env
+          # Bootstrap fields that .env.example ships blank.
+          {
+            echo "WAREHOUSE_DB_PASSWORD=ci-placeholder";
+            echo "WAREHOUSE_DB_NAME=data_warehouse";
+            echo "DBT_DB_PASSWORD=ci-placeholder";
+            echo "AIRFLOW_DB_PASSWORD=ci-placeholder";
+            echo "AIRFLOW_FERNET_KEY=ci-placeholder-fernet-key-44-chars-long==";
+            echo "AIRFLOW_SECRET_KEY=ci-placeholder-secret";
+            echo "AIRFLOW_ADMIN_USERNAME=admin";
+            echo "AIRFLOW_ADMIN_EMAIL=admin@orchestack.local";
+            echo "AIRFLOW_ADMIN_PASSWORD=ci-placeholder";
+            echo "METABASE_DB_PASSWORD=ci-placeholder";
+            echo "AIRBYTE_DB_PASSWORD=ci-placeholder";
+            echo "MINIO_ROOT_USER=admin";
+            echo "MINIO_ROOT_PASSWORD=ci-placeholder";
+            echo "OPENMETADATA_DB_PASSWORD=ci-placeholder";
+            echo "OPENMETADATA_JWT_SECRET=ci-placeholder";
+            echo "OPENMETADATA_ADMIN_EMAIL=admin@orchestack.local";
+            echo "OPENMETADATA_ADMIN_PASSWORD=ci-placeholder";
+          } >> .env
+          docker compose --env-file .env config > /dev/null
+          for svc in services/*.yml; do
+            docker compose --env-file .env -f "$svc" config > /dev/null
+          done
