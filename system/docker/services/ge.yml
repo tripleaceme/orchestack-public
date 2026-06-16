@@ -108,7 +108,7 @@ services:
         # ── 2. Build data docs (best-effort) + serve ──────────────────
         (
           echo "[orchestack] building data docs…"
-          great_expectations docs build --site-name local_site --yes 2>&1 | \
+          great_expectations docs build --site-name local_site --no-view 2>&1 | \
               sed 's/^/[ge docs] /' || \
               echo "[orchestack] great_expectations docs build failed — site will be empty"
           DOCS_DIR="$$GE_DATA_CONTEXT_ROOT_DIR/uncommitted/data_docs/local_site"
@@ -161,7 +161,7 @@ services:
     environment:
       GE_PG_HOST:     orchestack-postgres
       GE_PG_PORT:     "5432"
-      GE_PG_USER:     warehouse_user
+      GE_PG_USER:     ${WAREHOUSE_DB_USER:-warehouse_admin}
       GE_PG_PASSWORD: ${WAREHOUSE_DB_PASSWORD:?WAREHOUSE_DB_PASSWORD must be set}
       GE_PG_DBNAME:   ${WAREHOUSE_DB_NAME:-data_warehouse}
     networks:
