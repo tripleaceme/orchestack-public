@@ -326,16 +326,18 @@
     
     // ------- Data quality -------
     "Great Expectations": {
-      desc: "Declarative data quality checks. Runs after every dbt build. Great Expectations reuses your PostgreSQL warehouse credentials (it validates the same database dbt writes to), and stores its checkpoints in a standard project-relative directory.",
+      desc: "Declarative data quality checks. Validates the same warehouse database dbt writes to (your marts). If you already have a great_expectations project on GitHub, paste the repo URL below. If not, OrcheStack ships a demo project that validates pg_catalog.pg_tables on first start so the Data Docs page shows real validation results out of the box — you can replace it later from the dashboard → Services → Great Expectations → Edit config.",
       fields: [
+        { name: "GE_REPO_URL", label: "GitHub repo URL (optional)", type: "text",
+          default: "",
+          hint: "If your great_expectations directory is already on GitHub, paste the HTTPS or SSH URL. OrcheStack clones it into /great_expectations on first deploy and refreshes it on every container restart. Leave blank to use the built-in demo project — you can add a repo later from dashboard → Services → Great Expectations → Edit config." },
+        { name: "GE_REPO_BRANCH", label: "Branch to track", type: "text",
+          default: "main",
+          hint: "Branch of the GE_REPO_URL repo that OrcheStack syncs. Defaults to main." },
         { name: "GE_DATASOURCE_URL", label: "Datasource connection URL", type: "text",
           default: "postgresql://${WAREHOUSE_DB_USER}:***@postgres:5432/${WAREHOUSE_DB_NAME}",
           readonly: true,
           hint: "Auto-derived from the warehouse DB credentials you entered in the PostgreSQL section. The '***' placeholder is substituted at deploy time with WAREHOUSE_DB_PASSWORD. GE validates the same database dbt writes to (your pipeline marts), it does NOT touch OrcheStack's internal database. To validate a different DB, edit GE_DATASOURCE_URL in the generated .env after install." },
-        { name: "GE_CHECKPOINTS_DIR", label: "Checkpoints directory (relative to your install dir)", type: "text",
-          default: "config/great_expectations/checkpoints",
-          readonly: true,
-          hint: "Path inside your OrcheStack install dir where GE writes checkpoint definitions. Mounted into the GE container so checkpoints persist between runs and can be version-controlled alongside your dbt project. On disk: <your-install-dir>/config/great_expectations/checkpoints/, e.g, ~/orchestack/config/great_expectations/checkpoints/ if you installed there." },
       ],
     },
 

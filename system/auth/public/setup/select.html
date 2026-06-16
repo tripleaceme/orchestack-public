@@ -53,7 +53,7 @@
                 border-radius: 8px; padding: 12px 14px;">
       <strong style="color:var(--accent)">Adding a service.</strong>
       <span style="color:var(--text-2)">
-        Pick a tool for ONE of the layers you haven't configured yet — the
+        Pick a tool for ONE of the layers you haven't configured yet, the
         ones already deployed are locked. The next page will collect
         credentials for just that new service, then deploy it alongside
         your existing stack.
@@ -149,7 +149,7 @@
       </div>
 
       <div class="setup-nav">
-        <a class="btn btn-ghost" href="welcome.html">← Back</a>
+        <a class="btn btn-ghost" id="back-link" href="welcome.html">← Back</a>
         <div class="spacer"></div>
         <button type="submit" class="btn btn-primary">Continue →</button>
       </div>
@@ -225,6 +225,13 @@
     const sub   = document.getElementById('page-sub');
     if (sub)    sub.textContent =
       'Pick a tool for a layer you skipped during initial setup.';
+
+    // Switch the Back link to the dashboard — operator who reached here
+    // via "+ Add services" should be able to bail without losing their
+    // place. The default (welcome.html) only makes sense during initial
+    // first-install setup.
+    const backLink = document.getElementById('back-link');
+    if (backLink) { backLink.href = '/app/'; backLink.textContent = '← Back to dashboard'; }
 
     // Lock dropdowns for layers that already have a concrete (non-None)
     // selection. Visual cue: dropdown disabled + small "already deployed"
