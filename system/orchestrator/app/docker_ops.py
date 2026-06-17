@@ -922,7 +922,18 @@ async def _ensure_airbyte_setup() -> None:
             legacy_exists = await conn.fetchval(
                 f"SELECT 1 FROM pg_database WHERE datname = '{legacy_name}'"
             )
-            if legacy_exists and not new_exists:
+            if legacy_exists and new_exists:
+                # Both exist — partial migration from an earlier install.
+                # The legacy DB is orphaned (its owner role was renamed
+                # to airbyte_admin via the helper above, but the DB
+                # ownership doesn't track role renames). Drop it so
+                # pgAdmin doesn't show the RED-X "can't connect" tile.
+                log.info(
+                    "pre-start hook (airbyte): legacy '%s' AND new '%s' both exist — dropping legacy (orphaned from previous install)",
+                    legacy_name, new_name,
+                )
+                await conn.execute(f'DROP DATABASE IF EXISTS "{legacy_name}"')
+            elif legacy_exists and not new_exists:
                 log.info(
                     "pre-start hook (airbyte): renaming legacy '%s' → '%s'",
                     legacy_name, new_name,

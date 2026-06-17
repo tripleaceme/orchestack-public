@@ -81,18 +81,20 @@ services:
       PIPELINE_SERVICE_IP_INFO_ENABLED:   "false"
       PIPELINE_SERVICE_CLIENT_AUTH_USER_NAME: admin
       PIPELINE_SERVICE_CLIENT_AUTH_PASSWORD:  admin
-      # OpenMetadata's React SPA emits absolute-root asset paths
-      # (href="/favicon.png", src="/static/...") that don't survive
-      # Traefik's stripprefix middleware — same subpath-incompatibility
-      # class as MinIO and Airbyte's webapps. The SERVER_HOST_API_URL
-      # + WEB_CONF_URI env vars that should fix this DON'T fix it in
-      # 1.6.x (the build-time webpack publicPath is hardcoded to /).
-      # So OM ships exposed directly on host port 8585 instead of via
-      # the Traefik /app/openmetadata subpath; the catalogue's
-      # external_url sends operators there. Same pattern as Airbyte
-      # (port 8001) and MinIO (port 9001).
-      SERVER_HOST_API_URL: http://localhost:8585/api
-      WEB_CONF_URI:        http://localhost:8585
+      # SERVER_HOST_API_URL is what OM EMBEDS in generated ingestion
+      # DAGs as the URL the DAG should call back to. The DAG runs
+      # inside orchestack-openmetadata-ingestion, where "localhost"
+      # resolves to that ingestion container itself — NOT the OM
+      # server. So the URL has to be the OM server's docker-network
+      # hostname, not localhost.
+      #
+      # The SPA running in the operator's browser doesn't read this
+      # value — the SPA makes RELATIVE /api/v1/* calls that resolve
+      # against window.location (http://localhost:8585 when the
+      # operator opens the tile). So we can safely use the
+      # docker-network hostname here without breaking the browser UI.
+      SERVER_HOST_API_URL: http://orchestack-openmetadata:8585/api
+      WEB_CONF_URI:        http://orchestack-openmetadata:8585
     networks:
       - orchestack-net
     ports:
