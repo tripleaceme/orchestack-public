@@ -355,14 +355,18 @@
     
     // ------- Governance -------
     "OpenMetadata": {
-      desc: "Governance and column-level lineage. Admin credentials plus a long JWT secret for internal auth.",
+      desc: "Data catalogue + column-level lineage. OpenMetadata gets its own internal PostgreSQL database (separate from your warehouse) for storing entity records, lineage, and glossary terms. The admin login below is what you'll use to sign into the OpenMetadata UI itself.",
       fields: [
+        { name: "OPENMETADATA_DB_USER", label: "Internal DB user", type: "text", default: "openmetadata_admin", readonly: true,
+          hint: "PostgreSQL role OpenMetadata uses to connect to its own internal database. OrcheStack provisions this role on first deploy with privileges scoped to the openmetadata_db only — it can't read OrcheStack's platform tables or your warehouse data. Locked to the <service>_admin naming convention so the pre-start hook can find and manage the role." },
+        { name: "OPENMETADATA_DB_PASSWORD", label: "Internal DB password", type: "password", placeholder: "Strong password (12+ chars)", required: true,
+          hint: "Password for the openmetadata_admin PG role above. Used by the OpenMetadata server to authenticate to its internal DB. Type a value you'll remember; OrcheStack writes it to .env. Distinct from your OpenMetadata UI admin password below — that's the human-facing login." },
         { name: "OPENMETADATA_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
           autoDefault: "admin@${company}.local",
           required: true,
-          hint: "OpenMetadata's login identifier. Must look like an email; never used to send mail. Default is derived from your company name." },
+          hint: "OpenMetadata's UI login identifier. Must look like an email; never used to send mail. Default is derived from your company name." },
         { name: "OPENMETADATA_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
-          hint: "OpenMetadata admin password. Min 12 characters recommended." },
+          hint: "OpenMetadata admin password for the UI login above. Min 12 characters recommended. Used to sign into the OpenMetadata web UI; distinct from the internal DB password." },
         { name: "OPENMETADATA_JWT_SECRET", label: "JWT secret", type: "password", placeholder: "Click Generate to create a 64-char hex secret", required: true,
           readonly: true, generate: "hex",
           hint: "Secret used to sign JWT tokens for OpenMetadata's internal API. Click Generate to create a cryptographically random 64-character hex string (equivalent to 'openssl rand -hex 32'). The value is created in your browser and never leaves your machine until you submit this form." },

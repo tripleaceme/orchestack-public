@@ -69,13 +69,22 @@ READ_ONLY_PATTERNS = (
     # service-defined. Operator doesn't choose either.
     re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, WAREHOUSE_DB_HOST, AIRBYTE_DB_HOST, …
     re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
+    # Every ORCHESTACK_* var is bootstrap state burned in at first
+    # `docker compose up` from .env. The postgres container initialises
+    # its superuser + database on FIRST volume creation only; subsequent
+    # restarts read these vars but the actual role/DB names + password
+    # inside postgres are frozen. Editing them on the dashboard would
+    # cause the next infra restart to fail auth against postgres — a
+    # multi-step recovery (drop volume → re-init → re-run wizard)
+    # that loses the platform DB's user accounts, audit log, and
+    # service-pinning state. Locking the whole prefix.
+    re.compile(r"^ORCHESTACK_"),              # all platform bootstrap vars
     # Every <service>_admin DB user — the orchestrator's pre-start hook
     # provisions roles by these EXACT names, and the compose files default
     # to them via ${VAR:-default} fallback. Renaming on the dashboard
     # without ALSO renaming the role in postgres (and re-running the hook)
     # would break the next service start. We expose the value as read-only
     # so operators can see what role each service uses without footgunning.
-    re.compile(r"^ORCHESTACK_DB_USER$"),      # orchestack_admin — bootstrap superuser
     re.compile(r"^WAREHOUSE_DB_USER$"),       # warehouse_admin — operator's warehouse owner
     re.compile(r"^DBT_DB_USER$"),             # dbt_admin — dbt → warehouse role
     re.compile(r"^AIRBYTE_DB_USER$"),         # airbyte_admin — sidecar DB role
