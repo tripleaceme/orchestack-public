@@ -66,11 +66,27 @@ services:
       SEARCH_TYPE:   elasticsearch
       ELASTICSEARCH_HOST: openmetadata-es
       ELASTICSEARCH_PORT: "9200"
-      # Subpath
-      SERVER_HOST_API_URL: http://localhost/app/openmetadata/api
-      WEB_CONF_URI:        http://localhost/app/openmetadata
+      # OpenMetadata's React SPA emits absolute-root asset paths
+      # (href="/favicon.png", src="/static/...") that don't survive
+      # Traefik's stripprefix middleware — same subpath-incompatibility
+      # class as MinIO and Airbyte's webapps. The SERVER_HOST_API_URL
+      # + WEB_CONF_URI env vars that should fix this DON'T fix it in
+      # 1.6.x (the build-time webpack publicPath is hardcoded to /).
+      # So OM ships exposed directly on host port 8585 instead of via
+      # the Traefik /app/openmetadata subpath; the catalogue's
+      # external_url sends operators there. Same pattern as Airbyte
+      # (port 8001) and MinIO (port 9001).
+      SERVER_HOST_API_URL: http://localhost:8585/api
+      WEB_CONF_URI:        http://localhost:8585
     networks:
       - orchestack-net
+    ports:
+      # Direct host port so the React SPA's root-absolute paths resolve
+      # cleanly. The dashboard's Open button routes to this URL via
+      # catalogue's external_url. The Traefik labels below stay enabled
+      # for completeness (so /app/openmetadata returns SOMETHING rather
+      # than 404), but the operator's actual entry point is :8585.
+      - "8585:8585"
     healthcheck:
       # OpenMetadata's base image ships with wget (not curl) and exposes
       # /healthcheck on the Dropwizard ADMIN port 8586 — NOT the API
