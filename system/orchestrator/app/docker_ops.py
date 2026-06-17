@@ -1580,9 +1580,90 @@ async def _bootstrap_airbyte() -> None:
             log.warning("airbyte bootstrap: workspaces/update raised: %s", e)
 
 
+async def _bootstrap_openmetadata() -> None:
+    """Reset the OM admin password to OPENMETADATA_ADMIN_PASSWORD from .env.
+
+    OpenMetadata 1.6.x creates the admin user from
+    AUTHORIZER_ADMIN_PRINCIPALS with a hardcoded default password of
+    'admin' and a fixed email of admin@open-metadata.org. The
+    OPENMETADATA_ADMIN_EMAIL / OPENMETADATA_ADMIN_PASSWORD env vars in
+    our compose snippet are NOT standard OM env vars — they look like
+    config but are silently ignored.
+
+    Without this hook, operators get "invalid username or password"
+    when they try to log in with the credentials they typed into the
+    wizard, and have no way to discover that the real password is
+    'admin' (since the wizard implies otherwise). They also can't fix
+    it without exec'ing into the container.
+
+    This hook calls OM's bootstrap CLI (the upstream-supported way to
+    reset an admin password) to make .env's value actually work. The
+    CLI requires the server already responding to API requests, so we
+    poll /api/v1/system/version first.
+
+    Email stays at admin@open-metadata.org — changing it in 1.6.x
+    requires editing the user's record directly in postgres, which is
+    a more invasive change. The wizard's hint copy now says this
+    explicitly.
+
+    Best-effort. Failure here doesn't block Open — operator can still
+    log in with admin/admin and change the password via the OM UI.
+    """
+    import httpx
+    from . import audit
+    env = _read_env_file_or_empty()
+    new_password = env.get("OPENMETADATA_ADMIN_PASSWORD", "").strip()
+    if not new_password:
+        log.info("openmetadata bootstrap: OPENMETADATA_ADMIN_PASSWORD not set; skipping")
+        return
+
+    base = "http://orchestack-openmetadata:8585"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for attempt in range(180):  # ~6 min — first boot runs migrations
+            try:
+                r = await client.get(f"{base}/api/v1/system/version")
+                if r.status_code == 200:
+                    log.info("openmetadata bootstrap: API ready after %ds", attempt * 2)
+                    break
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(2)
+        else:
+            log.info("openmetadata bootstrap: API never came up; skipping")
+            return
+
+    # Use the CLI inside the container — it knows how to hash the
+    # password correctly (the OM HTTP API has a quirk where the
+    # change-password endpoint stores the base64-encoded form
+    # verbatim instead of decoding it, producing a password that
+    # nobody can guess).
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "exec", "orchestack-openmetadata", "bash", "-c",
+        f'./bootstrap/openmetadata-ops.sh reset-password '
+        f'-e "admin@open-metadata.org" -p "{new_password}"',
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    output = (stdout or b"").decode(errors="replace")
+    if "Password updated successfully" in output:
+        log.info("openmetadata bootstrap: admin password reset to OPENMETADATA_ADMIN_PASSWORD")
+        await audit.write(
+            "openmetadata_bootstrapped",
+            service_name="openmetadata",
+            user_id=None,
+            details={"email": "admin@open-metadata.org"},
+        )
+    else:
+        log.warning(
+            "openmetadata bootstrap: reset-password did not confirm success; tail=%s",
+            output[-300:],
+        )
+
+
 POST_START_HOOKS = {
-    "metabase": _bootstrap_metabase,
-    "airbyte":  _bootstrap_airbyte,
+    "metabase":     _bootstrap_metabase,
+    "airbyte":      _bootstrap_airbyte,
+    "openmetadata": _bootstrap_openmetadata,
 }
 
 
