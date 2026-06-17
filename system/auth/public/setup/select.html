@@ -210,12 +210,49 @@
   // the "Adding a service" banner, and only allow them to pick a
   // tool for ONE previously-empty layer.
   // ============================================================
-  (function setupAddMode() {
+  // Server's "layer" field uses hyphens (data-lake, admin-ui) but the
+  // wizard's dropdown names use the legacy underscored variants. Translate.
+  const SERVER_TO_WIZARD_LAYER = {
+    'data-lake': 'lake',
+    'admin-ui': 'admin_ui',
+  };
+
+  async function syncFromServer(prior) {
+    // Pull installed_services from the orchestrator. Server-side state is
+    // the authoritative answer to "what's deployed" — localStorage can
+    // drift if the operator clears storage, switches browsers, or had
+    // services deployed outside the wizard (e.g. CLI compose). When the
+    // server says X is configured, override localStorage; when the server
+    // says X is NOT configured, drop it from prior so the operator can
+    // re-pick it. Falls through to localStorage-only on network error.
+    try {
+      const res = await fetch('/orchestrator/api/services', { credentials: 'same-origin' });
+      if (!res.ok) return prior;
+      const data = await res.json();
+      const services = (data && data.services) || [];
+      const serverPrior = {};
+      for (const svc of services) {
+        if (!svc.configured || !svc.layer) continue;
+        const wizardLayer = SERVER_TO_WIZARD_LAYER[svc.layer] || svc.layer;
+        serverPrior[wizardLayer] = svc.display_name || svc.name;
+      }
+      // Persist back to localStorage so future loads stay consistent.
+      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      state.selections = { ...(state.selections || {}), ...serverPrior };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      return { ...prior, ...serverPrior };
+    } catch (e) {
+      console.warn('wizard server-sync failed, using localStorage:', e);
+      return prior;
+    }
+  }
+
+  (async function setupAddMode() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') !== 'add') return;
 
     const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    const prior = state.selections || {};
+    let prior = state.selections || {};
 
     // Show banner + reword the page title
     const banner = document.getElementById('add-mode-banner');
@@ -232,6 +269,13 @@
     // first-install setup.
     const backLink = document.getElementById('back-link');
     if (backLink) { backLink.href = '/app/'; backLink.textContent = '← Back to dashboard'; }
+
+    // Reconcile localStorage with the server's installed_services BEFORE
+    // we render the "already deployed" markers — otherwise the wizard
+    // would silently disagree with the dashboard's Services page when
+    // the two state sources have drifted (e.g. operator started a
+    // service via CLI compose instead of the dashboard).
+    prior = await syncFromServer(prior);
 
     // Lock dropdowns for layers that already have a concrete (non-None)
     // selection. Visual cue: dropdown disabled + small "already deployed"
