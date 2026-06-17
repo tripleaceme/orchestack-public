@@ -85,11 +85,16 @@ services:
     networks:
       - orchestack-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8585/healthcheck > /dev/null || exit 1"]
+      # OpenMetadata's base image ships with wget (not curl) and exposes
+      # /healthcheck on the Dropwizard ADMIN port 8586 — NOT the API
+      # port 8585. The previous curl+8585 check silently failed forever
+      # (curl not in PATH; container reported "starting" until retries
+      # exhausted then went unhealthy even though the server was fine).
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8586/healthcheck | grep -q '\"healthy\":true' || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 18
-      start_period: 90s
+      start_period: 120s
     labels:
       - orchestack.service=openmetadata
       - orchestack.tier=cold
