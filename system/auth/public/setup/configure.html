@@ -355,7 +355,7 @@
     
     // ------- Governance -------
     "OpenMetadata": {
-      desc: "Data catalogue + column-level lineage. OpenMetadata gets its own internal PostgreSQL database (separate from your warehouse) for storing entity records, lineage, and glossary terms. The admin login below is what you'll use to sign into the OpenMetadata UI itself.",
+      desc: "Data catalogue + column-level lineage. OpenMetadata gets its own internal PostgreSQL database (separate from your warehouse) for storing entity records, lineage, and glossary terms. Ships with a second sidecar container (openmetadata-ingestion) that runs Airflow + OM's Managed APIs plugin — this is OM's OWN Airflow for metadata ingestion DAGs (NOT the same as the Apache Airflow service for your business DAGs). The admin login below is what you'll use to sign into the OpenMetadata UI itself.",
       fields: [
         { name: "OPENMETADATA_DB_USER", label: "Internal DB user", type: "text", default: "openmetadata_admin", readonly: true,
           hint: "PostgreSQL role OpenMetadata uses to connect to its own internal database. OrcheStack provisions this role on first deploy with privileges scoped to the openmetadata_db only — it can't read OrcheStack's platform tables or your warehouse data. Locked to the <service>_admin naming convention so the pre-start hook can find and manage the role." },
