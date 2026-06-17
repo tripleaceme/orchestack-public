@@ -1494,7 +1494,14 @@ async def service_ready_probe(
         # passes ?action=docs or ?action=cli (matching the catalogue
         # actions: list).
         "dbt":          ("orchestack-dbt",          8080, "/"),
-        "openmetadata": ("orchestack-openmetadata", 8585, "/healthcheck"),
+        # OpenMetadata serves /healthcheck on its ADMIN port (8586) not
+        # the operator-facing API port (8585). On 8585 the path is
+        # unknown to the React router → 404 → the dashboard's ready loop
+        # never gets a 200 → Open click never fires window.open(). The
+        # /api/v1/system/version endpoint is the right gate for "the
+        # actual API is serving" on port 8585 (returns version JSON in
+        # ~30ms once the SPA + API are both up).
+        "openmetadata": ("orchestack-openmetadata", 8585, "/api/v1/system/version"),
     }
     # Per-action probes for multi-action services. dbt-docs takes
     # 30-90s to come up (runs `dbt deps + dbt run + dbt docs generate`
