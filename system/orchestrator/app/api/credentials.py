@@ -65,28 +65,28 @@ router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 # The convention <service>_admin is the default, not the lock.
 READ_ONLY_PATTERNS = (
     re.compile(r"_TAG$"),                     # AUTH_TAG, ORCHESTRATOR_TAG, …
-    re.compile(r"^ORCHESTACK_DB_PASSWORD$"),  # rotating breaks the platform
     # Internal Docker network: hostnames are container names, ports are
     # service-defined. Operator doesn't choose either.
     re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, WAREHOUSE_DB_HOST, AIRBYTE_DB_HOST, …
     re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
-    # Internal-only PG roles + DB names — used by the tool's container
-    # to connect to its own sidecar database. Operator never types these
-    # into any form; renaming would break the pre-start provisioning hook.
-    # Exact names listed rather than a broad `_DB_USER$` regex because
-    # WAREHOUSE_DB_USER (warehouse_admin) is operator-facing and stays
-    # editable — operators may need to log into the warehouse with psql
-    # or external tools using a name their team agreed on.
-    re.compile(r"^DBT_USER$"),                # dbt_admin — used by dbt container
-    re.compile(r"^AIRBYTE_DB_USER$"),         # airbyte — sidecar DB role
-    re.compile(r"^AIRBYTE_DB_NAME$"),         # airbyte — sidecar DB name
-    re.compile(r"^AIRFLOW_DB_USER$"),         # airflow — sidecar DB role
-    re.compile(r"^AIRFLOW_DB_NAME$"),         # airflow — sidecar DB name
-    re.compile(r"^METABASE_DB_USER$"),        # metabase — sidecar DB role
-    re.compile(r"^METABASE_DB_NAME$"),        # metabase — sidecar DB name
-    re.compile(r"^OPENMETADATA_DB_USER$"),    # openmetadata — sidecar DB role (when shipped)
-    re.compile(r"^OPENMETADATA_DB_NAME$"),    # openmetadata — sidecar DB name
-    re.compile(r"^GE_DB_USER$"),              # great_expectations — when it gains a sidecar DB
+    # Every <service>_admin DB user — the orchestrator's pre-start hook
+    # provisions roles by these EXACT names, and the compose files default
+    # to them via ${VAR:-default} fallback. Renaming on the dashboard
+    # without ALSO renaming the role in postgres (and re-running the hook)
+    # would break the next service start. We expose the value as read-only
+    # so operators can see what role each service uses without footgunning.
+    re.compile(r"^ORCHESTACK_DB_USER$"),      # orchestack_admin — bootstrap superuser
+    re.compile(r"^WAREHOUSE_DB_USER$"),       # warehouse_admin — operator's warehouse owner
+    re.compile(r"^DBT_DB_USER$"),             # dbt_admin — dbt → warehouse role
+    re.compile(r"^AIRBYTE_DB_USER$"),         # airbyte_admin — sidecar DB role
+    re.compile(r"^AIRBYTE_DB_NAME$"),         # airbyte sidecar DB name
+    re.compile(r"^AIRFLOW_DB_USER$"),         # airflow_admin — sidecar DB role
+    re.compile(r"^AIRFLOW_DB_NAME$"),         # airflow sidecar DB name
+    re.compile(r"^METABASE_DB_USER$"),        # metabase_admin — sidecar DB role
+    re.compile(r"^METABASE_DB_NAME$"),        # metabase sidecar DB name
+    re.compile(r"^OPENMETADATA_DB_USER$"),    # openmetadata_admin — sidecar DB role
+    re.compile(r"^OPENMETADATA_DB_NAME$"),    # openmetadata sidecar DB name
+    re.compile(r"^GE_DB_USER$"),              # warehouse_admin reuse — GE has no sidecar
     re.compile(r"^GE_DB_NAME$"),
 )
 
