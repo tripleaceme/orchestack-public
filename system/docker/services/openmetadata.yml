@@ -12,51 +12,37 @@
 # openmetadata-server distribution. ES-as-sidecar in M5+.
 
 services:
-  # One-off migration runner — bootstraps the openmetadata_db schema
-  # before the server boots. OpenMetadata's server image does NOT run
-  # migrations on startup (a deliberate split so multi-replica deploys
-  # can migrate once), so we need this init container. It exits 0 after
-  # `migrate` completes; the main server's depends_on→completed_successfully
-  # gate waits for that signal.
-  openmetadata-migrate:
+  # Single openmetadata/server:1.6.5 container that runs migrations
+  # before starting the server in the same process tree.
+  #
+  # Why this shape (instead of the upstream-recommended two-container
+  # init-runner + server split): on a single-tenant install the split
+  # leaves a "stopped" migrate container sitting in Docker forever
+  # after exiting 0, which is visually confusing — operators see two
+  # openmetadata containers and assume one is duplicate/broken. The
+  # combined `command:` runs migrate first (Flyway is idempotent —
+  # detects "no new migrations" in ~5s on warm starts) then exec's the
+  # server. Behaviour-equivalent to the split, one less container in
+  # `docker ps`.
+  #
+  # Multi-replica deployments would need to revert to the split so
+  # only one replica migrates — that's an M5+ concern when we get to
+  # the cluster mode.
+  openmetadata:
     image: docker.getcollate.io/openmetadata/server:1.6.5
-    container_name: orchestack-openmetadata-migrate
-    restart: "no"
+    container_name: orchestack-openmetadata
+    restart: unless-stopped
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -e
         echo "[orchestack] running OpenMetadata DB migrations…"
         ./bootstrap/openmetadata-ops.sh migrate
-    environment:
-      DB_USER:     ${OPENMETADATA_DB_USER:-openmetadata_admin}
-      DB_USER_PASSWORD: ${OPENMETADATA_DB_PASSWORD:-}
-      DB_HOST:     orchestack-postgres
-      DB_PORT:     "5432"
-      OM_DATABASE: openmetadata_db
-      DB_DRIVER_CLASS: org.postgresql.Driver
-      DB_SCHEME:   postgresql
-      JWT_TOKEN_SECRET_KEY: ${OPENMETADATA_JWT_SECRET:?OPENMETADATA_JWT_SECRET must be set in .env}
-      OM_ADMIN_EMAIL:       ${OPENMETADATA_ADMIN_EMAIL:?OPENMETADATA_ADMIN_EMAIL must be set in .env}
-      OM_ADMIN_PASSWORD:    ${OPENMETADATA_ADMIN_PASSWORD:?OPENMETADATA_ADMIN_PASSWORD must be set in .env}
-      SEARCH_TYPE:   elasticsearch
-      ELASTICSEARCH_HOST: openmetadata-es
-      ELASTICSEARCH_PORT: "9200"
-    networks:
-      - orchestack-net
+        echo "[orchestack] starting OpenMetadata server…"
+        exec /openmetadata-start.sh
     depends_on:
       openmetadata-es:
         condition: service_healthy
-
-  openmetadata:
-    image: docker.getcollate.io/openmetadata/server:1.6.5
-    container_name: orchestack-openmetadata
-    restart: unless-stopped
-    depends_on:
-      openmetadata-es:
-        condition: service_healthy
-      openmetadata-migrate:
-        condition: service_completed_successfully
     environment:
       # Database — uses the openmetadata_admin role + openmetadata_db
       # database that the orchestrator's _ensure_openmetadata_setup hook
