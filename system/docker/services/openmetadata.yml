@@ -45,7 +45,8 @@ services:
     networks:
       - orchestack-net
     depends_on:
-      - openmetadata-es
+      openmetadata-es:
+        condition: service_healthy
 
   openmetadata:
     image: docker.getcollate.io/openmetadata/server:1.6.5
@@ -53,7 +54,7 @@ services:
     restart: unless-stopped
     depends_on:
       openmetadata-es:
-        condition: service_started
+        condition: service_healthy
       openmetadata-migrate:
         condition: service_completed_successfully
     environment:
@@ -120,6 +121,24 @@ services:
       - orchestack-net
     volumes:
       - openmetadata-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      # ES isn't reachable on its API until cluster status is at least
+      # yellow. Without this check, openmetadata-migrate's `depends_on:
+      # service_started` returns true the moment the JVM is alive but
+      # the index API still 503s — which is exactly the
+      # `java.net.ConnectException: Connection refused` trace we saw
+      # when migrate tried to update aliases on restart. Probe the
+      # cluster-health endpoint with wait_for_status=yellow; it returns
+      # 200 only when ES can actually serve queries.
+      #
+      # The ES 8.11.4 image has `curl` but NOT `wget` (unlike most other
+      # base images we deal with) — using wget here returns 127 and the
+      # container stays unhealthy forever.
+      test: ["CMD-SHELL", "curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' | grep -qE '\"status\":\"(yellow|green)\"' || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 18
+      start_period: 60s
 
 networks:
   orchestack-net:

@@ -203,7 +203,18 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # dashboard's Open button to send operators there instead of to
     # the broken /app/airbyte subpath.
     "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True, "external_url": "http://{host}:8001"},
-    "openmetadata": {"tier": "cold", "display_name": "OpenMetadata",        "layer": "governance",   "managed": True},
+    # OpenMetadata: subpath-friendly UI (SERVER_HOST_API_URL + WEB_CONF_URI
+    # both point at /app/openmetadata). Falls through to the default Open
+    # button path. ready_probe targets the actual operator-facing API on
+    # 8585 (the /healthcheck endpoint on 8586 is the admin port — green
+    # there means the JVM is up but doesn't say anything about whether
+    # /api/v1/* requests can be served). Without ready_probe, the
+    # dashboard's Open click fires window.open() while OM is still loading
+    # its UI bundle and the operator sees a blank tab for several seconds.
+    "openmetadata": {
+        "tier": "cold", "display_name": "OpenMetadata", "layer": "governance", "managed": True,
+        "ready_probe": (8585, "/api/v1/system/version"),
+    },
     # PostgreSQL is special — it's part of the base control plane (already
     # running as orchestack-postgres), so the orchestrator does NOT start
     # or stop it via compose; the base stack owns its lifecycle. The
