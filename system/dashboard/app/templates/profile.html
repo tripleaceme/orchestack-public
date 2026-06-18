@@ -1,112 +1,104 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-      My profile
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mt-1">
-      Update your own account details. Username is locked, only an Admin
-      can rename a user (changing it would orphan audit-log references).
-      Email and password changes take effect immediately; no second-tab
-      logout needed.
-    </p>
-  </div>
+  <div class="breadcrumb">Account / Profile</div>
+  <h1 class="page-title">My profile</h1>
+  <p class="lede">
+    Update your own account details. Username is locked — only an Admin
+    can rename a user (changing it would orphan audit-log references).
+    Email and password changes take effect immediately.
+  </p>
 
   {% if error %}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-4">
-      <strong class="font-semibold">Couldn't load your profile.</strong>
-      <span class="text-red-700"> {{ error }}</span>
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+                padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
+      <strong>Couldn't load your profile.</strong> {{ error }}
     </div>
   {% endif %}
 
   {% if saved %}
-    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 mb-4">
+    <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px;
+                padding: 12px 16px; font-size: 13px; color: #064e3b; margin-bottom: 16px;">
       ✓ Saved.
     </div>
   {% endif %}
 
   {% if save_error %}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+                padding: 12px 16px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
       Save failed: {{ save_error }}
     </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('profile_save_action') }}"
-        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-6
-               grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <form method="post" action="{{ url_for('profile_save_action') }}">
 
-    <label class="block sm:col-span-2">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">Username</span>
-      <input type="text" value="{{ profile.username or '' }}"
-             readonly disabled
-             class="mt-1 w-full text-sm font-mono px-3 py-2 rounded
-                    border border-[var(--border)] bg-[var(--bg)]
-                    text-[var(--text-2)] cursor-not-allowed" />
-      <span class="text-[11px] text-[var(--text-2)] italic">
-        Username changes are an Admin operation. Ask an Admin if you need
-        yours changed.
-      </span>
-    </label>
+    <div class="surface">
+      <div class="surface-head">
+        <h2>Profile details</h2>
+        <span class="sub">Changes write to platform.users immediately</span>
+      </div>
+      <div class="form-grid">
 
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">Full name</span>
-      <input type="text" name="full_name" value="{{ profile.full_name or '' }}"
-             required minlength="1" maxlength="120"
-             class="mt-1 w-full text-sm px-3 py-2 rounded
-                    border border-[var(--border)] bg-white" />
-    </label>
+        <div class="form-row">
+          <label>Username
+            <span class="opt">Fixed — used in audit log</span>
+          </label>
+          <input type="text" value="{{ profile.username or '' }}" readonly disabled>
+        </div>
 
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">Email</span>
-      <input type="email" name="email" value="{{ profile.email or '' }}"
-             required minlength="3" maxlength="320"
-             class="mt-1 w-full text-sm px-3 py-2 rounded
-                    border border-[var(--border)] bg-white" />
-    </label>
+        <div class="form-row">
+          <label>Full name</label>
+          <input type="text" name="full_name" value="{{ profile.full_name or '' }}"
+                 required minlength="1" maxlength="120">
+        </div>
 
-    <label class="block sm:col-span-2">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">Company</span>
-      <input type="text" name="company_name" value="{{ profile.company_name or '' }}"
-             maxlength="120"
-             class="mt-1 w-full text-sm px-3 py-2 rounded
-                    border border-[var(--border)] bg-white" />
-    </label>
+        <div class="form-row">
+          <label>Email</label>
+          <div>
+            <input type="email" name="email" value="{{ profile.email or '' }}"
+                   required minlength="3" maxlength="320">
+            <div class="input-hint">Used for password reset and as the default for OM/Airflow admin emails.</div>
+          </div>
+        </div>
 
-    <div class="sm:col-span-2 mt-2 border-t border-[var(--border)] pt-4">
-      <h2 class="text-sm font-semibold text-[var(--text)] mb-1">Change password</h2>
-      <p class="text-xs text-[var(--text-2)] mb-3">
-        Leave both fields blank if you don't want to change your password.
-      </p>
+        <div class="form-row">
+          <label>Company name
+            <span class="opt">Optional</span>
+          </label>
+          <input type="text" name="company_name" value="{{ profile.company_name or '' }}"
+                 maxlength="120">
+        </div>
+
+      </div>
     </div>
 
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">Current password</span>
-      <input type="password" name="current_password" autocomplete="current-password"
-             class="mt-1 w-full text-sm px-3 py-2 rounded
-                    border border-[var(--border)] bg-white" />
-    </label>
+    <div class="surface">
+      <div class="surface-head">
+        <h2>Change password</h2>
+        <span class="sub">Leave both blank if you don't want to change it</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>Current password</label>
+          <input type="password" name="current_password" autocomplete="current-password">
+        </div>
+        <div class="form-row">
+          <label>New password</label>
+          <div>
+            <input type="password" name="new_password" autocomplete="new-password" minlength="12">
+            <div class="input-hint">Minimum 12 characters.</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide">New password</span>
-      <input type="password" name="new_password" autocomplete="new-password"
-             minlength="12"
-             class="mt-1 w-full text-sm px-3 py-2 rounded
-                    border border-[var(--border)] bg-white" />
-      <span class="text-[11px] text-[var(--text-2)] italic">
-        Minimum 12 characters.
-      </span>
-    </label>
-
-    <div class="sm:col-span-2 mt-2 flex items-center justify-between">
-      <p class="text-xs text-[var(--text-2)] font-mono">
-        {% if profile.roles %}Roles: {{ profile.roles | join(', ') }}{% endif %}
-      </p>
-      <button type="submit"
-              class="text-sm font-medium px-4 py-2 rounded
-                     bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
-        Save changes
-      </button>
+    <div class="surface">
+      <div style="padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+        <div class="muted" style="font-size: 12px; font-family: 'JetBrains Mono', monospace;">
+          {% if profile.roles %}Roles: {{ profile.roles | join(', ') }}{% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
     </div>
   </form>
 {% endblock %}

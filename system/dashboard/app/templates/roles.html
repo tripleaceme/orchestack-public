@@ -1,36 +1,31 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-      Roles &amp; permissions
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mt-1">
-      Each role grants a set of platform permissions per service. Pick a
-      service from the dropdown, tick the permissions you want for that
-      role on that service, save. Service permission rows can be added,
-      updated (re-grant overrides), or revoked. The three built-in roles
-      (Admin / Engineer / Analyst) cover the typical OrcheStack team shape;
-      create custom roles for tighter scopes.
-    </p>
-    <p class="text-xs text-[var(--text-2)] mt-2">
-      <strong>Permissions are platform-level:</strong>
-      <code class="font-mono">can_start</code> (start a service),
-      <code class="font-mono">can_use</code> (open a session),
-      <code class="font-mono">can_force_stop</code> (stop a service with active sessions),
-      <code class="font-mono">can_edit_config</code> (edit credentials).
-      <br>
-      Tool-internal permissions (e.g. who can edit a Metabase dashboard) are pushed
-      to each tool when the user opens it, handled by per-tool integration
-      logic in a later milestone.
-    </p>
+  <div class="breadcrumb">Configuration / Roles</div>
+  <h1 class="page-title">Roles &amp; permissions</h1>
+  <p class="lede">
+    Each role grants a set of platform permissions per service. Built-in
+    roles (Admin / Engineer / Analyst) cover the typical OrcheStack team
+    shape; create custom roles for tighter scopes. Assign roles to users
+    from the <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
+  </p>
+
+  <div style="background: var(--info-bg); border: 1px solid #bfdbfe; border-radius: 8px;
+              padding: 12px 16px; margin-bottom: 18px; font-size: 12px; color: #1e3a8a; line-height: 1.6;">
+    <strong style="color: #1e40af;">Permissions are platform-level:</strong>
+    <code class="font-mono">can_start</code> (start a service),
+    <code class="font-mono">can_use</code> (open a session),
+    <code class="font-mono">can_force_stop</code> (stop a service with active sessions),
+    <code class="font-mono">can_edit_config</code> (edit credentials).
+    Tool-internal permissions (e.g. who can edit a Metabase dashboard) are pushed
+    to each tool when the user opens it, handled by per-tool integration logic.
   </div>
 
-  <section id="roles-list"
-           hx-get="{{ url_for('roles_list_fragment') }}"
-           hx-trigger="load delay:50ms"
-           hx-swap="innerHTML"
-           class="min-h-[200px]">
-    <div class="text-sm text-[var(--text-2)] italic">Loading roles…</div>
-  </section>
+  <div id="roles-list"
+       hx-get="{{ url_for('roles_list_fragment') }}"
+       hx-trigger="load delay:50ms"
+       hx-swap="innerHTML"
+       style="min-height: 200px;">
+    <p class="muted" style="font-style: italic; font-size: 13px;">Loading roles…</p>
+  </div>
 {% endblock %}

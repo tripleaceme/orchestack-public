@@ -1,60 +1,66 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-      Audit log
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mt-1">
-      Append-only record of every privileged action. Filter by event type,
-      target service, or date range. Default page size is 20 — adjust below.
-    </p>
-  </div>
+  <div class="breadcrumb">Workspace / Audit</div>
+  <h1 class="page-title">Audit log</h1>
+  <p class="lede">
+    Append-only record of every privileged action — service starts/stops,
+    credential edits, sign-ins, role grants, setup deploys. Filter by
+    event type, target service, or date range.
+  </p>
 
-  {#
-    Filter form — submits via HTMX to the table fragment endpoint.
-    `hx-include` on each input + `hx-target=#audit-table` keeps everything
-    on the same page. We don't use a real <form action=> because that
-    would do a full-page reload; HTMX does the equivalent fetch but
-    swaps just the table. The page-size dropdown lives in the same form
-    so it's serialised alongside the filters on every request.
-  #}
   <form id="audit-filters"
         hx-get="{{ url_for('audit_table_fragment') }}"
         hx-target="#audit-table"
         hx-swap="innerHTML"
         hx-trigger="change from:input, change from:select, submit"
-        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-4
-               grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)]">Event type</span>
-      <input type="text" name="event_type" placeholder="e.g. service_started"
-             class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                    px-2 py-1.5 bg-white" />
+        style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+               padding: 14px 16px; margin-bottom: 16px;
+               display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Event type</div>
+      <input type="text" name="event_type" placeholder="e.g. service.start"
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 13px;
+                    color: var(--text); font-family: inherit;">
     </label>
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)]">Target service</span>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Target service</div>
       <input type="text" name="target" placeholder="e.g. metabase"
-             class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                    px-2 py-1.5 bg-white" />
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 13px;
+                    color: var(--text); font-family: inherit;">
     </label>
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)]">Since</span>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Since</div>
       <input type="datetime-local" name="since"
-             class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                    px-2 py-1.5 bg-white" />
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 12px;
+                    color: var(--text); font-family: 'JetBrains Mono', monospace;">
     </label>
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)]">Until</span>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Until</div>
       <input type="datetime-local" name="until"
-             class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                    px-2 py-1.5 bg-white" />
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 12px;
+                    color: var(--text); font-family: 'JetBrains Mono', monospace;">
     </label>
-    <label class="block">
-      <span class="text-xs font-medium text-[var(--text-2)]">Rows per page</span>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Per page</div>
       <select name="limit"
-              class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                     px-2 py-1.5 bg-white">
+              style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                     background: var(--bg); border-radius: 6px; font-size: 13px;
+                     color: var(--text); font-family: inherit;">
         <option value="20" selected>20</option>
         <option value="50">50</option>
         <option value="100">100</option>
@@ -63,11 +69,11 @@
     </label>
   </form>
 
-  <section id="audit-table"
-           hx-get="{{ url_for('audit_table_fragment') }}"
-           hx-trigger="load delay:50ms"
-           hx-swap="innerHTML"
-           class="min-h-[120px]">
-    <div class="text-sm text-[var(--text-2)] italic">Loading audit log…</div>
-  </section>
+  <div id="audit-table"
+       hx-get="{{ url_for('audit_table_fragment') }}"
+       hx-trigger="load delay:50ms"
+       hx-swap="innerHTML"
+       style="min-height: 120px;">
+    <p class="muted" style="font-style: italic; font-size: 13px;">Loading audit log…</p>
+  </div>
 {% endblock %}

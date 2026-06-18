@@ -1,75 +1,70 @@
 {#
   Active-sessions table fragment. Polled every 10s. Renders an error
   banner OR an empty-state OR the table — never two at once.
-
-  The "Close" button on each row sends a DELETE through the dashboard
-  proxy; the row is removed on the next poll (we don't optimistically
-  remove it — keeps the polling loop authoritative).
 #}
 {% if error %}
-  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
-    <strong class="font-semibold">Couldn't load sessions.</strong>
-    <span class="text-red-700"> {{ error }}</span>
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 14px 18px; font-size: 13px; color: #991b1b;">
+    <strong>Couldn't load sessions.</strong> {{ error }}
   </div>
 {% elif not sessions %}
-  <div class="bg-[var(--surface)] border border-dashed border-[var(--border)]
-              rounded-lg p-8 text-center text-sm text-[var(--text-2)]">
-    <p class="font-medium text-[var(--text)] mb-1">No open sessions</p>
-    <p>
+  <div style="background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
+              padding: 32px; text-align: center; font-size: 13px; color: var(--text-2);">
+    <p style="font-weight: 600; color: var(--text); margin: 0 0 4px;">No open sessions</p>
+    <p style="margin: 0;">
       When someone opens a service from the
-      <a href="{{ url_for('home') }}" class="text-[var(--navy)] underline">Home</a>
-      page, their session shows up here until they close it (or the
-      reconciler times them out).
+      <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>,
+      their session shows up here until they close it (or the reconciler times them out).
     </p>
   </div>
 {% else %}
-  <div class="overflow-x-auto bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-    <table class="w-full text-sm">
-      <thead class="bg-[var(--bg)] text-[var(--text-2)] text-xs uppercase tracking-wide">
+  <div class="surface">
+    <table class="data-table">
+      <thead>
         <tr>
-          <th class="text-left px-4 py-2 font-medium">Service</th>
-          <th class="text-left px-4 py-2 font-medium">User</th>
-          <th class="text-left px-4 py-2 font-medium">Opened</th>
-          <th class="text-left px-4 py-2 font-medium">Last heartbeat</th>
-          <th class="text-left px-4 py-2 font-medium">Idle</th>
-          <th class="text-right px-4 py-2 font-medium">Actions</th>
+          <th>Service</th>
+          <th>User</th>
+          <th>Opened</th>
+          <th>Last heartbeat</th>
+          <th>Idle</th>
+          <th class="right">Actions</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-[var(--border)]">
+      <tbody>
         {% for s in sessions %}
           <tr>
-            <td class="px-4 py-2">
-              <span class="font-medium text-[var(--text)]">{{ s.service }}</span>
+            <td>
+              <span class="status-dot running"></span>
+              <strong style="margin-left: 6px;">{{ s.service }}</strong>
             </td>
-            <td class="px-4 py-2 text-[var(--text-2)]">
-              {{ s.full_name or s.username or 'system' }}
+            <td>
+              <div><strong>{{ s.full_name or s.username or 'system' }}</strong></div>
               {% if s.username %}
-                <span class="text-xs font-mono">@{{ s.username }}</span>
+                <div class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">@{{ s.username }}</div>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-[var(--text-2)] font-mono text-xs">
+            <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
               {{ s.opened_at[:19] if s.opened_at else '—' }}
             </td>
-            <td class="px-4 py-2 text-[var(--text-2)] font-mono text-xs">
+            <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
               {{ s.last_heartbeat_at[:19] if s.last_heartbeat_at else '—' }}
             </td>
-            <td class="px-4 py-2">
+            <td>
               {% set idle = s.idle_seconds or 0 %}
               {% if idle < 60 %}
-                <span class="text-emerald-700">{{ idle }}s</span>
+                <span class="pill pill-success">{{ idle }}s</span>
               {% elif idle < 300 %}
-                <span class="text-amber-700">{{ (idle // 60) }}m {{ idle % 60 }}s</span>
+                <span class="pill pill-warn">{{ (idle // 60) }}m {{ idle % 60 }}s</span>
               {% else %}
-                <span class="text-red-700">{{ (idle // 60) }}m</span>
+                <span class="pill pill-danger">{{ (idle // 60) }}m</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-right">
-              <button hx-post="{{ url_for('session_close', token=s.token) }}"
+            <td class="right">
+              <button class="btn btn-sm btn-danger"
+                      hx-post="{{ url_for('session_close', token=s.token) }}"
                       hx-confirm="Close this session?"
-                      hx-swap="none"
-                      class="text-xs font-medium text-[var(--text-2)]
-                             hover:text-red-700 transition-colors">
-                Close
+                      hx-swap="none">
+                Force-end
               </button>
             </td>
           </tr>
@@ -77,7 +72,7 @@
       </tbody>
     </table>
   </div>
-  <p class="text-xs text-[var(--text-2)] mt-2 text-right">
+  <p style="font-size: 11px; color: var(--text-2); margin-top: 8px; text-align: right;">
     {{ sessions|length }} open · refreshes every 10s
   </p>
 {% endif %}

@@ -1,139 +1,164 @@
 {#
-  Users table fragment. Renders the invite form, a list of every user with
-  their roles + status, and the one-time starter-password reveal when an
-  invite has just succeeded.
-
-  HTMX-driven: all actions (invite, enable/disable, grant/revoke role)
-  re-render this whole fragment so the table always reflects the latest
-  state.
+  Users table fragment. Phase 3.7 redesign. Renders the invite form, a
+  list of every user with their roles + status, and the one-time
+  starter-password reveal when an invite has just succeeded.
 #}
 {% if error %}
-  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-4">
-    <strong class="font-semibold">Couldn't load users.</strong>
-    <span class="text-red-700"> {{ error }}</span>
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
+    <strong>Couldn't load users.</strong> {{ error }}
   </div>
 {% endif %}
 
 {% if invite_result %}
-  <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
-    <p class="text-sm font-medium text-emerald-900">
-      ✓ Invited <span class="font-mono">{{ invite_result.username }}</span>
+  <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px;
+              padding: 16px 18px; font-size: 13px; color: #064e3b; margin-bottom: 16px;">
+    <div style="font-weight: 600;">
+      ✓ Invited <span style="font-family: 'JetBrains Mono', monospace;">{{ invite_result.username }}</span>
       ({{ invite_result.email }}).
       {% if invite_result.roles_granted %}
         Roles granted: {{ invite_result.roles_granted | join(', ') }}.
       {% endif %}
-    </p>
-    <p class="text-sm text-emerald-800 mt-2">
+    </div>
+    <div style="margin-top: 10px;">
       <strong>Starter password (shown only once):</strong>
-      <code class="font-mono text-base bg-white border border-emerald-300 px-2 py-1 rounded ml-2 select-all">{{ invite_result.starter_password }}</code>
-    </p>
-    <p class="text-xs text-emerald-700 mt-2">
-      Pass this to the user out-of-band (Slack DM, signed message). They
-      should change it on first login.
-    </p>
+      <code style="font-family: 'JetBrains Mono', monospace; font-size: 14px;
+                   background: white; border: 1px solid #6ee7b7;
+                   padding: 4px 10px; border-radius: 5px; margin-left: 8px; user-select: all;">{{ invite_result.starter_password }}</code>
+    </div>
+    <div style="font-size: 11px; color: #047857; margin-top: 8px;">
+      Pass this to the user out-of-band (Slack DM, signed message). They should change it on first login.
+    </div>
   </div>
 {% endif %}
 
 {% if invite_error %}
-  <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 12px 16px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
     Invite failed: {{ invite_error }}
   </div>
 {% endif %}
 
+<style>
+  .invite-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; align-items: end; padding: 16px 18px;
+  }
+  .invite-grid label { display: block; }
+  .invite-grid label .lbl {
+    font-size: 11px; color: var(--text-2); text-transform: uppercase;
+    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;
+  }
+  .invite-grid input, .invite-grid select {
+    width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+    background: var(--bg); border-radius: 6px; font-size: 13px;
+    color: var(--text); font-family: inherit;
+  }
+  .role-pill-inline {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: #ecfdf5; color: #047857; margin-right: 4px; font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .role-pill-inline button {
+    background: none; border: none; color: inherit; cursor: pointer;
+    line-height: 1; font-size: 12px; padding: 0; margin-left: 2px;
+  }
+  .role-pill-inline button:hover { color: #b91c1c; }
+  .grant-role-form select {
+    font-size: 11px; border: 1px solid var(--border); background: var(--surface);
+    border-radius: 4px; padding: 3px 8px; color: var(--text-2);
+  }
+</style>
+
 {# --------------------- Invite form --------------------- #}
-<form hx-post="{{ url_for('users_invite_action') }}"
-      hx-target="#users-table"
-      hx-swap="innerHTML"
-      class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-4
-             grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">Username</span>
-    <input type="text" name="username" required minlength="3" maxlength="32"
-           pattern="[a-zA-Z0-9_.\-]+"
-           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
-  </label>
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">Email</span>
-    <input type="email" name="email" required
-           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
-  </label>
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">Full name</span>
-    <input type="text" name="full_name" required
-           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
-  </label>
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">Starter role</span>
-    <select name="role_id"
-            class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white">
-      <option value="">No role yet</option>
-      {% for r in roles %}
-        <option value="{{ r.id }}">{{ r.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit"
-          class="text-sm font-medium px-3 py-1.5 rounded
-                 bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
-    + Invite user
-  </button>
-</form>
+<div class="surface">
+  <div class="surface-head">
+    <h2>Invite a new user</h2>
+    <span class="sub">Invitee gets a one-time starter password revealed here</span>
+  </div>
+  <form hx-post="{{ url_for('users_invite_action') }}"
+        hx-target="#users-table"
+        hx-swap="innerHTML"
+        class="invite-grid">
+    <label>
+      <div class="lbl">Username</div>
+      <input type="text" name="username" required minlength="3" maxlength="32"
+             pattern="[a-zA-Z0-9_.\-]+" placeholder="jdoe">
+    </label>
+    <label>
+      <div class="lbl">Email</div>
+      <input type="email" name="email" required placeholder="user@orchestack.local">
+    </label>
+    <label>
+      <div class="lbl">Full name</div>
+      <input type="text" name="full_name" required placeholder="J. Doe">
+    </label>
+    <label>
+      <div class="lbl">Starter role</div>
+      <select name="role_id">
+        <option value="">No role yet</option>
+        {% for r in roles %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">+ Invite user</button>
+  </form>
+</div>
 
 {# --------------------- Users table --------------------- #}
-<div class="overflow-x-auto bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-  <table class="w-full text-sm">
-    <thead class="bg-[var(--bg)] text-[var(--text-2)] text-xs uppercase tracking-wide">
+<div class="surface">
+  <div class="surface-head">
+    <h2>All users</h2>
+    <span class="sub">{{ users | length }} user{{ '' if users | length == 1 else 's' }}</span>
+  </div>
+  <table class="data-table">
+    <thead>
       <tr>
-        <th class="text-left px-4 py-2 font-medium">User</th>
-        <th class="text-left px-4 py-2 font-medium">Roles</th>
-        <th class="text-left px-4 py-2 font-medium">Status</th>
-        <th class="text-left px-4 py-2 font-medium">Last login</th>
-        <th class="text-right px-4 py-2 font-medium">Actions</th>
+        <th>User</th>
+        <th>Roles</th>
+        <th>Status</th>
+        <th>Last login</th>
+        <th class="right">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-[var(--border)]">
+    <tbody>
       {% for u in users %}
-        <tr class="{{ 'opacity-50' if not u.is_active else '' }}">
-          <td class="px-4 py-2 align-top">
-            <div class="font-medium text-[var(--text)]">{{ u.full_name }}</div>
-            <div class="text-xs text-[var(--text-2)] font-mono">
-              {{ u.username }} · {{ u.email }}
+        <tr style="{{ 'opacity: 0.55;' if not u.is_active else '' }}">
+          <td>
+            <div><strong>{{ u.full_name }}</strong>{% if u.id == current_user_id %} <span class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">· you</span>{% endif %}</div>
+            <div class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+              @{{ u.username }} · {{ u.email }}
             </div>
             {% if u.company_name %}
-              <div class="text-xs text-[var(--text-2)] italic">{{ u.company_name }}</div>
+              <div class="muted" style="font-size: 11px; font-style: italic;">{{ u.company_name }}</div>
             {% endif %}
           </td>
-          <td class="px-4 py-2 align-top">
+          <td>
             {% if u.roles %}
-              <div class="flex flex-wrap gap-1 items-center">
+              <div>
                 {% for role_name in u.roles %}
-                  {# Find the role_id by name for the revoke link. #}
                   {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
-                  <span class="text-[10px] uppercase tracking-wide font-semibold
-                               px-1.5 py-0.5 rounded
-                               bg-emerald-50 text-emerald-700 border border-emerald-200
-                               inline-flex items-center gap-1">
+                  <span class="role-pill-inline">
                     {{ role_name }}
                     {% if role and not (u.id == current_user_id and role_name == 'Admin') %}
                       <button hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
                               hx-target="#users-table" hx-swap="innerHTML"
                               hx-confirm="Revoke {{ role_name }} from {{ u.username }}?"
-                              title="Revoke {{ role_name }}"
-                              class="hover:text-red-700 leading-none">✕</button>
+                              title="Revoke">✕</button>
                     {% endif %}
                   </span>
                 {% endfor %}
               </div>
             {% else %}
-              <span class="text-xs text-[var(--text-2)] italic">no roles</span>
+              <span class="muted" style="font-size: 12px; font-style: italic;">no roles</span>
             {% endif %}
-            {# Grant-role inline form. #}
             <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
                   hx-target="#users-table" hx-swap="innerHTML"
                   hx-trigger="change from:select"
-                  class="mt-1">
-              <select name="role_id"
-                      class="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white">
+                  class="grant-role-form" style="margin-top: 6px;">
+              <select name="role_id">
                 <option value="">+ Grant role</option>
                 {% for r in roles %}
                   {% if r.name not in u.roles %}
@@ -143,28 +168,27 @@
               </select>
             </form>
           </td>
-          <td class="px-4 py-2 align-top">
+          <td>
             {% if u.is_active %}
-              <span class="text-xs font-medium text-emerald-700">● Active</span>
+              <span class="pill pill-success">active</span>
             {% else %}
-              <span class="text-xs font-medium text-[var(--text-2)]">○ Disabled</span>
+              <span class="pill pill-neutral">disabled</span>
             {% endif %}
           </td>
-          <td class="px-4 py-2 align-top text-xs text-[var(--text-2)] font-mono">
+          <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
             {{ u.last_login_at[:19] if u.last_login_at else 'never' }}
           </td>
-          <td class="px-4 py-2 align-top text-right">
+          <td class="right">
             {% if u.id != current_user_id %}
               <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
-                    hx-target="#users-table" hx-swap="innerHTML" class="inline">
+                    hx-target="#users-table" hx-swap="innerHTML" style="display: inline;">
                 <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
-                <button type="submit"
-                        class="text-xs font-medium {{ 'text-red-700 hover:text-red-800' if u.is_active else 'text-emerald-700 hover:text-emerald-800' }} underline-offset-2 hover:underline">
+                <button type="submit" class="btn btn-sm {{ 'btn-danger' if u.is_active else '' }}">
                   {{ 'Disable' if u.is_active else 'Enable' }}
                 </button>
               </form>
             {% else %}
-              <span class="text-xs text-[var(--text-2)] italic">you</span>
+              <span class="muted" style="font-size: 11px; font-style: italic;">you</span>
             {% endif %}
           </td>
         </tr>
@@ -172,7 +196,3 @@
     </tbody>
   </table>
 </div>
-
-<p class="text-xs text-[var(--text-2)] mt-3">
-  {{ users | length }} user{{ '' if users | length == 1 else 's' }}.
-</p>

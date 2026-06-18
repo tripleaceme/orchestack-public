@@ -1,42 +1,66 @@
 {#
   The full service grid. Returned from /api/dashboard/services/grid every
-  10s by HTMX's auto-refresh. Renders one card per service, then a banner
-  if `error` is set (orchestrator unreachable).
-
-  Why two render paths in one template:
-    Happy path — `services` is a non-empty list → grid of cards.
-    Error path — `error` is set → render a single banner explaining the
-    failure, NOT cards (we don't want to show stale state masquerading as
-    current state). The poll keeps running; recovery is automatic.
+  10s by HTMX's auto-refresh. Splits services into Running and Stopped
+  sections — operators want to see "what's live" first, "what's idle"
+  second. Errors render as a banner that replaces both sections.
 #}
 {% if error %}
-  <div class="col-span-full bg-red-50 border border-red-200 rounded-lg p-4
-              text-sm text-red-800">
-    <strong class="font-semibold">Orchestrator unreachable.</strong>
-    <span class="text-red-700"> Last error: {{ error }}</span>
-    <span class="text-xs text-red-600 ml-2">— retrying in 10s</span>
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 18px;">
+    <strong style="color: #7f1d1d;">Orchestrator unreachable.</strong>
+    Last error: {{ error }}
+    <span style="font-size: 11px; color: #b91c1c; margin-left: 8px;">— retrying in 10s</span>
   </div>
 {% else %}
-  {% for service in services %}
-    {% include "_service_card_fragment.html" %}
-  {% endfor %}
+
+  {% set running = services | selectattr("state", "equalto", "running") | list %}
+  {% set stopped = services | rejectattr("state", "equalto", "running") | list %}
+
+  {% if running %}
+  <div style="display: flex; justify-content: space-between; align-items: end; margin-bottom: 14px;">
+    <h2 class="section-title">Running</h2>
+    <span style="color: var(--text-2); font-size: 12px;">
+      {{ running | length }} service{{ '' if running|length == 1 else 's' }}
+      · use the dashboard to start more
+    </span>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 24px;">
+    {% for service in running %}
+      {% include "_service_card_fragment.html" %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if stopped %}
+  <div style="display: flex; justify-content: space-between; align-items: end; margin-bottom: 14px;">
+    <h2 class="section-title">Stopped</h2>
+    <span style="color: var(--text-2); font-size: 12px;">
+      {{ stopped | length }} cold-tier service{{ '' if stopped|length == 1 else 's' }}
+      · start on demand
+    </span>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 24px;">
+    {% for service in stopped %}
+      {% include "_service_card_fragment.html" %}
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {# "Configure another service" affordance — admins only, only when
      there are unconfigured catalogue entries left. Operators reach
-     unconfigured services through here, not by them appearing as
-     placeholder tiles on the main grid. #}
+     unconfigured services through here, not as placeholder tiles. #}
   {% if is_admin and unconfigured_count and unconfigured_count > 0 %}
-    <a href="/setup/select.html?mode=add"
+    <a href="/setup/select?mode=add"
        title="Add a service that wasn't picked during initial setup"
-       class="bg-[var(--surface)] border border-dashed border-[var(--border)]
-              rounded-lg p-4 flex flex-col items-center justify-center gap-2
-              text-center hover:border-[var(--navy)] hover:bg-[var(--bg)]
-              transition-colors min-h-[140px]">
-      <span class="text-2xl font-light text-[var(--text-2)]">+</span>
-      <span class="text-sm font-medium text-[var(--text)]">
-        Configure another service
-      </span>
-      <span class="text-xs text-[var(--text-2)]">
+       style="display: block; background: var(--surface);
+              border: 1px dashed var(--border); border-radius: 10px;
+              padding: 22px; text-align: center; text-decoration: none;
+              color: var(--text-2); margin-bottom: 18px;
+              transition: all 0.12s;"
+       onmouseover="this.style.borderColor='var(--navy)'; this.style.borderStyle='solid'; this.style.color='var(--text)';"
+       onmouseout="this.style.borderColor='var(--border)'; this.style.borderStyle='dashed'; this.style.color='var(--text-2)';">
+      <span style="font-size: 18px; font-weight: 600; color: var(--navy);">+ Configure another service</span>
+      <span style="display: block; font-size: 12px; margin-top: 4px;">
         {{ unconfigured_count }}
         unconfigured catalogue entr{{ 'y' if unconfigured_count == 1 else 'ies' }}
         available
@@ -45,11 +69,10 @@
   {% endif %}
 
   {% if services|length == 0 and not is_admin %}
-    <div class="col-span-full bg-[var(--bg)] border border-dashed
-                border-[var(--border)] rounded-lg p-6 text-center
-                text-sm text-[var(--text-2)]">
-      No services available to you yet. Your Admin can grant access
-      from the Roles page.
+    <div style="background: var(--bg); border: 1px dashed var(--border);
+                border-radius: 10px; padding: 28px; text-align: center;
+                font-size: 13px; color: var(--text-2);">
+      No services available to you yet. Your Admin can grant access from the Roles page.
     </div>
   {% endif %}
 {% endif %}

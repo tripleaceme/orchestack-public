@@ -1,8 +1,7 @@
 {#
-  One service card. Returned both from the grid endpoint (looped) and from
-  the start/stop endpoints (single). That's the whole point of factoring
-  this out — the same template renders for grid refresh and after-action
-  re-render.
+  One service card. Phase 3.7 layout: surface card with name + tier pill
+  in the header, status dot + container name, primary action(s), and
+  a footer link row with Edit config / Details · pin · activity.
 
   Contract for `service`:
     .name          str   catalogue key, used in URLs
@@ -14,207 +13,185 @@
     .managed       bool  whether the orchestrator can actually start/stop it
 #}
 {% set is_running = service.state == "running" %}
-{% set is_pinned = service.pinned %}
-{% set tier_class = "bg-emerald-50 text-emerald-700 border-emerald-200"
-                   if service.tier == "hot"
-                   else "bg-sky-50 text-sky-700 border-sky-200" %}
-{% set dot_class = "bg-emerald-500 ring-emerald-100"
-                   if is_running
-                   else "bg-slate-300 ring-slate-100" %}
-{# Card border colour shifts to amber when the service is pinned so the
-   "this is being kept warm" state is visible at a glance on the grid. #}
-{% set card_class = "border-amber-300 ring-2 ring-amber-100" if is_pinned
-                    else "border-[var(--border)]" %}
+{% set is_pinned  = service.pinned %}
 
 <article id="service-card-{{ service.name }}"
-         class="bg-[var(--surface)] border {{ card_class }} rounded-lg p-4
-                flex flex-col gap-3 transition-shadow hover:shadow-sm">
+         class="svc-card{% if is_pinned %} svc-card-pinned{% endif %}">
 
-  {# Header row: name + pin icon (if pinned) + tier badge. #}
-  <div class="flex items-start justify-between gap-2">
-    <div class="min-w-0">
-      <h3 class="text-sm font-semibold text-[var(--text)] truncate flex items-center gap-1.5">
+  <style>
+    .svc-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px 18px; transition: border-color 0.15s;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .svc-card:hover { border-color: var(--navy); }
+    .svc-card-pinned { border-color: #fcd34d; box-shadow: 0 0 0 2px #fef3c7; }
+    .svc-card .head {
+      display: flex; justify-content: space-between; align-items: start;
+    }
+    .svc-card .name {
+      font-weight: 600; font-size: 14px; color: var(--text);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .svc-card .layer {
+      color: var(--text-2); font-size: 11px; margin-top: 1px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .svc-card .status-row {
+      font-size: 12px; display: flex; align-items: center; gap: 6px;
+    }
+    .svc-card .status-row.running { color: #047857; }
+    .svc-card .status-row.stopped { color: var(--text-2); }
+    .svc-card .container-line {
+      font-size: 11px; color: var(--text-2);
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: -4px;
+    }
+    .svc-card .btns { display: flex; gap: 6px; flex-direction: column; margin-top: 4px; }
+    .svc-card .btns .btn-row { display: flex; gap: 6px; }
+    .svc-card .svc-btn {
+      flex: 1; padding: 7px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      text-align: center; cursor: pointer; font-family: inherit; text-decoration: none;
+      display: inline-block; transition: all 0.12s;
+    }
+    .svc-card .svc-btn:hover { border-color: var(--navy); }
+    .svc-card .svc-btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .svc-card .svc-btn-primary:hover { background: var(--navy-2); }
+    .svc-card .svc-btn-danger:hover { border-color: #fca5a5; color: #b91c1c; }
+    .svc-card .svc-btn[disabled] { opacity: 0.5; cursor: not-allowed; background: var(--bg); color: var(--text-2); }
+    .svc-card .card-links {
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      margin-top: 4px; padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11.5px; color: var(--text-2);
+    }
+    .svc-card .card-links a {
+      color: var(--text-2); text-decoration: none; transition: color 0.12s;
+    }
+    .svc-card .card-links a:hover {
+      color: var(--navy); text-decoration: underline; text-underline-offset: 2px;
+    }
+  </style>
+
+  {# Header row: name + pin icon (if pinned) + tier pill. #}
+  <div class="head">
+    <div style="min-width: 0;">
+      <div class="name">
         {{ service.display_name }}
         {% if is_pinned %}
           <span title="Keep-warm pin active{% if service.pin_expires_at %} until {{ service.pin_expires_at[:19] }}{% endif %}"
-                class="text-amber-700 text-sm leading-none flex-shrink-0">📌</span>
+                style="color: #b45309; font-size: 12px;">📌</span>
         {% endif %}
-      </h3>
-      <p class="text-xs text-[var(--text-2)] font-mono mt-0.5 truncate">
-        {{ service.layer or service.name }}
-      </p>
+      </div>
+      <div class="layer">{{ service.layer or service.name }}</div>
     </div>
-    <span class="text-[10px] uppercase tracking-wide font-semibold
-                 px-1.5 py-0.5 rounded border {{ tier_class }}">
+    <span class="pill {{ 'pill-hot' if service.tier == 'hot' else 'pill-cold' }}">
       {{ service.tier }}
     </span>
   </div>
 
-  {# State row: status dot + label, container name if running. #}
-  <div class="flex items-center gap-2 text-sm">
-    <span class="inline-block w-2 h-2 rounded-full ring-4 {{ dot_class }}"></span>
-    <span class="font-medium {{ 'text-emerald-700' if is_running else 'text-[var(--text-2)]' }}">
-      {{ "Running" if is_running else "Stopped" }}
-    </span>
+  {# State row: status dot + label #}
+  <div class="status-row {{ 'running' if is_running else 'stopped' }}">
+    <span class="status-dot {{ 'running' if is_running else 'stopped' }}"></span>
+    <strong>{{ "Running" if is_running else "Stopped" }}</strong>
+    {% if is_running and service.control_plane %}
+      <span style="color: var(--text-2); font-size: 11px;">· always-on</span>
+    {% endif %}
   </div>
+
+  {# Container name / configuration-state line #}
   {% if service.container %}
-    <p class="text-xs font-mono text-[var(--text-2)] truncate -mt-1.5">
-      {{ service.container }}{% if service.control_plane %} <span class="text-[10px] text-emerald-700">· always-on</span>{% endif %}
-    </p>
+    <div class="container-line">{{ service.container }}</div>
   {% elif not service.configured %}
-    <p class="text-xs text-[var(--text-2)] -mt-1.5">
-      Not yet configured
-    </p>
+    <div class="container-line">Not yet configured</div>
   {% elif not service.managed %}
-    <p class="text-xs text-[var(--text-2)] -mt-1.5">
-      Not yet shipped — lands in M4
-    </p>
+    <div class="container-line">Not yet shipped — lands in M4</div>
   {% endif %}
 
-  {# Action buttons. Three modes from least-to-most-actionable:
-     1. Not configured       → "+ Configure" link to the wizard (scoped via ?service=)
-     2. Configured + unmanaged → "Unavailable" (M4 will ship the compose snippet)
-     3. Configured + managed  → Open / Start / Stop (the existing flow)
-
-     Optimistic UI: hx-on::before-request gives the card a visual
-     "working..." state before the orchestrator responds. #}
-  <div class="mt-auto pt-1 space-y-1.5">
+  {# Action buttons. Three modes:
+       1. Not configured       → "+ Configure" link to the wizard
+       2. Configured + unmanaged → "Unavailable" (M4 will ship the compose snippet)
+       3. Configured + managed  → Open / Start / Stop (the existing flow) #}
+  <div class="btns">
     {% if not service.configured %}
-      {# Not configured by the operator yet. Click takes them into the
-         setup wizard scoped to this service. We pass BOTH `service` and
-         `layer` because the wizard's localStorage selections are keyed
-         by layer — the configure page can't add a new selection without
-         knowing which layer slot to put it in. #}
-      <a href="/setup/configure.html?service={{ service.display_name }}&layer={{ service.layer }}"
-         class="block w-full text-center text-sm font-medium py-1.5 rounded
-                bg-[var(--navy)] text-white
-                hover:bg-[var(--navy-2)] transition-colors">
-        + Configure
-      </a>
+      <a href="/setup/configure?service={{ service.display_name }}&layer={{ service.layer }}"
+         class="svc-btn svc-btn-primary">+ Configure</a>
     {% elif not service.managed %}
       <button type="button" disabled
               title="This service is configured but its compose snippet ships in M4."
-              class="w-full text-sm font-medium py-1.5 rounded border
-                     border-[var(--border)] text-[var(--text-2)]
-                     bg-[var(--bg)] cursor-not-allowed">
-        Unavailable
-      </button>
+              class="svc-btn" style="cursor: not-allowed;">Unavailable</button>
     {% elif service.control_plane %}
       {# Control-plane service (PostgreSQL): always-on, no Start/Stop.
-         Open routes to the external_url (pgAdmin) since the warehouse
-         has no UI of its own. Click goes through orchestackOpenService
-         targeting 'pgadmin' (not 'postgresql') so the toast tracks
-         pgAdmin's cold-start readiness — pgAdmin is cold-tier and
-         may need to be started. #}
+         Open routes to pgAdmin via orchestackOpenService. #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% set _tool_url = service.external_url|replace('{host}', _host)
                          if service.external_url
                          else (request.scope.root_path or '/app') ~ '/pgadmin' %}
-      <a href="{{ _tool_url }}"
-         target="_blank"
-         rel="noopener noreferrer"
+      <a href="{{ _tool_url }}" target="_blank" rel="noopener noreferrer"
          onclick="event.preventDefault(); orchestackOpenService('pgadmin'); return false;"
-         class="block w-full text-sm font-medium py-1.5 rounded text-center
-                no-underline
-                bg-[var(--navy)] text-white
-                hover:bg-[var(--navy-2)] transition-colors">
-        Open in pgAdmin
-      </a>
+         class="svc-btn svc-btn-primary">Open in pgAdmin</a>
     {% elif is_running %}
-      {# Primary action: Open the tool in a new tab via orchestackOpenService.
-         Every service goes through this path so the operator gets
-         consistent progress feedback regardless of whether the tool
-         is instant (Airbyte, MinIO) or slow (Metabase first-boot).
-         The toast shows "Starting…" and updates with phase copy from
-         SLOW_BOOTSTRAP in base.html. Once the orchestrator confirms
-         the container is healthy, window.open() fires and the toast
-         disappears.
-
-         Multi-action services (dbt: Open Docs + Open Terminal) declare
-         an `actions: [...]` array in the catalogue; the dashboard
-         renders one button per action, stacked. Single-action services
-         keep the legacy single-button rendering. The href is rendered
-         on every button so middle-click / Cmd+click / right-click
-         "open in new tab" still works (browser's native gesture
-         bypasses the wait). #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% if service.actions %}
+        {# Multi-action service (dbt, GE): one button per action, stacked. #}
         {% for action in service.actions %}
           {% set _action_url = action.external_url|replace('{host}', _host)
                                if action.external_url
                                else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-          <a href="{{ _action_url }}"
-             target="_blank"
-             rel="noopener noreferrer"
+          <a href="{{ _action_url }}" target="_blank" rel="noopener noreferrer"
              onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}', '{{ action.key }}'); return false;"
-             class="block w-full text-sm font-medium py-1.5 rounded text-center
-                    no-underline
-                    bg-[var(--navy)] text-white
-                    hover:bg-[var(--navy-2)] transition-colors">
-            {{ action.label }}
-          </a>
+             class="svc-btn svc-btn-primary">{{ action.label }}</a>
         {% endfor %}
       {% else %}
         {% set _tool_url = service.external_url|replace('{host}', _host)
                            if service.external_url
                            else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-        <a href="{{ _tool_url }}"
-           target="_blank"
-           rel="noopener noreferrer"
-           onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
-           class="block w-full text-sm font-medium py-1.5 rounded text-center
-                  no-underline
-                  bg-[var(--navy)] text-white
-                  hover:bg-[var(--navy-2)] transition-colors">
-          Open
-        </a>
+        <div class="btn-row">
+          <a href="{{ _tool_url }}" target="_blank" rel="noopener noreferrer"
+             onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
+             class="svc-btn svc-btn-primary">Open</a>
+          <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
+                  hx-target="#service-card-{{ service.name }}"
+                  hx-swap="outerHTML swap:500ms"
+                  hx-disabled-elt="this"
+                  hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
+                  hx-on::before-request="this.textContent = 'Stopping…'; this.disabled = true"
+                  class="svc-btn svc-btn-danger">Stop</button>
+        </div>
       {% endif %}
-      {# Secondary action: Stop the service. Outline style. #}
-      <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
-              hx-target="#service-card-{{ service.name }}"
-              hx-swap="outerHTML swap:500ms"
-              hx-disabled-elt="this"
-              hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
-              hx-on::before-request="this.textContent = 'Stopping…'; this.disabled = true"
-              class="w-full text-sm font-medium py-1.5 rounded border
-                     border-[var(--border)] text-[var(--text)] bg-white
-                     hover:border-red-300 hover:text-red-700
-                     transition-colors disabled:opacity-50">
-        Stop
-      </button>
+      {% if service.actions %}
+        {# Multi-action services still get a Stop button beneath the action buttons. #}
+        <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
+                hx-target="#service-card-{{ service.name }}"
+                hx-swap="outerHTML swap:500ms"
+                hx-disabled-elt="this"
+                hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
+                hx-on::before-request="this.textContent = 'Stopping…'; this.disabled = true"
+                class="svc-btn svc-btn-danger">Stop</button>
+      {% endif %}
     {% else %}
       <button hx-post="{{ url_for('start_service_action', name=service.name) }}"
               hx-target="#service-card-{{ service.name }}"
               hx-swap="outerHTML swap:500ms"
               hx-disabled-elt="this"
               hx-on::before-request="this.textContent = 'Starting…'; this.disabled = true"
-              class="w-full text-sm font-medium py-1.5 rounded
-                     bg-[var(--navy)] text-white
-                     hover:bg-[var(--navy-2)] transition-colors
-                     disabled:opacity-50">
-        Start
-      </button>
+              class="svc-btn svc-btn-primary">Start</button>
     {% endif %}
-    {# Tertiary actions. Edit config is split out so the operator can
-       find it without drilling into details first — the docs flow says
-       "click the service tile → Edit config" so we honour that path.
-       Both links are present for configured services; unconfigured
-       services hide Edit config (there's nothing to edit yet — they
-       use the +Configure wizard above instead). #}
-    <div class="flex items-center justify-between gap-2 text-xs text-[var(--text-2)]">
-      {% if service.configured %}
-        <a href="{{ url_for('service_config_page', name=service.name) }}"
-           title="Edit {{ service.display_name }} credentials and config"
-           class="hover:text-[var(--navy)] underline-offset-2 hover:underline">
-          Edit config
-        </a>
-      {% else %}
-        <span></span>
-      {% endif %}
-      <a href="{{ url_for('service_detail', name=service.name) }}"
-         class="hover:text-[var(--navy)] underline-offset-2 hover:underline">
-        Details · pin · activity
-      </a>
-    </div>
   </div>
+
+  {# Tertiary link row — Edit config (left) + Details · pin · activity (right).
+     Hidden for unconfigured services (nothing to edit yet). #}
+  {% if service.configured %}
+  <div class="card-links">
+    <a href="{{ url_for('service_config_page', name=service.name) }}"
+       title="Edit {{ service.display_name }} credentials and config">Edit config</a>
+    <a href="{{ url_for('service_detail', name=service.name) }}">Details · pin · activity</a>
+  </div>
+  {% else %}
+  <div class="card-links">
+    <span></span>
+    <a href="{{ url_for('service_detail', name=service.name) }}">Details</a>
+  </div>
+  {% endif %}
 </article>

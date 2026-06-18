@@ -1,16 +1,13 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-      Active sessions
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mt-1">
-      Every open service tab across all users. The reconciler closes
-      sessions that haven't sent a heartbeat in 5 minutes and those
-      disappear from this list automatically.
-    </p>
-  </div>
+  <div class="breadcrumb">Workspace / Sessions</div>
+  <h1 class="page-title">Active sessions</h1>
+  <p class="lede">
+    Every open service tab across all users. The reconciler closes
+    sessions that haven't sent a heartbeat in 5 minutes and those
+    disappear from this list automatically.
+  </p>
 
   {#
     Page-size selector. Lives outside the polled fragment so its value
@@ -22,28 +19,29 @@
         hx-target="#sessions-table"
         hx-swap="innerHTML"
         hx-trigger="change from:select"
-        class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-3 mb-4
-               inline-flex items-center gap-3">
-    <label class="text-xs font-medium text-[var(--text-2)]">
+        style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+               padding: 12px 16px; margin-bottom: 16px;
+               display: inline-flex; align-items: center; gap: 12px;">
+    <label style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600;">
       Rows per page
-      <select name="limit"
-              class="ml-2 text-sm border border-[var(--border)] rounded
-                     px-2 py-1 bg-white">
-        <option value="20" selected>20</option>
-        <option value="50">50</option>
-        <option value="100">100</option>
-        <option value="200">200</option>
-      </select>
     </label>
+    <select name="limit"
+            style="padding: 6px 10px; border: 1px solid var(--border); background: var(--bg);
+                   border-radius: 5px; font-size: 13px; color: var(--text); font-family: inherit;">
+      <option value="20" selected>20</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="200">200</option>
+    </select>
   </form>
 
-  <section
-    id="sessions-table"
-    hx-get="{{ url_for('sessions_active_fragment') }}"
-    hx-trigger="load delay:50ms, every 10s"
-    hx-swap="innerHTML"
-    hx-include="#sessions-controls"
-    class="min-h-[120px]">
-    <div class="text-sm text-[var(--text-2)] italic">Loading sessions…</div>
-  </section>
+  <div id="sessions-table"
+       hx-get="{{ url_for('sessions_active_fragment') }}"
+       hx-trigger="load delay:50ms, every 10s"
+       hx-swap="innerHTML"
+       hx-include="#sessions-controls"
+       style="min-height: 120px;">
+    <p class="muted" style="font-style: italic; font-size: 13px;">Loading sessions…</p>
+  </div>
 {% endblock %}

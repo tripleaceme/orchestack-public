@@ -1,57 +1,88 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <div class="mb-2">
-    <a href="{{ url_for('home') }}" class="text-xs text-[var(--text-2)] hover:text-[var(--navy)]">
-      ← Back to services
-    </a>
+  <div class="breadcrumb">
+    <a href="{{ url_for('home') }}">Services</a> / {{ service.display_name if service else service_name }}
   </div>
 
   {% if service %}
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-        {{ service.display_name }}
-      </h1>
-      <p class="text-sm text-[var(--text-2)] mt-1">
-        <span class="font-mono">{{ service.layer or service.name }}</span>
-        · {{ service.tier }} tier
-        · {{ "running" if service.state == "running" else "stopped" }}
-      </p>
+    {% set is_running = service.state == "running" %}
+
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                padding: 24px 28px; margin-bottom: 18px;
+                display: grid; grid-template-columns: 1fr auto; gap: 24px;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+          <h1 class="page-title" style="margin: 0;">{{ service.display_name }}</h1>
+          <span class="pill {{ 'pill-hot' if service.tier == 'hot' else 'pill-cold' }}">{{ service.tier }}</span>
+          <span class="pill {{ 'pill-success' if is_running else 'pill-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
+        </div>
+        <div style="color: var(--text-2); font-size: 13px; margin-top: 6px;">
+          <span class="font-mono">{{ service.layer or service.name }}</span>
+          {% if service.container %} · <span class="font-mono">{{ service.container }}</span>{% endif %}
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; align-self: start; min-width: 160px;">
+        {% if is_running %}
+          {% set _host = request.url.hostname or 'localhost' %}
+          {% set _tool_url = service.external_url|replace('{host}', _host)
+                             if service.external_url
+                             else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+          <a href="{{ _tool_url }}" target="_blank" rel="noopener noreferrer"
+             onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
+             class="btn btn-primary" style="text-align: center;">Open ↗</a>
+        {% endif %}
+        {% if service.configured %}
+          <a href="{{ url_for('service_config_page', name=service.name) }}" class="btn" style="text-align: center;">Edit config</a>
+        {% endif %}
+        {% if is_running and not service.control_plane %}
+          <button class="btn btn-danger"
+                  hx-post="{{ url_for('stop_service_action', name=service.name) }}"
+                  hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
+                  hx-swap="none">Stop</button>
+        {% endif %}
+      </div>
     </div>
 
-    <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 mb-6">
-      <h2 class="text-sm font-semibold mb-3">Keep warm (pin)</h2>
-      <div hx-get="{{ url_for('services_grid') }}"
-           class="hidden"></div>
-      {#
-        Pin button loads its own initial state via a separate fragment
-        endpoint so the page-render path stays cheap. The button replaces
-        itself on click via the outerHTML swap pattern.
-      #}
-      <div id="pin-container"
-           hx-get="{{ url_for('pin_initial_button', name=service_name) }}"
-           hx-trigger="load delay:50ms"
-           hx-swap="innerHTML">
-        <div class="text-sm text-[var(--text-2)] italic">Loading pin state…</div>
+    {# Two-column layout: Recent activity (wide) + Pin card (narrow). #}
+    <div style="display: grid; grid-template-columns: 1fr 320px; gap: 18px;">
+      <div>
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Recent activity</h2>
+            <span class="sub">Filtered to this service</span>
+          </div>
+          <div hx-get="{{ url_for('audit_table_fragment') }}?target={{ service_name }}&limit=20"
+               hx-trigger="load delay:50ms"
+               hx-swap="innerHTML"
+               style="min-height: 120px;">
+            <p class="muted" style="font-style: italic; font-size: 13px; padding: 18px 20px;">Loading activity…</p>
+          </div>
+        </div>
       </div>
-    </section>
 
-    <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5">
-      <h2 class="text-sm font-semibold mb-3">Recent activity</h2>
-      <div hx-get="{{ url_for('audit_table_fragment') }}?target={{ service_name }}&limit=20"
-           hx-trigger="load delay:50ms"
-           hx-swap="innerHTML"
-           class="min-h-[120px]">
-        <div class="text-sm text-[var(--text-2)] italic">Loading activity…</div>
+      <div>
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Keep warm (pin)</h2>
+          </div>
+          <div class="surface-body">
+            <div id="pin-container"
+                 hx-get="{{ url_for('pin_initial_button', name=service_name) }}"
+                 hx-trigger="load delay:50ms"
+                 hx-swap="innerHTML">
+              <p class="muted" style="font-style: italic; font-size: 13px;">Loading pin state…</p>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
 
   {% else %}
-    <div class="bg-red-50 border border-red-200 rounded-lg p-5 text-sm text-red-800">
-      <strong class="font-semibold">Service not found.</strong>
-      <span class="text-red-700">
-        Either the name is wrong or the orchestrator is unreachable.
-      </span>
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+                padding: 18px 22px; font-size: 13px; color: #991b1b;">
+      <strong>Service not found.</strong>
+      Either the name is wrong or the orchestrator is unreachable.
     </div>
   {% endif %}
 {% endblock %}

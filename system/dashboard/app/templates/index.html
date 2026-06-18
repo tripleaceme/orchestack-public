@@ -2,59 +2,72 @@
 
 {% block content %}
 
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight text-[var(--navy)]">
-      Service status
-    </h1>
-    <p class="text-sm text-[var(--text-2)] mt-1">
-      Live state of every service in the OrcheStack catalogue.
-    </p>
+  <div class="breadcrumb">Workspace / Services</div>
+  <h1 class="page-title">Service status</h1>
+  <p class="lede">Live state of every service in the OrcheStack catalogue. Refreshes every 10s.</p>
+
+  {#
+    KPI strip — Stripe/Mercury-style overview cards. Static for now;
+    M5+ will wire each value to a thin /api/dashboard/kpis endpoint
+    that aggregates from list_services + list_sessions + list_audit.
+    Until then the numbers are placeholders that the operator can read
+    as "the dashboard knows about these dimensions, they're just not
+    plumbed yet." Not worth blocking the layout shipping on this.
+  #}
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="label">Services running</div>
+      <div class="value">— / —</div>
+      <div class="delta">live count once wired</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Active sessions</div>
+      <div class="value">—</div>
+      <div class="delta">{{ user.full_name or user.username if user else '' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Postgres connections</div>
+      <div class="value">—</div>
+      <div class="delta">via pg_stat_activity</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Last audit event</div>
+      <div class="value small">—</div>
+      <div class="delta">see Audit log</div>
+    </div>
   </div>
 
   {#
-    Service grid — HTMX polls /api/dashboard/services/grid every 10s and
-    swaps the result into this container's innerHTML. `load delay:50ms`
-    fires the first request right after page load so the operator isn't
-    staring at a loading state for the full 10-second cycle.
-
-    `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` gives us 1 card on phones,
-    2 on tablets, 3 on desktops. Each card is self-contained — see
-    _service_card_fragment.html — and re-renders on its own start/stop
-    swap independently of the grid's polling cycle.
+    Service grid — HTMX polls /api/dashboard/services/grid every 10s
+    and swaps the result. The grid fragment renders Running + Stopped
+    sections internally — keeps the outer container simple.
   #}
-  <section class="mb-10">
-    <div id="services-grid"
-         hx-get="{{ url_for('services_grid') }}"
-         hx-trigger="load delay:50ms, every 10s"
-         hx-swap="innerHTML"
-         class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 min-h-[200px]">
-      <div class="col-span-full text-sm text-[var(--text-2)] italic">
-        Loading service status…
-      </div>
-    </div>
-  </section>
+  <div id="services-grid"
+       hx-get="{{ url_for('services_grid') }}"
+       hx-trigger="load delay:50ms, every 10s"
+       hx-swap="innerHTML">
+    <p class="muted" style="font-style: italic; font-size: 13px;">Loading service status…</p>
+  </div>
 
   {#
-    Orchestrator health card — separate from the service grid because it
-    exposes platform-level health (database, docker socket, etc.) rather
-    than per-service state. Kept small + collapsed into a sidebar-like
-    block; promote to a full panel if it becomes load-bearing.
+    Orchestrator health — small card below the grid. The Platform-level
+    health (database, docker socket, etc.) lives here because it's
+    different from per-service state.
   #}
-  <section class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-5 max-w-2xl">
-    <div class="flex items-baseline justify-between mb-3">
-      <h2 class="text-sm font-semibold text-[var(--text)]">Platform health</h2>
-      <span class="text-xs text-[var(--text-2)]">Refreshes every 10s</span>
+  <div class="surface" style="max-width: 720px;">
+    <div class="surface-head">
+      <h2>Platform health</h2>
+      <span class="sub">Refreshes every 10s</span>
     </div>
-
-    <div id="orchestrator-health"
-         hx-get="{{ url_for('health_fragment') }}"
-         hx-trigger="load delay:50ms, every 10s"
-         hx-swap="innerHTML"
-         class="min-h-[60px]">
-      <div class="text-sm text-[var(--text-2)] italic">
-        Loading orchestrator health…
+    <div class="surface-body">
+      <div id="orchestrator-health"
+           hx-get="{{ url_for('health_fragment') }}"
+           hx-trigger="load delay:50ms, every 10s"
+           hx-swap="innerHTML"
+           style="min-height: 60px;">
+        <p class="muted" style="font-style: italic; font-size: 13px;">Loading orchestrator health…</p>
       </div>
     </div>
-  </section>
+  </div>
 
 {% endblock %}
