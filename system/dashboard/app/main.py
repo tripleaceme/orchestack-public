@@ -406,18 +406,26 @@ async def _aggregate_kpis() -> dict:
     except (httpx.HTTPError, ValueError) as e:
         log.warning("KPI list_sessions failed: %s", e)
 
-    # Last audit event — capture target (service name) too so the card
-    # can render "service_started · metabase" instead of bare event type.
-    last_event_type = None
+    # Last audit event — for the KPI card we need the relative duration
+    # ("14m ago") + the event_type + target/actor pair. The approved
+    # mock's pattern:
+    #   .value: 14m ago         (relative duration since the event)
+    #   .delta: user.login · ayoade@miva.edu.ng   (event_type · who)
+    last_event_type   = None
     last_event_target = None
-    last_event_when = None
+    last_event_actor  = None
+    last_event_when   = None
+    last_event_ago    = None
     try:
         audit_data = await orchestrator.list_audit(limit=1, offset=0)
         events = audit_data.get("events", [])
         if events:
             last_event_type   = events[0].get("event_type")
             last_event_target = events[0].get("target")
+            last_event_actor  = (events[0].get("actor_full_name")
+                                 or events[0].get("actor_username"))
             last_event_when   = events[0].get("created_at")
+            last_event_ago    = _format_relative(last_event_when)
     except (httpx.HTTPError, ValueError) as e:
         log.warning("KPI list_audit failed: %s", e)
 
@@ -427,7 +435,9 @@ async def _aggregate_kpis() -> dict:
         "active_sessions":    active_sessions,
         "last_event_type":    last_event_type,
         "last_event_target":  last_event_target,
+        "last_event_actor":   last_event_actor,
         "last_event_when":    last_event_when,
+        "last_event_ago":     last_event_ago,
     }
 
 
