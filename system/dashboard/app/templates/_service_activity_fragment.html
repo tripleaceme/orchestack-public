@@ -39,16 +39,14 @@
       {% set _badge = 'badge-neutral' %}
     {% endif %}
 
-    {# Same-day rows show HH:MM:SS, older rows show YYYY-MM-DD HH:MM:SS —
-       same convention as the approved mock. Replace the ISO `T` separator
-       with a space so 2026-06-18T02:02:57 becomes 2026-06-18 02:02:57. #}
+    {# Always show full YYYY-MM-DD HH:MM:SS — the previous "same-day
+       shows just time, older shows full" split made the column look
+       half-populated and operators had to mentally fill in the missing
+       date. Consistency wins over compactness here. Replace the ISO
+       `T` separator with a space so 2026-06-18T02:02:57 reads as
+       2026-06-18 02:02:57. #}
     {% set _ts = (ev.created_at or '') | replace('T', ' ') %}
-    {% set _date_part = _ts[:10] %}
-    {% if today and _date_part == today %}
-      {% set _display_when = _ts[11:19] %}
-    {% else %}
-      {% set _display_when = _ts[:19] %}
-    {% endif %}
+    {% set _display_when = _ts[:19] if _ts else '—' %}
 
     {# The approved mock signals "system actor" via class="muted" + bare
        text (no <strong>); human actors get <strong>username</strong>. #}
