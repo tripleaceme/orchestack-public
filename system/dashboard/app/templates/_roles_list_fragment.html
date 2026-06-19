@@ -19,20 +19,31 @@
   </div>
 {% endif %}
 
-{# Out-of-band swap: re-emit the page-level role-selector's options so
-   the page's dropdown stays in sync after every fragment swap. New
-   roles created via the Create form appear here; the currently-
-   selected role's id is marked selected. #}
-<select id="role-selector" name="selected_role_id" hx-swap-oob="true"
-        style="padding: 7px 12px; border: 1px solid var(--border);
-               background: var(--bg); border-radius: 6px; font-size: 13px;
-               color: var(--text); font-family: inherit; min-width: 220px;">
-  {% for r in all_roles %}
-    <option value="{{ r.id }}" {% if r.id == selected_role_id %}selected{% endif %}>
-      {{ r.name }}{% if r.is_system %} (built-in){% endif %} · {{ member_count_by_role.get(r.id, 0) }} member{{ '' if member_count_by_role.get(r.id, 0) == 1 else 's' }}
-    </option>
-  {% endfor %}
-</select>
+{# Role selector lives INSIDE the fragment so it re-renders fresh with
+   every swap — keeping HTMX's change listener correctly bound. (We
+   tried OOB-swapping it on the page level; OOB swap replaces the
+   element but doesn't re-attach the form's `change from:select`
+   listener, so the dropdown stopped firing requests.) #}
+<form hx-get="{{ url_for('roles_list_fragment') }}"
+      hx-target="#roles-list"
+      hx-swap="innerHTML"
+      hx-trigger="change from:select"
+      style="display: flex; gap: 10px; align-items: center;
+             background: var(--surface); border: 1px solid var(--border);
+             border-radius: 10px; padding: 12px 16px; margin-bottom: 18px;">
+  <label style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                letter-spacing: 0.6px; font-weight: 600;">Show role</label>
+  <select name="selected_role_id"
+          style="padding: 7px 12px; border: 1px solid var(--border);
+                 background: var(--bg); border-radius: 6px; font-size: 13px;
+                 color: var(--text); font-family: inherit; min-width: 280px;">
+    {% for r in all_roles %}
+      <option value="{{ r.id }}" {% if r.id == selected_role_id %}selected{% endif %}>
+        {{ r.name }}{% if r.is_system %} (built-in){% endif %} · {{ member_count_by_role.get(r.id, 0) }} member{{ '' if member_count_by_role.get(r.id, 0) == 1 else 's' }}
+      </option>
+    {% endfor %}
+  </select>
+</form>
 
 <style>
   .role-card {
