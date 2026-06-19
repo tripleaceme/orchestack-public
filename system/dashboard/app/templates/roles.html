@@ -38,9 +38,28 @@
     <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
   </p>
 
-  {# + New role button — toggles the create form below. Once clicked,
-     button text flips to "Cancel" and the form animates in. #}
-  <div class="new-role-toolbar">
+  {# Toolbar: role selector + + New role button. The select changes
+     trigger an HTMX swap to render the chosen role's card. #}
+  <div class="new-role-toolbar" style="justify-content: space-between;">
+    <form hx-get="{{ url_for('roles_list_fragment') }}"
+          hx-target="#roles-list"
+          hx-swap="innerHTML"
+          hx-trigger="change from:select"
+          style="display: flex; gap: 10px; align-items: center; margin: 0;">
+      <label style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                    letter-spacing: 0.6px; font-weight: 600;">Show role</label>
+      <select name="selected_role_id"
+              id="role-selector"
+              style="padding: 7px 12px; border: 1px solid var(--border);
+                     background: var(--bg); border-radius: 6px; font-size: 13px;
+                     color: var(--text); font-family: inherit; min-width: 220px;">
+        {# Options populated by the fragment via hx-swap-oob or initial
+           render. The fragment also re-emits this select on each swap
+           so the page-level select stays in sync. Server-rendered
+           default below — the fragment will overwrite on first load. #}
+        <option value="">Loading…</option>
+      </select>
+    </form>
     <button class="btn btn-primary" type="button"
             onclick="
               var row = document.getElementById('create-role-row');

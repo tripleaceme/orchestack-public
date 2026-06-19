@@ -1198,7 +1198,10 @@ async def roles_page(request: Request, user=Depends(require_admin)) -> HTMLRespo
     )
 
 
-async def _roles_render_context(request: Request, user: dict) -> dict:
+async def _roles_render_context(
+    request: Request, user: dict,
+    selected_role_id: int | None = None,
+) -> dict:
     """Common context for roles fragment renders.
 
     Builds three pieces beyond the raw orchestrator response:
@@ -1268,9 +1271,27 @@ async def _roles_render_context(request: Request, user: dict) -> dict:
         )
         member_count_by_role[role["id"]] = count
 
+    all_roles = roles_data.get("roles", [])
+
+    # Single-role filter: when selected_role_id is set, narrow the
+    # rendered list to that role. The selector dropdown above the
+    # fragment lists ALL roles regardless — that's the affordance the
+    # operator uses to switch. Without a selection, default to the
+    # first role so the page renders meaningfully on first paint.
+    selected_role = None
+    if selected_role_id is not None:
+        selected_role = next(
+            (r for r in all_roles if r["id"] == selected_role_id), None
+        )
+    if selected_role is None and all_roles:
+        selected_role = all_roles[0]
+
     return {
         "request": request,
-        "roles": roles_data.get("roles", []),
+        "all_roles": all_roles,
+        "selected_role": selected_role,
+        "selected_role_id": (selected_role or {}).get("id"),
+        "roles": [selected_role] if selected_role else [],
         "perms_by_role": perms_by_role,
         "matrix_by_role": matrix_by_role,
         "member_count_by_role": member_count_by_role,
@@ -1281,8 +1302,12 @@ async def _roles_render_context(request: Request, user: dict) -> dict:
 
 @app.get("/api/dashboard/roles/list", response_class=HTMLResponse,
           name="roles_list_fragment")
-async def roles_list_fragment(request: Request, user=Depends(require_admin)) -> HTMLResponse:
-    ctx = await _roles_render_context(request, user)
+async def roles_list_fragment(
+    request: Request,
+    selected_role_id: int | None = None,
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    ctx = await _roles_render_context(request, user, selected_role_id=selected_role_id)
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
@@ -1315,6 +1340,60 @@ async def roles_delete_action(
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
+@app.post("/api/dashboard/roles/{role_id}/permissions/set",
+           response_class=HTMLResponse, name="roles_set_permissions_action")
+async def roles_set_permissions_action(
+    request: Request, role_id: int,
+    service_name: str = Form(...),
+    can_start: bool = Form(False),
+    can_use: bool = Form(False),
+    can_force_stop: bool = Form(False),
+    can_edit_config: bool = Form(False),
+    selected_role_id: int | None = Form(None),
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    """Replace the per-service permission set for a role.
+
+    If all four flags are False, the grant row is revoked (deleted)
+    instead of stored as a no-op row — keeps the permission table
+    semantically clean ("no row" === "no permissions"). Otherwise the
+    upstream upsert overwrites or inserts.
+
+    Called by each row's checkbox-grid on every change; the operator
+    just clicks the four checkboxes for a service and the grant gets
+    saved without an explicit Submit. The selected_role_id form field
+    is threaded back through so the fragment re-renders with the same
+    role still selected (no snap-back to the first role on every click).
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    any_perm = can_start or can_use or can_force_stop or can_edit_config
+    try:
+        if any_perm:
+            await orchestrator.admin_grant_permission(
+                cookie, role_id=role_id, service_name=service_name,
+                can_start=can_start, can_use=can_use,
+                can_force_stop=can_force_stop, can_edit_config=can_edit_config,
+            )
+        else:
+            # All false → revoke existing row if present.
+            perms_data = await orchestrator.admin_list_permissions(cookie)
+            existing = next(
+                (p for p in perms_data.get("permissions", [])
+                 if p["role_id"] == role_id and p["service_name"] == service_name),
+                None,
+            )
+            if existing:
+                await orchestrator.admin_revoke_permission(cookie, existing["id"])
+    except httpx.HTTPError as e:
+        log.warning("set permissions failed: %s", e)
+    ctx = await _roles_render_context(
+        request, user, selected_role_id=selected_role_id or role_id,
+    )
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
+# Legacy grant-only endpoint kept for backwards-compat with any callers
+# (audit, scripted ops). Forwards to set-permissions semantics.
 @app.post("/api/dashboard/roles/{role_id}/permissions",
            response_class=HTMLResponse, name="roles_grant_permission_action")
 async def roles_grant_permission_action(
@@ -1335,7 +1414,7 @@ async def roles_grant_permission_action(
         )
     except httpx.HTTPError as e:
         log.warning("grant permission failed: %s", e)
-    ctx = await _roles_render_context(request, user)
+    ctx = await _roles_render_context(request, user, selected_role_id=role_id)
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
