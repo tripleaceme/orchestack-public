@@ -1199,30 +1199,82 @@ async def roles_page(request: Request, user=Depends(require_admin)) -> HTMLRespo
 
 
 async def _roles_render_context(request: Request, user: dict) -> dict:
-    """Common context for roles fragment renders."""
+    """Common context for roles fragment renders.
+
+    Builds three pieces beyond the raw orchestrator response:
+      1. perms_by_role  — { role_id: [permission rows] }
+      2. matrix_by_role — { role_id: { service_name: effective_perm } }
+         where effective_perm merges role-specific + wildcard (`*`)
+         grants. This is what the approved mock's capability matrix
+         renders per-service.
+      3. member_count_by_role — { role_id: int }, scanned from
+         admin_list_users by counting how many users carry each role
+         name in their `roles` array.
+    """
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         roles_data = await orchestrator.admin_list_roles(cookie)
         perms_data = await orchestrator.admin_list_permissions(cookie)
         services_data = await orchestrator.list_services()
+        users_data = await orchestrator.admin_list_users(cookie)
         error = None
     except httpx.HTTPError as e:
         log.warning("roles fragment failed: %s", e)
         roles_data = {"roles": []}
         perms_data = {"permissions": []}
         services_data = {"services": []}
+        users_data  = {"users": []}
         error = str(e)
 
-    # Bucket permissions by role for easy template iteration.
     perms_by_role: dict[int, list[dict]] = {}
     for p in perms_data.get("permissions", []):
         perms_by_role.setdefault(p["role_id"], []).append(p)
+
+    services = services_data.get("services", [])
+
+    # Build per-role capability matrix over every catalogue service.
+    # Wildcard ('*') grant is merged into every per-service row so a
+    # role with just `*` shows checks across the whole matrix without
+    # needing one row per service in the permission table.
+    matrix_by_role: dict[int, dict[str, dict]] = {}
+    for role in roles_data.get("roles", []):
+        role_perms = perms_by_role.get(role["id"], [])
+        wildcard = next((p for p in role_perms if p.get("service_name") == "*"), None)
+        by_service: dict[str, dict] = {}
+        for svc in services:
+            svc_perm = next(
+                (p for p in role_perms if p.get("service_name") == svc["name"]),
+                None,
+            )
+            effective = svc_perm or wildcard or {}
+            by_service[svc["name"]] = {
+                "can_start":       bool(effective.get("can_start")),
+                "can_use":         bool(effective.get("can_use")),
+                "can_force_stop":  bool(effective.get("can_force_stop")),
+                "can_edit_config": bool(effective.get("can_edit_config")),
+                "has_any":         any(
+                    effective.get(k) for k in
+                    ("can_start", "can_use", "can_force_stop", "can_edit_config")
+                ),
+            }
+        matrix_by_role[role["id"]] = by_service
+
+    # Member count per role — scan users + tally roles.
+    member_count_by_role: dict[int, int] = {}
+    for role in roles_data.get("roles", []):
+        count = sum(
+            1 for u in users_data.get("users", [])
+            if role.get("name") in (u.get("roles") or [])
+        )
+        member_count_by_role[role["id"]] = count
 
     return {
         "request": request,
         "roles": roles_data.get("roles", []),
         "perms_by_role": perms_by_role,
-        "services": services_data.get("services", []),
+        "matrix_by_role": matrix_by_role,
+        "member_count_by_role": member_count_by_role,
+        "services": services,
         "error": error,
     }
 

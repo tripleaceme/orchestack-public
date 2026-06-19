@@ -1,26 +1,77 @@
 {% extends "base.html" %}
 
+{# Word-for-word translation of docs/mockups/approved/roles.html.
+   Header + right-aligned + New role button + HTMX-loaded role-card list. #}
+
 {% block content %}
+<style>
+  .new-role-toolbar {
+    display: flex; justify-content: end; margin-bottom: 18px; gap: 10px; align-items: center;
+  }
+  /* Hidden create form revealed by the + New role button. */
+  .create-role-row { display: none; }
+  .create-role-row.open { display: block; }
+  .create-role-row form {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px;
+    display: grid; grid-template-columns: 1fr 1.5fr auto auto; gap: 12px;
+    align-items: end; margin-bottom: 18px;
+  }
+  .create-role-row label { display: block; }
+  .create-role-row label .lbl {
+    display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .create-role-row input {
+    width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+    background: var(--bg); border-radius: 6px; font-size: 13px;
+    color: var(--text); font-family: inherit;
+  }
+</style>
+
   <div class="breadcrumb">Configuration / Roles</div>
-  <h1 class="page-title">Roles &amp; permissions</h1>
+  <h1>Roles</h1>
   <p class="lede">
-    Each role grants a set of platform permissions per service. Built-in
-    roles (Admin / Engineer / Analyst) cover the typical OrcheStack team
-    shape; create custom roles for tighter scopes. Assign roles to users
-    from the <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
+    Each role declares which services its members can Start, Use, Force-stop, and Edit config for.
+    Assign roles to users on the
+    <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
   </p>
 
-  <div style="background: var(--info-bg); border: 1px solid #bfdbfe; border-radius: 8px;
-              padding: 12px 16px; margin-bottom: 18px; font-size: 12px; color: #1e3a8a; line-height: 1.6;">
-    <strong style="color: #1e40af;">Permissions are platform-level:</strong>
-    <code class="font-mono">can_start</code> (start a service),
-    <code class="font-mono">can_use</code> (open a session),
-    <code class="font-mono">can_force_stop</code> (stop a service with active sessions),
-    <code class="font-mono">can_edit_config</code> (edit credentials).
-    Tool-internal permissions (e.g. who can edit a Metabase dashboard) are pushed
-    to each tool when the user opens it, handled by per-tool integration logic.
+  {# + New role button — toggles the create form below. Once clicked,
+     button text flips to "Cancel" and the form animates in. #}
+  <div class="new-role-toolbar">
+    <button class="btn btn-primary" type="button"
+            onclick="
+              var row = document.getElementById('create-role-row');
+              row.classList.toggle('open');
+              this.textContent = row.classList.contains('open') ? 'Cancel' : '+ New role';
+            ">+ New role</button>
   </div>
 
+  <div id="create-role-row" class="create-role-row">
+    <form hx-post="{{ url_for('roles_create_action') }}"
+          hx-target="#roles-list" hx-swap="innerHTML">
+      <label>
+        <span class="lbl">Role name</span>
+        <input type="text" name="name" required minlength="1" maxlength="64"
+               placeholder="e.g. Junior Analyst">
+      </label>
+      <label>
+        <span class="lbl">Description (optional)</span>
+        <input type="text" name="description" placeholder="What this role is for">
+      </label>
+      <button type="submit" class="btn btn-primary">Create</button>
+      <button type="button" class="btn"
+              onclick="
+                document.getElementById('create-role-row').classList.remove('open');
+                document.querySelector('.new-role-toolbar button').textContent = '+ New role';
+              ">Cancel</button>
+    </form>
+  </div>
+
+  {# Role cards — HTMX-loaded so create/edit/delete actions swap just
+     this section. The 200px min-height prevents page-jump while loading. #}
   <div id="roles-list"
        hx-get="{{ url_for('roles_list_fragment') }}"
        hx-trigger="load delay:50ms"
