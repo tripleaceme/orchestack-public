@@ -883,11 +883,18 @@ async def users_table_fragment(request: Request, user=Depends(require_admin)) ->
     try:
         users_data = await orchestrator.admin_list_users(cookie)
         roles_data = await orchestrator.admin_list_roles(cookie)
+        users_list = users_data.get("users", [])
+        # Annotate each user with a humanised "last login" string —
+        # "12s ago", "3h ago", "2d ago", "—". Matches the mock pattern.
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        for u in users_list:
+            u["last_login_relative"] = _format_relative(u.get("last_login_at"), now)
         return templates.TemplateResponse(
             "_users_table_fragment.html",
             {
                 "request": request,
-                "users": users_data.get("users", []),
+                "users": users_list,
                 "roles": roles_data.get("roles", []),
                 "current_user_id": user.get("user_id"),
                 "error": None,
@@ -902,6 +909,32 @@ async def users_table_fragment(request: Request, user=Depends(require_admin)) ->
               "current_user_id": user.get("user_id"),
               "error": str(e), "invite_result": None},
         )
+
+
+def _format_relative(iso_ts: str | None, now=None) -> str:
+    """Humanise a timestamp into 'Ns ago' / 'Nm ago' / 'Nh ago' / 'Nd ago'.
+
+    Returns '—' for None or unparseable input. Used by the users page
+    Last login column to match the approved mock's compact display
+    style instead of bare timestamps.
+    """
+    if not iso_ts:
+        return "—"
+    try:
+        from datetime import datetime, timezone
+        iso = iso_ts.replace("Z", "+00:00") if iso_ts.endswith("Z") else iso_ts
+        ts = datetime.fromisoformat(iso)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
+        delta = int((now - ts).total_seconds())
+        if delta < 60:   return f"{max(1, delta)}s ago"
+        if delta < 3600: return f"{delta // 60}m ago"
+        if delta < 86400: return f"{delta // 3600}h ago"
+        return f"{delta // 86400}d ago"
+    except (ValueError, TypeError):
+        return "—"
 
 
 @app.post("/api/dashboard/users/invite", response_class=HTMLResponse,

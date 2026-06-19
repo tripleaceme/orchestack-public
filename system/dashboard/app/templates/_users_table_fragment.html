@@ -1,17 +1,4 @@
-{#
-  Users table fragment — translated word-for-word from
-  docs/mockups/approved/users.html lines 75-156.
 
-  Structure:
-    - Optional banners (error / invite_result / invite_error)
-    - .surface "Invite a new user"  → .invite-form-grid (4 cols + button)
-    - .surface "All users"          → .table rows with:
-        - Avatar circle + name + @username · email
-        - Role pills (admin = red, others = blue)
-        - Status badge (active = green, internal/system = neutral)
-        - Last login (relative: "12s ago" / "3h ago" / "—")
-        - Per-row actions: Edit roles (inline expand) / Disable / Locked
-#}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
@@ -90,6 +77,27 @@
     font-size: 11px; border: 1px solid var(--border); background: var(--surface);
     border-radius: 4px; padding: 3px 8px; color: var(--text-2);
   }
+
+  /* Inline edit panel — hidden until "Edit roles" toggles it.
+     CSS-only state via :target / sibling :checked patterns can't
+     stretch across <td> boundaries, so we use a tiny inline JS
+     toggle inside the action button (no global JS dependency). */
+  .edit-row { display: none; }
+  .edit-row.open { display: table-row; }
+  .edit-panel {
+    padding: 14px 18px; background: var(--bg);
+    display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center;
+    border-top: 1px solid var(--border);
+  }
+  .edit-panel .lbl {
+    font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+  }
+  .edit-panel select {
+    padding: 6px 10px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 5px; font-size: 12px;
+    color: var(--text); font-family: inherit; max-width: 260px;
+  }
 </style>
 
 {# ============== Invite form ============== #}
@@ -114,7 +122,7 @@
       </div>
       <div>
         <label>Full name</label>
-        <input type="text" name="full_name" required placeholder="Their name">
+        <input type="text" name="full_name" required placeholder="full name">
       </div>
       <div>
         <label>Roles</label>
@@ -181,35 +189,11 @@
               {% if u.roles %}
                 <div>
                   {% for role_name in u.roles %}
-                    {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
-                    <span class="role-pill{{ ' admin' if role_name == 'Admin' else '' }}">
-                      {{ role_name }}
-                      {% if role and not is_system and not (is_self and role_name == 'Admin') %}
-                        <button hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
-                                hx-target="#users-table" hx-swap="innerHTML"
-                                hx-confirm="Revoke {{ role_name }} from {{ u.username }}?"
-                                title="Revoke">✕</button>
-                      {% endif %}
-                    </span>
+                    <span class="role-pill{{ ' admin' if role_name == 'Admin' else '' }}">{{ role_name }}</span>
                   {% endfor %}
                 </div>
               {% else %}
                 <span class="muted" style="font-size: 12px; font-style: italic;">no roles</span>
-              {% endif %}
-              {% if not is_system %}
-                <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
-                      hx-target="#users-table" hx-swap="innerHTML"
-                      hx-trigger="change from:select"
-                      class="grant-role-form">
-                  <select name="role_id">
-                    <option value="">+ Grant role</option>
-                    {% for r in roles %}
-                      {% if r.name not in u.roles %}
-                        <option value="{{ r.id }}">{{ r.name }}</option>
-                      {% endif %}
-                    {% endfor %}
-                  </select>
-                </form>
               {% endif %}
             </td>
             <td>
@@ -222,28 +206,64 @@
               {% endif %}
             </td>
             <td class="font-mono" style="font-size: 12px; color: var(--text-2);">
-              {% if u.last_login_at %}
-                {{ u.last_login_at[:16] | replace('T', ' ') }}
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
+              {{ u.last_login_relative or '—' }}
             </td>
             <td class="right">
               {% if is_system %}
                 <button class="btn btn-sm btn-ghost" aria-disabled="true" disabled>Locked</button>
-              {% elif is_self %}
-                <span class="muted" style="font-size: 11px; font-style: italic;">you</span>
               {% else %}
-                <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
-                      hx-target="#users-table" hx-swap="innerHTML" style="display: inline;">
-                  <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
-                  <button type="submit" class="btn btn-sm {{ 'btn-danger' if u.is_active else '' }}">
-                    {{ 'Disable' if u.is_active else 'Enable' }}
-                  </button>
-                </form>
+                <button class="btn btn-sm" type="button"
+                        onclick="document.getElementById('edit-row-{{ u.id }}').classList.toggle('open'); this.textContent = this.textContent === 'Edit roles' ? 'Close' : 'Edit roles';">
+                  Edit roles
+                </button>
               {% endif %}
             </td>
           </tr>
+          {% if not is_system %}
+            <tr class="edit-row" id="edit-row-{{ u.id }}">
+              <td colspan="5">
+                <div class="edit-panel">
+                  <span class="lbl">Grant role</span>
+                  <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
+                        hx-target="#users-table" hx-swap="innerHTML"
+                        hx-trigger="change from:select"
+                        style="margin: 0;">
+                    <select name="role_id" style="width: 100%;">
+                      <option value="">+ Pick a role</option>
+                      {% for r in roles %}
+                        {% if r.name not in u.roles %}
+                          <option value="{{ r.id }}">{{ r.name }}</option>
+                        {% endif %}
+                      {% endfor %}
+                    </select>
+                  </form>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    {% for role_name in u.roles %}
+                      {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
+                      {% if role and not (is_self and role_name == 'Admin') %}
+                        <button class="btn btn-sm btn-danger"
+                                hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
+                                hx-target="#users-table" hx-swap="innerHTML"
+                                hx-confirm="Revoke {{ role_name }} from {{ u.username }}?">
+                          Revoke {{ role_name }}
+                        </button>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                  {% if not is_self %}
+                    <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
+                          hx-target="#users-table" hx-swap="innerHTML"
+                          style="margin: 0;">
+                      <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
+                      <button type="submit" class="btn btn-sm {{ 'btn-danger' if u.is_active else '' }}">
+                        {{ 'Disable user' if u.is_active else 'Enable user' }}
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>
