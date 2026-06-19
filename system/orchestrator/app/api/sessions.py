@@ -128,24 +128,56 @@ async def open_session(req: SessionOpenRequest) -> dict[str, object]:
 
     user_id = req.user_id if req.user_id is not None else config.DEFAULT_USER_ID
 
-    # RETURNING gives us the auto-generated token from the schema's
-    # DEFAULT clause — no need to generate it on the client side.
-    row = await db.fetchrow(
+    # One open session per (user, service). If the user already has an
+    # active session for this service — common when they reopen a tab
+    # or click Open from multiple browser windows — reuse the existing
+    # token instead of creating a duplicate row. Duplicates were
+    # weighing the system down (a single operator routinely accumulated
+    # 10+ tokens against the same service over a session), and they
+    # made the per-service "who is using this?" view useless.
+    #
+    # We also refresh last_heartbeat_at on reuse so the session age
+    # resets — clicking Open again signals fresh activity, even if the
+    # background heartbeat ticker had let the session drift toward the
+    # 5-minute idle cutoff.
+    existing = await db.fetchrow(
         """
-        INSERT INTO platform.service_sessions
-            (service_name, user_id)
-        VALUES ($1, $2)
-        RETURNING token
+        SELECT token FROM platform.service_sessions
+        WHERE service_name = $1 AND user_id = $2 AND closed_at IS NULL
+        ORDER BY opened_at DESC LIMIT 1
         """,
         req.service, user_id,
     )
-    token = row["token"]
-
-    await audit.write(
-        "session_opened",
-        service_name=req.service, user_id=user_id,
-        details={"token": str(token), "auto_start": req.auto_start},
-    )
+    if existing:
+        token = existing["token"]
+        await db.execute(
+            "UPDATE platform.service_sessions SET last_heartbeat_at = now() "
+            "WHERE token = $1",
+            token,
+        )
+        await audit.write(
+            "session_reused",
+            service_name=req.service, user_id=user_id,
+            details={"token": str(token)},
+        )
+    else:
+        # RETURNING gives us the auto-generated token from the schema's
+        # DEFAULT clause — no need to generate it on the client side.
+        row = await db.fetchrow(
+            """
+            INSERT INTO platform.service_sessions
+                (service_name, user_id)
+            VALUES ($1, $2)
+            RETURNING token
+            """,
+            req.service, user_id,
+        )
+        token = row["token"]
+        await audit.write(
+            "session_opened",
+            service_name=req.service, user_id=user_id,
+            details={"token": str(token), "auto_start": req.auto_start},
+        )
 
     started = False
     if req.auto_start:
