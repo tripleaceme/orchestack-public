@@ -109,7 +109,7 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # session; the reconciler stops it when the pin expires AND no
     # active sessions remain. Operators who want it always-on can
     # manually extend the pin from the service detail page.
-    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True},
+    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True, "requires": ["postgresql"]},
     # M4 services. All managed=True as of M4 ship; pre-start hooks
     # provision per-service DBs/roles per design/m4-multi-db.md.
     # MinIO's console doesn't support subpath deployment reliably (their

@@ -18,6 +18,7 @@ M3.5 will pass the actual authenticated user id.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -25,6 +26,8 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from .. import audit, config, db, docker_ops
+
+log = logging.getLogger("orchestrator.sessions")
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -238,6 +241,51 @@ async def open_session(req: SessionOpenRequest) -> dict[str, object]:
                 "session_autostart_skipped_unmanaged",
                 service_name=req.service, user_id=user_id,
             )
+
+    # Cascade: if this service declares `requires`, also open a session
+    # for each required upstream service. Use case: pgAdmin requires
+    # PostgreSQL — when the operator opens pgAdmin, they're implicitly
+    # using PostgreSQL too. Surfacing it as a separate session row
+    # makes the dashboard's "who's using what?" view accurate AND
+    # keeps the reconciler from accidentally stopping the upstream.
+    #
+    # The cascade uses the same reuse logic (one open session per
+    # user+service) so a single click yields at most one extra row
+    # per dependency. Errors here are non-fatal — if a required-service
+    # session insert fails, the primary session is still good.
+    meta = config.SERVICE_CATALOGUE[req.service]
+    for required in meta.get("requires", []) or []:
+        if required not in config.SERVICE_CATALOGUE:
+            continue
+        try:
+            existing_req = await db.fetchrow(
+                """
+                SELECT token FROM platform.service_sessions
+                WHERE service_name = $1 AND user_id = $2 AND closed_at IS NULL
+                ORDER BY opened_at DESC LIMIT 1
+                """,
+                required, user_id,
+            )
+            if existing_req:
+                await db.execute(
+                    "UPDATE platform.service_sessions SET last_heartbeat_at = now() "
+                    "WHERE token = $1",
+                    existing_req["token"],
+                )
+            else:
+                await db.execute(
+                    "INSERT INTO platform.service_sessions (service_name, user_id) "
+                    "VALUES ($1, $2)",
+                    required, user_id,
+                )
+                await audit.write(
+                    "session_opened_cascade",
+                    service_name=required, user_id=user_id,
+                    details={"triggered_by": req.service},
+                )
+        except Exception as e:
+            log.warning("cascade session for %s required by %s failed: %s",
+                        required, req.service, e)
 
     return {"token": str(token), "service": req.service, "started": started}
 

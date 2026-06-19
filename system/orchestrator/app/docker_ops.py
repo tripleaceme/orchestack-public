@@ -1855,25 +1855,56 @@ async def list_running_services() -> list[dict[str, str]]:
                 "started_at": "",
             }
 
+    # Control-plane containers (orchestack-postgres, etc.) don't carry
+    # the orchestack.service label so the docker ps above misses them.
+    # Add them by-name from the catalogue so their image + StartedAt
+    # surface on the dashboard's service-detail page like every other
+    # service. The catalogue config holds the mapping (control_plane
+    # services point to "orchestack-postgres" via the container name
+    # convention).
+    for svc_name, meta in config.SERVICE_CATALOGUE.items():
+        if not meta.get("control_plane"):
+            continue
+        # Container name convention: orchestack-{svc} except for
+        # postgresql which is orchestack-postgres (no -ql suffix).
+        cname = f"orchestack-{svc_name.replace('postgresql', 'postgres')}"
+        if cname in by_container:
+            continue
+        by_container[cname] = {
+            "service":    svc_name,
+            "container":  cname,
+            "image":      "",
+            "started_at": "",
+        }
+
     if not by_container:
         return []
 
-    # Batched docker inspect for accurate per-container StartedAt.
-    # Format prefixes container names with "/" — strip that.
+    # Batched docker inspect for accurate per-container StartedAt + Image.
+    # Image too because the docker ps fallback only gave it for
+    # label-tagged containers; control-plane ones need inspect to
+    # report it.
     inspect_res = await asyncio.to_thread(
         _run_sync,
         ["docker", "inspect",
-         "--format", "{{.Name}}\t{{.State.StartedAt}}",
+         "--format", "{{.Name}}\t{{.State.StartedAt}}\t{{.Config.Image}}",
          *list(by_container.keys())],
         10,
     )
     if inspect_res.ok:
         for line in inspect_res.stdout.strip().splitlines():
-            parts = line.split("\t", 1)
-            if len(parts) == 2:
+            parts = line.split("\t", 2)
+            if len(parts) >= 2:
                 cname = parts[0].lstrip("/")
                 if cname in by_container:
                     by_container[cname]["started_at"] = parts[1]
+                    # Only overwrite image if docker ps didn't give us
+                    # one (control-plane case) — docker ps's image is
+                    # the resolved tag (e.g. `dpage/pgadmin4:8.13`),
+                    # which is what we want. inspect gives us the same
+                    # for control-plane services that ps missed.
+                    if len(parts) == 3 and not by_container[cname]["image"]:
+                        by_container[cname]["image"] = parts[2]
     else:
         log.warning("docker inspect for uptime failed: %s",
                     inspect_res.short_stderr)
