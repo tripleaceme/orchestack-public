@@ -1257,11 +1257,31 @@ async def service_detail(
     if svc and svc.get("started_at"):
         try:
             from datetime import datetime, timezone
-            # Docker ps's CreatedAt format: "2026-06-18 23:56:55 +0000 UTC"
-            raw = svc["started_at"]
-            # Strip trailing " UTC" / timezone-name segment if present.
-            iso = raw.replace(" UTC", "").strip()
-            # Handle "+0000" vs "+00:00" — datetime.fromisoformat needs the colon.
+            # Two Docker timestamp formats we need to handle:
+            #   docker ps CreatedAt:    "2026-06-18 23:56:55 +0000 UTC"
+            #   docker inspect .StartedAt: "2026-06-19T01:23:45.123456789Z"
+            # We switched the orchestrator to use StartedAt (accurate
+            # last-start) but defend against both here so dashboards
+            # against older orchestrators still parse.
+            iso = svc["started_at"].strip()
+            # 1. Strip trailing " UTC" if present (CreatedAt format).
+            iso = iso.replace(" UTC", "")
+            # 2. Trailing `Z` → `+00:00` (StartedAt format; Python's
+            #    fromisoformat before 3.11 doesn't accept Z directly).
+            if iso.endswith("Z"):
+                iso = iso[:-1] + "+00:00"
+            # 3. Truncate fractional seconds to 6 digits — Docker's
+            #    StartedAt emits nanoseconds (9 digits) which Python
+            #    rejects. Slice from the dot to the next non-digit run.
+            if "." in iso:
+                dot = iso.index(".")
+                tail_start = dot + 1
+                tail_end = tail_start
+                while tail_end < len(iso) and iso[tail_end].isdigit():
+                    tail_end += 1
+                if tail_end - tail_start > 6:
+                    iso = iso[:tail_start + 6] + iso[tail_end:]
+            # 4. Handle "+0000" vs "+00:00" — fromisoformat needs the colon.
             if len(iso) >= 5 and (iso[-5] in "+-") and iso[-3] != ":":
                 iso = iso[:-2] + ":" + iso[-2:]
             started = datetime.fromisoformat(iso)

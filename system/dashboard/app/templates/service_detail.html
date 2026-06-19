@@ -267,17 +267,17 @@
             {# Empty-state rendered as a session-row so the section's
                visual rhythm matches the populated case. The Force-end
                button on the right is disabled (greyed-out, non-
-               interactive) — same shape as the active button so the
+               interactive). Same shape as the active button so the
                card height doesn't shift when a session opens. #}
             <div class="session-row">
               <div class="who">
                 <div><span class="muted">
                   {% if is_running and is_pinned %}
-                    No active sessions — the service is being kept warm by a pin.
+                    No active sessions: The service is being kept warm by a pin.
                   {% elif is_running %}
-                    No active sessions — the service is still within its idle window.
+                    No active sessions: The service is still within its idle window.
                   {% else %}
-                    Service is stopped — start it to allow sessions.
+                    Service is stopped: Start it to allow sessions.
                   {% endif %}
                 </span></div>
                 <div class="when">sessions appear here once an operator opens this tool</div>

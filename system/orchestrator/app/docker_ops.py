@@ -1813,37 +1813,72 @@ async def list_running_services() -> list[dict[str, str]]:
 
     Returns a list of dicts:
         [{"service": "metabase", "container": "orchestack-metabase",
-          "started_at": "2026-06-02T...", "image": "metabase/metabase:v0.50.16"}]
+          "started_at": "2026-06-02T03:14:09.123Z",
+          "image": "metabase/metabase:v0.50.16"}]
 
     The filter `label=orchestack.service` is what scopes us to managed
     services — base control-plane containers (proxy, postgres, auth, etc.)
     don't carry this label so they're invisible to the reconciler.
 
-    We capture `{{.Image}}` alongside the previously-captured fields so
-    the dashboard's service-detail page can show the running image tag
-    in its meta-row (matches the approved mock).
+    `started_at` is the container's last-start time from
+    `.State.StartedAt`, NOT `.CreatedAt`. CreatedAt only changes on
+    `docker compose down` + recreate; StartedAt refreshes on every
+    `docker compose start`. Operators clicking Stop → Start would see
+    a misleadingly-old uptime if we used CreatedAt — the previous
+    behaviour was reporting "2d 17h" right after a fresh start because
+    that's how long ago the container row was first created.
+
+    To get StartedAt we have to fall back from `docker ps --format`
+    (which only exposes CreatedAt) to a single batched `docker inspect`
+    over every returned container name. One extra subprocess call
+    total per list_services request — not per container.
     """
-    res = await asyncio.to_thread(
+    ps_res = await asyncio.to_thread(
         _run_sync,
         ["docker", "ps",
          "--filter", "label=orchestack.service",
-         "--format", "{{.Label \"orchestack.service\"}}\t{{.Names}}\t{{.CreatedAt}}\t{{.Image}}"],
+         "--format", "{{.Label \"orchestack.service\"}}\t{{.Names}}\t{{.Image}}"],
         10,
     )
-    if not res.ok:
-        log.warning("list_running_services failed: %s", res.short_stderr)
+    if not ps_res.ok:
+        log.warning("list_running_services failed: %s", ps_res.short_stderr)
         return []
-    out: list[dict[str, str]] = []
-    for line in res.stdout.strip().splitlines():
-        parts = line.split("\t", 3)
-        if len(parts) >= 3:
-            out.append({
-                "service": parts[0],
-                "container": parts[1],
-                "started_at": parts[2],
-                "image": parts[3] if len(parts) == 4 else "",
-            })
-    return out
+
+    by_container: dict[str, dict[str, str]] = {}
+    for line in ps_res.stdout.strip().splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) >= 2:
+            by_container[parts[1]] = {
+                "service":    parts[0],
+                "container":  parts[1],
+                "image":      parts[2] if len(parts) == 3 else "",
+                "started_at": "",
+            }
+
+    if not by_container:
+        return []
+
+    # Batched docker inspect for accurate per-container StartedAt.
+    # Format prefixes container names with "/" — strip that.
+    inspect_res = await asyncio.to_thread(
+        _run_sync,
+        ["docker", "inspect",
+         "--format", "{{.Name}}\t{{.State.StartedAt}}",
+         *list(by_container.keys())],
+        10,
+    )
+    if inspect_res.ok:
+        for line in inspect_res.stdout.strip().splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                cname = parts[0].lstrip("/")
+                if cname in by_container:
+                    by_container[cname]["started_at"] = parts[1]
+    else:
+        log.warning("docker inspect for uptime failed: %s",
+                    inspect_res.short_stderr)
+
+    return list(by_container.values())
 
 
 async def container_uptime_seconds(service: str) -> int | None:
