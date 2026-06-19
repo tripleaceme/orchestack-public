@@ -184,15 +184,19 @@
           {% for svc in services %}
             {% set m = matrix.get(svc.name, {}) %}
             {% set _post = url_for('roles_set_permissions_action', role_id=role.id) %}
+            {% set _row_id = 'perm-row-' ~ role.id ~ '-' ~ svc.name %}
             {% set _vals %}{"service_name": "{{ svc.name }}", "selected_role_id": "{{ role.id }}"}{% endset %}
-            <tr data-svc="{{ svc.name }}">
+            <tr id="{{ _row_id }}">
               <td>{{ svc.display_name }}</td>
               {# Each checkbox is its own HTMX trigger.
-                 hx-include="closest tr [type=checkbox]" gathers all 4
-                 checkboxes in this row, so the backend sees the full
-                 permission set every time. Unchecked checkboxes
-                 don't send their name (browser standard), which
-                 FastAPI interprets as default Form(False). #}
+                 hx-include uses the row's unique id selector to gather
+                 all 4 sibling checkboxes — HTMX's `closest` prefix can
+                 only take a single ancestor selector (no nested
+                 descendant query), so the simple "#row-id input"
+                 selector below is the reliable shape.
+
+                 Unchecked checkboxes don't send their name (HTML form
+                 convention), which FastAPI interprets as Form(False). #}
               <td>
                 <input type="checkbox" name="can_start" value="true"
                        {% if m.can_start %}checked{% endif %}
@@ -200,7 +204,7 @@
                        hx-trigger="change"
                        hx-target="#roles-list"
                        hx-swap="innerHTML"
-                       hx-include="closest tr [type='checkbox']"
+                       hx-include="#{{ _row_id }} input[type='checkbox']"
                        hx-vals='{{ _vals }}'>
               </td>
               <td>
@@ -210,7 +214,7 @@
                        hx-trigger="change"
                        hx-target="#roles-list"
                        hx-swap="innerHTML"
-                       hx-include="closest tr [type='checkbox']"
+                       hx-include="#{{ _row_id }} input[type='checkbox']"
                        hx-vals='{{ _vals }}'>
               </td>
               <td>
@@ -220,7 +224,7 @@
                        hx-trigger="change"
                        hx-target="#roles-list"
                        hx-swap="innerHTML"
-                       hx-include="closest tr [type='checkbox']"
+                       hx-include="#{{ _row_id }} input[type='checkbox']"
                        hx-vals='{{ _vals }}'>
               </td>
               <td>
@@ -230,7 +234,7 @@
                        hx-trigger="change"
                        hx-target="#roles-list"
                        hx-swap="innerHTML"
-                       hx-include="closest tr [type='checkbox']"
+                       hx-include="#{{ _row_id }} input[type='checkbox']"
                        hx-vals='{{ _vals }}'>
               </td>
             </tr>
