@@ -167,6 +167,13 @@ async def stop_service(name: str) -> dict[str, object]:
 
     Volumes and the network are preserved so the next start is fast
     (container start, not container recreate).
+
+    On a successful stop, ALSO close every open session for this
+    service — the container is gone, the operator's tab can no longer
+    reach the tool, so the session rows that referenced it should
+    reflect that reality. Without this step, the Active sessions KPI
+    and the service-detail Open sessions card would keep showing
+    stale rows that look like work-in-progress.
     """
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
@@ -177,6 +184,29 @@ async def stop_service(name: str) -> dict[str, object]:
         service_name=name,
         details={"returncode": result.returncode, "stderr": result.short_stderr},
     )
+    if result.ok:
+        # Close all currently-open sessions for this service in one
+        # UPDATE. RETURNING gives us the affected ids so we can emit
+        # one audit row per closed session — useful for M5 evaluation
+        # ("how often does an operator-initiated stop terminate active
+        # work?"). If no rows match, we skip the audit write — no
+        # need to spam the log with sessions_closed_on_stop=0 events.
+        closed = await db.fetch(
+            "UPDATE platform.service_sessions SET closed_at = now() "
+            "WHERE service_name = $1 AND closed_at IS NULL "
+            "RETURNING id, user_id, token",
+            name,
+        )
+        if closed:
+            await audit.write(
+                "sessions_closed_on_stop",
+                service_name=name,
+                details={
+                    "count": len(closed),
+                    "user_ids": list({r["user_id"] for r in closed}),
+                    "reason": "operator_initiated_stop",
+                },
+            )
     if not result.ok:
         raise HTTPException(500, {
             "error": "docker compose stop failed",

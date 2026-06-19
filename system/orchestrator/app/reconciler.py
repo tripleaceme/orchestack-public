@@ -131,6 +131,23 @@ async def reconcile_once() -> dict[str, int]:
         )
         if result.ok:
             summary["stopped"] += 1
+            # Race-defence: between the active_by_service count check
+            # at the top of this loop and the docker stop landing
+            # here, a session could have opened. Closing on stop
+            # unconditionally is harmless if there are zero rows and
+            # load-bearing if there's one.
+            closed = await db.fetch(
+                "UPDATE platform.service_sessions SET closed_at = now() "
+                "WHERE service_name = $1 AND closed_at IS NULL "
+                "RETURNING id",
+                svc,
+            )
+            if closed:
+                await audit.write(
+                    "sessions_closed_on_stop",
+                    service_name=svc,
+                    details={"count": len(closed), "reason": "reconciler_idle_stop"},
+                )
 
     return summary
 
