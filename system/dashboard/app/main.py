@@ -461,17 +461,22 @@ async def audit_page(request: Request, user=Depends(require_user)) -> HTMLRespon
 
 
 @app.get("/credentials", response_class=HTMLResponse, name="credentials_page")
-async def credentials_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+async def credentials_page(
+    request: Request,
+    reveal: bool = False, service: str = "All", search: str = "",
+    user=Depends(require_admin),
+) -> HTMLResponse:
     """`/app/credentials` — admin view for reading + updating .env variables.
 
-    Sensitive values (passwords, secrets, tokens, keys) are masked until
-    the operator clicks Reveal on a specific row. Read-only variables
-    (image tags, the platform DB password) are rendered without an Edit
-    affordance.
+    Server-renders the KPI strip + filter bar + table on first paint so
+    the operator sees real numbers immediately. Subsequent filter
+    changes hit `credentials_table_fragment` and only swap the table
+    body.
     """
+    context = await _build_credentials_context(reveal, service, search)
     return templates.TemplateResponse(
         "credentials.html",
-        {"request": request, "page_title": "Credentials", "user": user},
+        {**context, "request": request, "page_title": "Credentials", "user": user},
     )
 
 
@@ -535,20 +540,33 @@ def _service_for_credential(key: str) -> str:
     return "Other"
 
 
-@app.get("/api/dashboard/credentials/table", response_class=HTMLResponse,
-          name="credentials_table_fragment")
-async def credentials_table_fragment(
-    request: Request,
-    reveal: bool = False,
-    service: str = "All",
-    user=Depends(require_admin),
-) -> HTMLResponse:
-    """HTMX fragment — the credentials table, optionally filtered by service.
+CREDENTIAL_SERVICE_TAG_MAP: dict[str, str] = {
+    "OrcheStack platform": "platform",
+    "Image tags":          "image",
+    "Warehouse":           "warehouse",
+    "Airbyte":             "airbyte",
+    "Apache Airflow":      "airflow",
+    "dbt Core":            "dbt",
+    "Metabase":            "metabase",
+    "MinIO":               "minio",
+    "OpenMetadata":        "openmetadata",
+    "Great Expectations":  "ge",
+    "pgAdmin":             "pgadmin",
+    "Other":               "other",
+}
 
-    ?service=Metabase narrows the table to keys whose prefix maps to that
-    group. ?service=All (default) shows every key. The dropdown lives in
-    the fragment itself so HTMX swap preserves the selection state across
-    re-renders (no out-of-band updates needed).
+
+async def _build_credentials_context(
+    reveal: bool, service: str, search: str,
+) -> dict:
+    """Shared context-builder for the credentials page + table fragment.
+
+    Aggregates KPI metrics (total / sensitive / read-only / last edited)
+    over the FULL credential set (pre-filter), then applies the
+    operator's service + search filters before handing the rows to the
+    template. Used by both the initial GET /credentials and the HTMX
+    GET /api/dashboard/credentials/table so the data shape stays in
+    sync across both render paths.
     """
     try:
         data = await orchestrator.list_credentials(reveal=reveal)
@@ -559,37 +577,74 @@ async def credentials_table_fragment(
         credentials = []
         error = str(e)
 
-    # Annotate each credential with its service group, then filter. We
-    # always annotate (even on the All view) so the template can render
-    # service labels next to each row — operators get a visual cue when
-    # browsing the unfiltered list.
     for c in credentials:
-        c["service"] = _service_for_credential(c["key"])
+        svc = _service_for_credential(c["key"])
+        c["service"] = svc
+        c["service_tag"] = CREDENTIAL_SERVICE_TAG_MAP.get(svc, svc.lower())
 
-    # Distinct services PRESENT in the .env (not every group we know of).
-    # An empty group ("DataHub" when DataHub isn't installed) shouldn't
-    # appear in the dropdown — it'd give the operator the impression that
-    # selecting it would do something.
+    total_count     = len(credentials)
+    sensitive_count = sum(1 for c in credentials if c.get("is_sensitive"))
+    readonly_count  = sum(1 for c in credentials if c.get("is_readonly"))
+
+    last_edited_key = None
+    last_edited_at  = None
+    try:
+        audit_data = await orchestrator.list_audit(limit=10, offset=0)
+        for ev in audit_data.get("events", []):
+            if ev.get("event_type") == "credential_updated":
+                last_edited_key = ev.get("target")
+                last_edited_at  = ev.get("created_at")
+                break
+    except (httpx.HTTPError, ValueError):
+        pass
+
     services_present = sorted(
         {c["service"] for c in credentials},
         key=lambda s: ([g for g, _ in CREDENTIAL_SERVICE_GROUPS].index(s)
                        if s in [g for g, _ in CREDENTIAL_SERVICE_GROUPS]
                        else len(CREDENTIAL_SERVICE_GROUPS)),
     )
+    service_counts: dict[str, int] = {}
+    for c in credentials:
+        service_counts[c["service"]] = service_counts.get(c["service"], 0) + 1
 
     if service != "All":
         credentials = [c for c in credentials if c["service"] == service]
+    if search:
+        needle = search.upper()
+        credentials = [c for c in credentials if needle in c["key"].upper()]
 
+    return {
+        "credentials":      credentials,
+        "reveal":           reveal,
+        "error":            error,
+        "selected_service": service,
+        "search":           search,
+        "services_present": services_present,
+        "service_counts":   service_counts,
+        "total_count":      total_count,
+        "sensitive_count":  sensitive_count,
+        "readonly_count":   readonly_count,
+        "last_edited_key":  last_edited_key,
+        "last_edited_at":   last_edited_at,
+    }
+
+
+@app.get("/api/dashboard/credentials/table", response_class=HTMLResponse,
+          name="credentials_table_fragment")
+async def credentials_table_fragment(
+    request: Request,
+    reveal: bool = False,
+    service: str = "All",
+    search: str = "",
+    user=Depends(require_admin),
+) -> HTMLResponse:
+    """HTMX fragment — the credentials table, optionally filtered by
+    service AND/OR a substring search over key names."""
+    context = await _build_credentials_context(reveal, service, search)
     return templates.TemplateResponse(
         "_credentials_table_fragment.html",
-        {
-            "request": request,
-            "credentials": credentials,
-            "reveal": reveal,
-            "error": error,
-            "selected_service": service,
-            "services_present": services_present,
-        },
+        {**context, "request": request},
     )
 
 
