@@ -1523,12 +1523,21 @@ async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
 @app.post("/api/dashboard/services/{name}/open", name="open_service_session")
 async def open_service_session(
     request: Request, name: str, action: str | None = None,
+    user=Depends(require_user),
 ) -> JSONResponse:
     """Open an orchestrator session against `name` and return the tool URL.
 
     Returns JSON `{token, tool_url, service}`. The dashboard's client-side
     JS stores `token` in localStorage so the heartbeat ticker can refresh
     it, and opens `tool_url` in a new tab.
+
+    Forwards the authenticated user's user_id to the orchestrator so the
+    session row is attributed to the actual operator — without this the
+    orchestrator falls back to DEFAULT_USER_ID (the platform's system
+    user), which made every session show up as "OrcheStack system user"
+    on the service-detail Open sessions card. The fallback was meant
+    for batch/cron-style internal calls, not for operator-driven Open
+    clicks from the dashboard.
 
     Tool URL resolution, in priority order:
       1. If `?action=<key>` is given AND the service has actions[],
@@ -1539,7 +1548,9 @@ async def open_service_session(
          (Metabase, pgAdmin).
     """
     try:
-        result = await orchestrator.open_session(name, auto_start=True)
+        result = await orchestrator.open_session(
+            name, auto_start=True, user_id=user.get("user_id"),
+        )
     except httpx.HTTPError as e:
         log.warning("open_session(%s) failed: %s", name, e)
         return JSONResponse(
