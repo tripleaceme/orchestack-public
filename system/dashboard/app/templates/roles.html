@@ -34,13 +34,7 @@
     Assign roles to users on the <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
   </p>
 
-  {# + New role button only — the role selector lives INSIDE the
-     #roles-list swap target (in the fragment), so it stays freshly
-     wired to the HTMX change event on every action. Putting the
-     selector outside the swap target meant OOB-replacing it on
-     each fragment render, which detached it from the form's
-     `change from:select` event listener and made switching roles
-     a no-op. #}
+
   <div class="new-role-toolbar">
     <button class="btn btn-primary" type="button"
             onclick="
