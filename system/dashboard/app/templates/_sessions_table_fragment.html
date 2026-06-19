@@ -1,78 +1,98 @@
 {#
-  Active-sessions table fragment. Polled every 10s. Renders an error
-  banner OR an empty-state OR the table — never two at once.
+  Open sessions table fragment — word-for-word translation of
+  docs/mockups/approved/sessions.html lines 51-88.
+
+  Columns:
+    Service        — status dot + display_name + · layer
+    User           — full_name + @username · email
+    Opened         — absolute YYYY-MM-DD HH:MM:SS
+    Last heartbeat — relative ("12s ago")
+    Idle           — active / idle / at-risk badge
+    Actions        — Force-end button
 #}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b;">
     <strong>Couldn't load sessions.</strong> {{ error }}
   </div>
-{% elif not sessions %}
-  <div style="background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
-              padding: 32px; text-align: center; font-size: 13px; color: var(--text-2);">
-    <p style="font-weight: 600; color: var(--text); margin: 0 0 4px;">No open sessions</p>
-    <p style="margin: 0;">
-      When someone opens a service from the
-      <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>,
-      their session shows up here until they close it (or the reconciler times them out).
-    </p>
-  </div>
 {% else %}
   <div class="surface">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Service</th>
-          <th>User</th>
-          <th>Opened</th>
-          <th>Last heartbeat</th>
-          <th>Idle</th>
-          <th class="right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in sessions %}
-          <tr>
-            <td>
-              <span class="status-dot running"></span>
-              <strong style="margin-left: 6px;">{{ s.service }}</strong>
-            </td>
-            <td>
-              <div><strong>{{ s.full_name or s.username or 'system' }}</strong></div>
-              {% if s.username %}
-                <div class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">@{{ s.username }}</div>
-              {% endif %}
-            </td>
-            <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-              {{ s.opened_at[:19] if s.opened_at else '—' }}
-            </td>
-            <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-              {{ s.last_heartbeat_at[:19] if s.last_heartbeat_at else '—' }}
-            </td>
-            <td>
+    <div class="surface-head">
+      <h2>Open sessions</h2>
+      <span class="sub">Auto-refreshes every 10s · click Force-end to terminate</span>
+    </div>
+    <div class="surface-body tight">
+      {% if sessions %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>User</th>
+              <th>Opened</th>
+              <th>Last heartbeat</th>
+              <th>Idle</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sessions %}
               {% set idle = s.idle_seconds or 0 %}
-              {% if idle < 60 %}
-                <span class="pill pill-success">{{ idle }}s</span>
-              {% elif idle < 300 %}
-                <span class="pill pill-warn">{{ (idle // 60) }}m {{ idle % 60 }}s</span>
+              {% if idle > 600 %}
+                {% set idle_class = 'badge-warn' %}
+                {% set idle_label = 'idle ' ~ (idle // 60) ~ 'm' %}
+              {% elif idle > 60 %}
+                {% set idle_class = 'badge-neutral' %}
+                {% set idle_label = 'idle ' ~ (idle // 60) ~ 'm' %}
               {% else %}
-                <span class="pill pill-danger">{{ (idle // 60) }}m</span>
+                {% set idle_class = 'badge-success' %}
+                {% set idle_label = 'active' %}
               {% endif %}
-            </td>
-            <td class="right">
-              <button class="btn btn-sm btn-danger"
-                      hx-post="{{ url_for('session_close', token=s.token) }}"
-                      hx-confirm="Close this session?"
-                      hx-swap="none">
-                Force-end
-              </button>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+              <tr>
+                <td>
+                  <span class="dot dot-running"></span>
+                  <strong style="margin-left: 6px;">{{ s.display_name or s.service }}</strong>
+                  {% if s.layer %}
+                    <span class="muted font-mono" style="font-size: 11px;">· {{ s.layer }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div><strong>{{ s.full_name or s.username or 'unknown' }}</strong></div>
+                  {% if s.username %}
+                    <div class="muted font-mono" style="font-size: 12px;">
+                      @{{ s.username }}{% if s.email %} · {{ s.email }}{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
+                <td class="font-mono" style="font-size: 12px;">
+                  {{ (s.opened_at[:19] if s.opened_at else '—') | replace('T', ' ') }}
+                </td>
+                <td class="font-mono" style="font-size: 12px;">
+                  {{ s.heartbeat_relative or '—' }}
+                </td>
+                <td class="font-mono" style="font-size: 12px;">
+                  <span class="badge {{ idle_class }}">{{ idle_label }}</span>
+                </td>
+                <td class="right">
+                  {% if s.token %}
+                    <button class="btn btn-sm btn-danger"
+                            hx-post="{{ url_for('session_close', token=s.token) }}"
+                            hx-confirm="Force-end {{ s.username or 'session' }}? They'll lose unsaved work."
+                            hx-swap="none">Force-end</button>
+                  {% else %}
+                    <button class="btn btn-sm btn-danger" aria-disabled="true" disabled>Force-end</button>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding: 24px 18px; font-size: 13px; color: var(--text-2); font-style: italic;">
+          No open sessions. Click Open on a service from the
+          <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>
+          to start one.
+        </div>
+      {% endif %}
+    </div>
   </div>
-  <p style="font-size: 11px; color: var(--text-2); margin-top: 8px; text-align: right;">
-    {{ sessions|length }} open · refreshes every 10s
-  </p>
 {% endif %}

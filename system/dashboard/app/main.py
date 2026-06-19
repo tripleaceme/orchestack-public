@@ -478,10 +478,103 @@ async def kpi_strip_fragment(
 
 @app.get("/sessions", response_class=HTMLResponse, name="sessions_page")
 async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """`/app/sessions` — live table of all open service sessions."""
+    """`/app/sessions` — KPI strip + Open sessions table + Keep-warm pins.
+
+    Server-renders the KPI strip and the pin table on first paint; the
+    Open sessions table loads via HTMX so it can poll every 10s without
+    re-running the per-service get_pin queries.
+    """
+    from datetime import datetime, timezone
+
+    # Fetch active sessions.
+    sessions: list[dict] = []
+    try:
+        sess_data = await orchestrator.list_sessions(limit=200, offset=0)
+        sessions = sess_data.get("sessions", [])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("sessions_page list_sessions failed: %s", e)
+
+    # KPI 1: open sessions count + unique services they touch.
+    open_count       = len(sessions)
+    unique_services  = len({s.get("service") for s in sessions if s.get("service")})
+
+    # KPI 2: unique users + name of the most-active (most recent heartbeat).
+    unique_users = len({s.get("user_id") for s in sessions if s.get("user_id")})
+    sorted_by_recent = sorted(
+        sessions,
+        key=lambda s: s.get("last_heartbeat_at") or s.get("opened_at") or "",
+        reverse=True,
+    )
+    most_active_user = (
+        sorted_by_recent[0].get("full_name") or sorted_by_recent[0].get("username")
+        if sorted_by_recent else None
+    )
+
+    # KPI 3: oldest session (longest-running, by opened_at) — and which.
+    oldest_age   = None
+    oldest_what  = None
+    if sessions:
+        sorted_by_open = sorted(sessions, key=lambda s: s.get("opened_at") or "")
+        oldest = sorted_by_open[0]
+        oldest_what = oldest.get("service")
+        try:
+            o = (oldest.get("opened_at") or "").replace("Z", "+00:00")
+            ts = datetime.fromisoformat(o)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            delta = int((datetime.now(timezone.utc) - ts).total_seconds())
+            if delta < 60:
+                oldest_age = f"{delta}s"
+            elif delta < 3600:
+                oldest_age = f"{delta // 60}m"
+            elif delta < 86400:
+                oldest_age = f"{delta // 3600}h {(delta % 3600) // 60}m"
+            else:
+                oldest_age = f"{delta // 86400}d {(delta % 86400) // 3600}h"
+        except (ValueError, TypeError):
+            pass
+
+    # KPI 4: idle > 10 minutes (within auto-expire window).
+    idle_count = sum(1 for s in sessions if (s.get("idle_seconds") or 0) > 600)
+
+    # Active keep-warm pins. We derive from list_services (cheap) and
+    # call get_pin for each pinned service to fill in pinned_by/at.
+    pins: list[dict] = []
+    try:
+        svc_data = await orchestrator.list_services()
+        pinned_services = [
+            s for s in svc_data.get("services", []) if s.get("pinned")
+        ]
+        for svc in pinned_services:
+            try:
+                pin_info = await orchestrator.get_pin(svc["name"])
+                if pin_info:
+                    pins.append({
+                        "service":      svc["name"],
+                        "display_name": svc["display_name"],
+                        "pinned_by_username":  pin_info.get("pinned_by_username"),
+                        "pinned_by_full_name": pin_info.get("pinned_by_full_name"),
+                        "pinned_at":           pin_info.get("pinned_at"),
+                        "expires_at":          pin_info.get("expires_at"),
+                    })
+            except (httpx.HTTPError, ValueError):
+                pass
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("sessions_page list_services failed: %s", e)
+
     return templates.TemplateResponse(
         "sessions.html",
-        {"request": request, "page_title": "Sessions", "user": user},
+        {
+            "request": request, "page_title": "Sessions", "user": user,
+            "kpi_open":           open_count,
+            "kpi_services":       unique_services,
+            "kpi_users":          unique_users,
+            "kpi_user_who":       most_active_user,
+            "kpi_oldest_age":     oldest_age,
+            "kpi_oldest_what":    oldest_what,
+            "kpi_idle":           idle_count,
+            "pins":               pins,
+        },
     )
 
 
@@ -2116,6 +2209,19 @@ async def sessions_active_fragment(
         sessions = []
         total = 0
         error = str(e)
+
+    # Annotate each session with display-friendly fields the template
+    # needs: service display_name, layer, and humanised "heartbeat 12s ago".
+    SERVICE_META = {
+        s["name"]: s for s in (await _safe_list_services()).get("services", [])
+    }
+    for s in sessions:
+        meta = SERVICE_META.get(s.get("service"), {})
+        s["display_name"] = meta.get("display_name") or s.get("service")
+        s["layer"]        = meta.get("layer")
+        s["state"]        = meta.get("state")  # so we can show the status dot
+        s["heartbeat_relative"] = _format_relative(s.get("last_heartbeat_at"))
+
     return templates.TemplateResponse(
         "_sessions_table_fragment.html",
         {
@@ -2127,6 +2233,17 @@ async def sessions_active_fragment(
             "error": error,
         },
     )
+
+
+async def _safe_list_services() -> dict:
+    """Wrap orchestrator.list_services in a try/except — returns
+    `{"services": []}` on any orchestrator error. Used by handlers
+    that need service metadata for annotation but don't want the
+    page to break if the orchestrator hiccups."""
+    try:
+        return await orchestrator.list_services()
+    except (httpx.HTTPError, ValueError):
+        return {"services": []}
 
 
 # ===========================================================================

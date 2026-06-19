@@ -1,79 +1,119 @@
 {% extends "base.html" %}
 
+{# Word-for-word translation of docs/mockups/approved/sessions.html.
+   KPI strip + Open sessions surface (HTMX-polled every 10s) +
+   Keep-warm pins surface (server-rendered, single-shot). #}
+
 {% block content %}
   <div class="breadcrumb">Workspace / Sessions</div>
-  <h1 class="page-title">Active sessions</h1>
+  <h1>Active sessions</h1>
   <p class="lede">
-    Every open service tab across all users. The reconciler closes
-    sessions that haven't sent a heartbeat in 5 minutes and those
-    disappear from this list automatically.
+    Every cold-tier session currently open. The orchestrator keeps a service
+    running as long as one session is alive. Idle sessions auto-expire after
+    30 minutes without a heartbeat.
   </p>
 
-  {# Filter form — matches the audit page pattern. All filters are
-     client-side (just the rows we render) for now; M5+ wires them
-     server-side via query params. #}
-  <form id="sessions-controls"
-        hx-get="{{ url_for('sessions_active_fragment') }}"
-        hx-target="#sessions-table"
-        hx-swap="innerHTML"
-        hx-trigger="change from:input, change from:select"
-        style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-               padding: 14px 16px; margin-bottom: 16px;
-               display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+  {# KPI strip — server-rendered at page load. Refreshes on the
+     fragment poll cycle (every 10s). #}
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="label">Open sessions</div>
+      <div class="value">{{ kpi_open }}</div>
+      <div class="delta">
+        {% if kpi_services %}across {{ kpi_services }} service{{ '' if kpi_services == 1 else 's' }}
+        {% else %}no active services{% endif %}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="label">Unique users</div>
+      <div class="value">{{ kpi_users }}</div>
+      <div class="delta">{{ kpi_user_who or '—' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Oldest session</div>
+      <div class="value" style="font-size: 22px;">{{ kpi_oldest_age or '—' }}</div>
+      <div class="delta font-mono">{{ kpi_oldest_what or 'none open' }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Idle &gt; 10m</div>
+      <div class="value">{{ kpi_idle }}</div>
+      <div class="delta">
+        {% if kpi_idle == 0 %}none at risk of expiry
+        {% else %}within auto-expire window{% endif %}
+      </div>
+    </div>
+  </div>
 
-    <label style="display: block;">
-      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
-                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Service</div>
-      <input type="text" name="service" placeholder="e.g. openmetadata"
-             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
-                    background: var(--bg); border-radius: 6px; font-size: 13px;
-                    color: var(--text); font-family: inherit;">
-    </label>
-
-    <label style="display: block;">
-      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
-                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">User</div>
-      <input type="text" name="user" placeholder="e.g. ayoade"
-             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
-                    background: var(--bg); border-radius: 6px; font-size: 13px;
-                    color: var(--text); font-family: inherit;">
-    </label>
-
-    <label style="display: block;">
-      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
-                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Idle threshold</div>
-      <select name="idle"
-              style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
-                     background: var(--bg); border-radius: 6px; font-size: 13px;
-                     color: var(--text); font-family: inherit;">
-        <option value="">All</option>
-        <option value="60">&gt; 1 min</option>
-        <option value="300">&gt; 5 min (at risk)</option>
-        <option value="600">&gt; 10 min</option>
-      </select>
-    </label>
-
-    <label style="display: block;">
-      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
-                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Per page</div>
-      <select name="limit"
-              style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
-                     background: var(--bg); border-radius: 6px; font-size: 13px;
-                     color: var(--text); font-family: inherit;">
-        <option value="10" selected>10</option>
-        <option value="20">20</option>
-        <option value="50">50</option>
-        <option value="100">100</option>
-      </select>
-    </label>
-  </form>
-
+  {# Open sessions table — HTMX-polled every 10s. The fragment
+     renders the .surface + .data-table. #}
   <div id="sessions-table"
        hx-get="{{ url_for('sessions_active_fragment') }}"
        hx-trigger="load delay:50ms, every 10s"
        hx-swap="innerHTML"
-       hx-include="#sessions-controls"
        style="min-height: 120px;">
     <p class="muted" style="font-style: italic; font-size: 13px;">Loading sessions…</p>
+  </div>
+
+  {# Keep-warm pins — server-rendered single-shot. Pins change infrequently
+     (operator action), so we don't poll this. The pin/unpin actions on
+     the service-detail page swap themselves; this surface refreshes on
+     full page navigation. #}
+  <div class="surface">
+    <div class="surface-head">
+      <h2>Keep-warm pins</h2>
+      <span class="sub">Services pinned to stay running regardless of session activity</span>
+    </div>
+    <div class="surface-body tight">
+      {% if pins %}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Pinned by</th>
+              <th>Pinned at</th>
+              <th>Expires</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in pins %}
+              <tr>
+                <td>
+                  <span class="dot dot-running"></span>
+                  <strong style="margin-left: 6px;">{{ p.display_name }}</strong>
+                </td>
+                <td>
+                  <strong>{{ p.pinned_by_full_name or p.pinned_by_username or '—' }}</strong>
+                  {% if p.pinned_by_username %}
+                    <span class="muted font-mono" style="font-size: 12px;">@{{ p.pinned_by_username }}</span>
+                  {% endif %}
+                </td>
+                <td class="font-mono" style="font-size: 12px;">
+                  {{ (p.pinned_at[:16] if p.pinned_at else '—') | replace('T', ' ') }}
+                </td>
+                <td class="font-mono" style="font-size: 12px;">
+                  {% if p.expires_at %}
+                    {{ p.expires_at[:16] | replace('T', ' ') }}
+                  {% else %}
+                    no expiry
+                  {% endif %}
+                </td>
+                <td class="right">
+                  <a href="{{ url_for('service_detail', name=p.service) }}" class="btn btn-sm">Manage</a>
+                  <button class="btn btn-sm btn-danger"
+                          hx-delete="{{ url_for('unpin_service_action', name=p.service) }}"
+                          hx-confirm="Remove keep-warm pin from {{ p.display_name }}?"
+                          hx-swap="none">Unpin</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding: 24px 18px; font-size: 13px; color: var(--text-2); font-style: italic;">
+          No services are currently pinned. Pin a service from its detail page to keep it warm regardless of session activity.
+        </div>
+      {% endif %}
+    </div>
   </div>
 {% endblock %}
