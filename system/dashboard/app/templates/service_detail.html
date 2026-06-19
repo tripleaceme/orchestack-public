@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 
-{# Translated word-for-word from docs/mockups/approved/service_detail.html.
-   The only addition over the approved is the audit-style filter bar above
-   Recent activity (user explicitly asked for it: "exact design of the
-   approved + filter we currently have"). Every text string, class name,
-   and CSS rule below matches the approved mock. #}
+{# Word-for-word, section-for-section, button-for-button translation of
+   docs/mockups/approved/service_detail.html. NOTHING is conditionally
+   hidden — every surface, every button, every meta bit renders for
+   every service. Missing data falls back to "—" so the layout stays
+   intact.
+
+   The only addition over the approved mock is the audit-style filter
+   bar above Recent activity (user's prior turn). #}
 
 {% block content %}
 <style>
@@ -52,8 +55,6 @@
   .activity-row .who { color: var(--text-2); font-size: 12px; }
   .activity-row .who strong { color: var(--text); }
 
-  /* Filter bar — added on top of the approved layout for the production
-     dashboard. Visually consistent with the approved's other surfaces. */
   .svc-filter-bar {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 14px 16px; margin-bottom: 16px;
@@ -72,6 +73,12 @@
   .svc-filter-bar input[type="datetime-local"] {
     font-family: 'JetBrains Mono', monospace; font-size: 12px;
   }
+
+  /* Disabled buttons keep the visual slot of the mock — important for
+     the user's directive that "NOTHING" should be omitted. */
+  .btn[aria-disabled="true"] {
+    opacity: 0.55; cursor: not-allowed; pointer-events: none;
+  }
 </style>
 
   <div class="breadcrumb">
@@ -79,209 +86,200 @@
     / {{ service.display_name if service else service_name }}
   </div>
 
-  {% if service %}
-    {% set is_running = service.state == "running" %}
-    {% set is_pinned  = service.pinned %}
+  {# When the orchestrator returns no service object we still want the
+     layout to render (per user directive). Use safe fallbacks. #}
+  {% set svc = service or {} %}
+  {% set is_running = svc.get('state') == 'running' %}
+  {% set is_pinned  = svc.get('pinned') %}
+  {% set display_name = svc.get('display_name') or service_name %}
+  {% set tier         = svc.get('tier') or 'cold' %}
+  {% set _host = request.url.hostname or 'localhost' %}
+  {% set _tool_url = (svc.get('external_url') or '')|replace('{host}', _host)
+                     or ('http://' ~ _host ~ (request.scope.root_path or '/app') ~ '/' ~ service_name) %}
+  {% set admin_email = svc.get('admin_email') or 'admin@' ~ service_name ~ '.local' %}
 
-    {# === Header card (svc-head — verbatim from approved mock) === #}
-    <div class="svc-head">
-      <div>
-        <div class="title-row">
-          <h1>{{ service.display_name }}</h1>
-          <span class="badge {{ 'badge-hot' if service.tier == 'hot' else 'badge-cold' }}">{{ service.tier }}</span>
-          <span class="badge {{ 'badge-success' if is_running else 'badge-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
-        </div>
-        <div class="desc">
-          {% if service.description %}
-            {{ service.description }}
-          {% else %}
-            OrcheStack-managed service in the {{ service.layer or 'platform' }} layer.
-          {% endif %}
-        </div>
-        <div class="meta-row">
-          <div class="bit"><div class="label">Layer</div><div class="value">{{ service.layer or '—' }}</div></div>
-          {% if service.container %}
-            <div class="bit"><div class="label">Container</div><div class="value">{{ service.container }}</div></div>
-          {% endif %}
-          {% if service.image %}
-            <div class="bit"><div class="label">Image</div><div class="value">{{ service.image }}</div></div>
-          {% endif %}
-          {% if service.uptime %}
-            <div class="bit"><div class="label">Uptime</div><div class="value">{{ service.uptime }}</div></div>
-          {% endif %}
-          {% if is_pinned %}
-            <div class="bit">
-              <div class="label">Pinned</div>
-              <div class="value">{{ ('expires ' ~ service.pin_expires_at[:19]) if service.pin_expires_at else 'no expiry' }}</div>
-            </div>
-          {% endif %}
-        </div>
+  {# === Header card (svc-head — verbatim approved layout) === #}
+  <div class="svc-head">
+    <div>
+      <div class="title-row">
+        <h1>{{ display_name }}</h1>
+        <span class="badge {{ 'badge-hot' if tier == 'hot' else 'badge-cold' }}">{{ tier }}</span>
+        <span class="badge {{ 'badge-success' if is_running else 'badge-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
       </div>
-      <div class="actions">
-        {% if is_running %}
-          {% set _host = request.url.hostname or 'localhost' %}
-          {% set _tool_url = service.external_url|replace('{host}', _host)
-                             if service.external_url
-                             else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-          <a href="{{ _tool_url }}" target="_blank" rel="noopener noreferrer"
-             onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}'); return false;"
-             class="btn btn-primary" style="text-align: center;">Open ↗</a>
-        {% endif %}
-        {% if service.configured %}
-          <a href="{{ url_for('service_config_page', name=service.name) }}"
-             class="btn" style="text-align: center; text-decoration: none;">Edit config</a>
-        {% endif %}
-        {% if is_running and not service.control_plane %}
-          <button class="btn btn-danger"
-                  hx-post="{{ url_for('stop_service_action', name=service.name) }}"
-                  hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
-                  hx-swap="none">Stop</button>
-        {% elif not is_running and service.configured and service.managed %}
-          <button class="btn btn-primary"
-                  hx-post="{{ url_for('start_service_action', name=service.name) }}"
-                  hx-swap="none">Start</button>
+      <div class="desc">
+        {% if svc.get('description') %}
+          {{ svc.description }}
+        {% else %}
+          OrcheStack-managed service in the {{ svc.get('layer') or 'platform' }} layer.
+          Runs as part of the default stack; control via the buttons on the right.
         {% endif %}
       </div>
-    </div>
-
-    {# === Two-column body (twocol — verbatim from approved mock) === #}
-    <div class="twocol">
-
-      <!-- Left column: Recent activity + Open sessions -->
-      <div>
-        {# Audit-style filter bar — addition over approved per user request. #}
-        <form id="svc-activity-filters"
-              hx-get="{{ url_for('service_activity_fragment', name=service_name) }}"
-              hx-target="#svc-activity"
-              hx-swap="innerHTML"
-              hx-trigger="change from:input, change from:select, submit"
-              class="svc-filter-bar">
-
-          <label>
-            <span class="lbl">Event</span>
-            <input type="text" name="event_type" placeholder="e.g. service.start">
-          </label>
-
-          <label>
-            <span class="lbl">Since</span>
-            <input type="datetime-local" name="since">
-          </label>
-
-          <label>
-            <span class="lbl">Until</span>
-            <input type="datetime-local" name="until">
-          </label>
-
-          <label>
-            <span class="lbl">Per page</span>
-            <select name="limit">
-              <option value="10" selected>10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-            </select>
-          </label>
-        </form>
-
-        <div class="surface">
-          <div class="surface-head">
-            <h2>Recent activity</h2>
-            <span class="sub">Filtered to this service · last 24h</span>
-          </div>
-          <div class="surface-body tight">
-            <div id="svc-activity"
-                 hx-get="{{ url_for('service_activity_fragment', name=service_name) }}?limit=10"
-                 hx-trigger="load delay:50ms"
-                 hx-swap="innerHTML"
-                 style="min-height: 80px;">
-              <p class="muted" style="font-style: italic; font-size: 13px; padding: 18px 20px;">Loading activity…</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="surface">
-          <div class="surface-head">
-            <h2>Open sessions</h2>
-            <span class="sub">{{ open_sessions|length }} active · keeps the service running</span>
-          </div>
-          <div class="surface-body tight session-list">
-            {% if open_sessions %}
-              {% for s in open_sessions %}
-                <div class="session-row">
-                  <div class="who">
-                    <div>
-                      <strong>{{ s.full_name or s.username or 'unknown' }}</strong>
-                      {% if s.username %}
-                        <span class="muted font-mono" style="font-size: 12px;">@{{ s.username }}</span>
-                      {% endif %}
-                    </div>
-                    <div class="when">
-                      opened {{ s.created_at[:19] if s.created_at else '—' }}
-                      {% if s.last_heartbeat_at %}
-                        · heartbeat {{ s.last_heartbeat_at[11:19] }}
-                      {% endif %}
-                    </div>
-                  </div>
-                  {% if s.token %}
-                    <button class="btn btn-sm btn-danger"
-                            hx-post="{{ url_for('session_close', token=s.token) }}"
-                            hx-confirm="Force-end {{ s.username or 'session' }}? They'll lose unsaved work."
-                            hx-swap="none">Force-end</button>
-                  {% endif %}
-                </div>
-              {% endfor %}
+      <div class="meta-row">
+        <div class="bit"><div class="label">Layer</div><div class="value">{{ svc.get('layer') or '—' }}</div></div>
+        <div class="bit"><div class="label">Container</div><div class="value">{{ svc.get('container') or '—' }}</div></div>
+        <div class="bit"><div class="label">Image</div><div class="value">{{ svc.get('image') or '—' }}</div></div>
+        <div class="bit"><div class="label">Uptime</div><div class="value">{{ svc.get('uptime') or '—' }}</div></div>
+        <div class="bit">
+          <div class="label">Pinned</div>
+          <div class="value">
+            {% if is_pinned and svc.get('pin_expires_at') %}
+              expires {{ svc.pin_expires_at[:19] }}
+            {% elif is_pinned %}
+              no expiry
             {% else %}
-              <div style="padding: 24px 18px; font-size: 13px; color: var(--text-2); font-style: italic;">
-                No active sessions for this service.
-              </div>
+              —
             {% endif %}
           </div>
         </div>
       </div>
+    </div>
+    <div class="actions">
+      <a href="{{ _tool_url }}" target="_blank" rel="noopener noreferrer"
+         onclick="event.preventDefault(); orchestackOpenService('{{ service_name }}'); return false;"
+         class="btn btn-primary{{ ' ' if is_running else '' }}"
+         {% if not is_running %}aria-disabled="true"{% endif %}
+         style="text-align: center; text-decoration: none;">Open ↗</a>
+      <a href="{{ url_for('service_config_page', name=service_name) }}"
+         class="btn" style="text-align: center; text-decoration: none;">Edit config</a>
+      {% if svc.get('control_plane') %}
+        <button class="btn btn-danger" aria-disabled="true" disabled
+                title="Control-plane services can't be stopped from the dashboard.">Stop</button>
+      {% else %}
+        <button class="btn btn-danger"
+                hx-post="{{ url_for('stop_service_action', name=service_name) }}"
+                hx-confirm="Stop {{ display_name }}? Active sessions will be ended."
+                hx-swap="none"
+                {% if not is_running %}aria-disabled="true"{% endif %}>Stop</button>
+      {% endif %}
+    </div>
+  </div>
 
-      <!-- Right column: Pin card + Connection info -->
-      <div>
-        <div class="surface pin-card">
-          <div class="surface-head">
-            <h2>Keep warm (pin)</h2>
-          </div>
-          <div class="surface-body">
-            <div id="pin-container"
-                 hx-get="{{ url_for('pin_initial_button', name=service_name) }}"
-                 hx-trigger="load delay:50ms"
-                 hx-swap="innerHTML">
-              <p class="muted" style="font-style: italic; font-size: 13px;">Loading pin state…</p>
-            </div>
+  {# === Two-column body (twocol — verbatim approved layout) === #}
+  <div class="twocol">
+
+    <!-- Left column: Recent activity + Open sessions -->
+    <div>
+      {# Audit-style filter bar — addition over approved per user request. #}
+      <form id="svc-activity-filters"
+            hx-get="{{ url_for('service_activity_fragment', name=service_name) }}"
+            hx-target="#svc-activity"
+            hx-swap="innerHTML"
+            hx-trigger="change from:input, change from:select, submit"
+            class="svc-filter-bar">
+
+        <label>
+          <span class="lbl">Event</span>
+          <input type="text" name="event_type" placeholder="e.g. service.start">
+        </label>
+
+        <label>
+          <span class="lbl">Since</span>
+          <input type="datetime-local" name="since">
+        </label>
+
+        <label>
+          <span class="lbl">Until</span>
+          <input type="datetime-local" name="until">
+        </label>
+
+        <label>
+          <span class="lbl">Per page</span>
+          <select name="limit">
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+        </label>
+      </form>
+
+      <div class="surface">
+        <div class="surface-head">
+          <h2>Recent activity</h2>
+          <span class="sub">Filtered to this service · last 24h</span>
+        </div>
+        <div class="surface-body tight">
+          <div id="svc-activity"
+               hx-get="{{ url_for('service_activity_fragment', name=service_name) }}?limit=10"
+               hx-trigger="load delay:50ms"
+               hx-swap="innerHTML"
+               style="min-height: 80px;">
+            <p class="muted" style="font-style: italic; font-size: 13px; padding: 18px 20px;">Loading activity…</p>
           </div>
         </div>
+      </div>
 
-        {% if is_running %}
-          {% set _host = request.url.hostname or 'localhost' %}
-          {% set _tool_url = service.external_url|replace('{host}', _host)
-                             if service.external_url
-                             else 'http://' ~ _host ~ (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-          <div class="surface pin-card">
-            <div class="surface-head">
-              <h2>Connection</h2>
+      <div class="surface">
+        <div class="surface-head">
+          <h2>Open sessions</h2>
+          <span class="sub">{{ open_sessions|length }} active · keeps the service running</span>
+        </div>
+        <div class="surface-body tight session-list">
+          {% if open_sessions %}
+            {% for s in open_sessions %}
+              <div class="session-row">
+                <div class="who">
+                  <div>
+                    <strong>{{ s.full_name or s.username or 'unknown' }}</strong>
+                    {% if s.username %}
+                      <span class="muted font-mono" style="font-size: 12px;">@{{ s.username }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="when">
+                    opened {{ (s.created_at or '—')[:19] | replace('T', ' ') }}
+                    {% if s.last_heartbeat_at %}
+                      · heartbeat {{ s.last_heartbeat_at[11:19] }}
+                    {% endif %}
+                  </div>
+                </div>
+                {% if s.token %}
+                  <button class="btn btn-sm btn-danger"
+                          hx-post="{{ url_for('session_close', token=s.token) }}"
+                          hx-confirm="Force-end {{ s.username or 'session' }}? They'll lose unsaved work."
+                          hx-swap="none">Force-end</button>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="session-row">
+              <div class="who">
+                <div><span class="muted">No active sessions for this service.</span></div>
+                <div class="when">sessions appear here once an operator opens this tool</div>
+              </div>
+              <button class="btn btn-sm btn-danger" aria-disabled="true" disabled>Force-end</button>
             </div>
-            <div class="surface-body">
-              <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Operator URL</div>
-              <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; word-break: break-all;">{{ _tool_url }}</div>
-              {% if service.admin_email %}
-                <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Login</div>
-                <div class="font-mono" style="font-size: 12px;">{{ service.admin_email }}</div>
-                <div class="font-mono" style="font-size: 12px; color: var(--text-2);">password set via post-start hook</div>
-              {% endif %}
-            </div>
-          </div>
-        {% endif %}
+          {% endif %}
+        </div>
       </div>
     </div>
 
-  {% else %}
-    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
-                padding: 18px 22px; font-size: 13px; color: #991b1b;">
-      <strong>Service not found.</strong>
-      Either the name is wrong or the orchestrator is unreachable.
+    <!-- Right column: Pin card + Connection info -->
+    <div>
+      <div class="surface pin-card">
+        <div class="surface-head">
+          <h2>Keep warm (pin)</h2>
+        </div>
+        <div class="surface-body">
+          <div id="pin-container"
+               hx-get="{{ url_for('pin_initial_button', name=service_name) }}"
+               hx-trigger="load delay:50ms"
+               hx-swap="innerHTML">
+            <p class="muted" style="font-style: italic; font-size: 13px;">Loading pin state…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="surface pin-card">
+        <div class="surface-head">
+          <h2>Connection</h2>
+        </div>
+        <div class="surface-body">
+          <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Operator URL</div>
+          <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; word-break: break-all;">{{ _tool_url }}</div>
+          <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Login</div>
+          <div class="font-mono" style="font-size: 12px;">{{ admin_email }}</div>
+          <div class="font-mono" style="font-size: 12px; color: var(--text-2);">password set via post-start hook</div>
+        </div>
+      </div>
     </div>
-  {% endif %}
+  </div>
 {% endblock %}

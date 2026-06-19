@@ -11,13 +11,19 @@
     - else → badge-neutral
 #}
 {% if error %}
-  <div style="padding: 14px 18px; font-size: 12.5px; color: #991b1b;
-              background: #fef2f2; border-radius: 0;">
-    <strong>{{ error }}</strong>
+  <div class="activity-row">
+    <div class="when">—</div>
+    <div class="event"><span class="badge badge-danger">orchestrator_unreachable</span></div>
+    <div class="who muted">{{ error }}</div>
   </div>
 {% elif events|length == 0 %}
-  <div style="padding: 24px 18px; font-size: 12.5px; color: var(--text-2); font-style: italic;">
-    No activity recorded for this service yet.
+  {# Empty-state row matches the .activity-row shape so the section is
+     visually consistent with the approved mock even when there's no
+     real data. #}
+  <div class="activity-row">
+    <div class="when">—</div>
+    <div class="event"><span class="badge badge-neutral">no_events_yet</span></div>
+    <div class="who muted">events appear here as the orchestrator records them</div>
   </div>
 {% else %}
   {% for ev in events %}
@@ -62,10 +68,13 @@
     </div>
   {% endfor %}
 
-  <div style="padding: 12px 20px; border-top: 1px solid var(--border); text-align: center;">
-    <a href="{{ url_for('audit_page') }}?target={{ service_name }}"
-       style="font-size: 12px; color: var(--navy); font-weight: 500; text-decoration: none;">
-      View full audit log →
-    </a>
-  </div>
 {% endif %}
+
+{# Footer link — always rendered (per the user directive that NOTHING
+   should be omitted from the approved layout). #}
+<div style="padding: 12px 20px; border-top: 1px solid var(--border); text-align: center;">
+  <a href="{{ url_for('audit_page') }}?target={{ service_name }}"
+     style="font-size: 12px; color: var(--navy); font-weight: 500; text-decoration: none;">
+    View full audit log →
+  </a>
+</div>
