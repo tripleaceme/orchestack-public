@@ -357,18 +357,13 @@ async def healthz() -> str:
 # ===========================================================================
 #  Pages
 # ===========================================================================
-@app.get("/", response_class=HTMLResponse, name="home")
-async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """Service grid + KPI strip + platform health card.
+async def _aggregate_kpis() -> dict:
+    """Aggregate the four KPI-strip metrics from the orchestrator.
 
-    KPI aggregation: fetch the four overview metrics so the KPI strip
-    on index.html shows real numbers, not placeholders. We don't HTMX-poll
-    them — they refresh on every page load alongside the grid's first
-    fetch. If the orchestrator is unreachable, render dashes rather
-    than crash; the user sees the layout intact + the dashboard
-    connection indicator tells them why the numbers are blank.
+    Shared by /home (initial page render) AND the HTMX polling endpoint
+    /api/dashboard/kpi-strip (every 10s refresh) so the data shape stays
+    in sync across both code paths.
     """
-    # KPI 1+2: services running + total. From the orchestrator's list_services.
     services_running = 0
     services_total = 0
     try:
@@ -378,45 +373,72 @@ async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
         services_total = len(configured)
         services_running = sum(1 for s in configured if s.get("state") == "running")
     except (httpx.HTTPError, ValueError) as e:
-        log.warning("home KPI list_services failed: %s", e)
+        log.warning("KPI list_services failed: %s", e)
 
-    # KPI 3: active sessions count.
     active_sessions = 0
     try:
         sess_data = await orchestrator.list_sessions(limit=200, offset=0)
         active_sessions = len(sess_data.get("sessions", []))
     except (httpx.HTTPError, ValueError) as e:
-        log.warning("home KPI list_sessions failed: %s", e)
+        log.warning("KPI list_sessions failed: %s", e)
 
-    # KPI 4: last audit event (most recent one). Single row from /audit.
+    # Last audit event — capture target (service name) too so the card
+    # can render "service_started · metabase" instead of bare event type.
     last_event_type = None
+    last_event_target = None
     last_event_when = None
     try:
         audit_data = await orchestrator.list_audit(limit=1, offset=0)
         events = audit_data.get("events", [])
         if events:
-            last_event_type = events[0].get("event_type")
-            last_event_when = events[0].get("created_at")
+            last_event_type   = events[0].get("event_type")
+            last_event_target = events[0].get("target")
+            last_event_when   = events[0].get("created_at")
     except (httpx.HTTPError, ValueError) as e:
-        log.warning("home KPI list_audit failed: %s", e)
+        log.warning("KPI list_audit failed: %s", e)
 
+    return {
+        "services_running":   services_running,
+        "services_total":     services_total,
+        "active_sessions":    active_sessions,
+        "last_event_type":    last_event_type,
+        "last_event_target":  last_event_target,
+        "last_event_when":    last_event_when,
+    }
+
+
+@app.get("/", response_class=HTMLResponse, name="home")
+async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """Service grid + KPI strip + platform health card."""
+    kpi = await _aggregate_kpis()
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request, "page_title": "Home", "user": user,
-            "kpi": {
-                "services_running": services_running,
-                "services_total":   services_total,
-                "active_sessions":  active_sessions,
-                "last_event_type":  last_event_type,
-                "last_event_when":  last_event_when,
-            },
-            # Sidebar shows N / M deployed; reuses the same data.
+            "kpi": kpi,
             "sidebar_counts": {
-                "configured": services_total,
-                "total":      services_total + (svc_data.get("unconfigured_count", 0) if 'svc_data' in dir() else 0),
-            } if services_total else None,
+                "configured": kpi["services_total"],
+                "total":      kpi["services_total"],
+            } if kpi["services_total"] else None,
         },
+    )
+
+
+@app.get("/api/dashboard/kpi-strip", response_class=HTMLResponse,
+          name="kpi_strip_fragment")
+async def kpi_strip_fragment(
+    request: Request, user=Depends(require_user)
+) -> HTMLResponse:
+    """KPI strip fragment — HTMX-polled every 10s from the home page.
+
+    Returns just the 4-card strip (no surrounding page chrome). The
+    home template wraps its KPI strip in a hx-get-this-endpoint div so
+    actions (start/stop/pin/open) reflect in the strip without a full
+    page reload.
+    """
+    kpi = await _aggregate_kpis()
+    return templates.TemplateResponse(
+        "_kpi_strip_fragment.html", {"request": request, "kpi": kpi},
     )
 
 
@@ -1192,13 +1214,15 @@ async def service_detail(
 
     # Open sessions for THIS service. Filter client-side from the active
     # list — orchestrator doesn't expose a per-service filter yet, but
-    # 100 active sessions is a tiny payload to scan in Python.
+    # the active-session set is bounded (capped at MAX_PER_USER × users).
+    # NB: orchestrator returns `service`, not `service_name` — match
+    # exactly what its /api/sessions schema emits.
     open_sessions = []
     try:
-        sess_data = await orchestrator.list_sessions(limit=100, offset=0)
+        sess_data = await orchestrator.list_sessions(limit=200, offset=0)
         open_sessions = [
             s for s in sess_data.get("sessions", [])
-            if s.get("service_name") == name
+            if s.get("service") == name
         ]
     except (httpx.HTTPError, ValueError) as e:
         log.warning("service_detail(%s) list_sessions failed: %s", name, e)

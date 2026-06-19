@@ -1,0 +1,55 @@
+{# KPI strip fragment — 4 cards across the top of /home.
+   Rendered both server-side at page load AND HTMX-polled every 10s. #}
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="label">Services running</div>
+    <div class="value">{{ kpi.services_running }} / {{ kpi.services_total }}</div>
+    <div class="delta">
+      {% if kpi.services_running == kpi.services_total and kpi.services_total > 0 %}
+        all configured services healthy
+      {% elif kpi.services_total - kpi.services_running > 0 %}
+        {{ kpi.services_total - kpi.services_running }} stopped (cold-tier idle)
+      {% else %}
+        no services configured yet
+      {% endif %}
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="label">Active sessions</div>
+    <div class="value">{{ kpi.active_sessions }}</div>
+    <div class="delta">
+      {% if kpi.active_sessions > 0 %}
+        across {{ kpi.active_sessions }} open tab{{ 's' if kpi.active_sessions != 1 else '' }}
+      {% else %}
+        no open sessions
+      {% endif %}
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="label">Configured services</div>
+    <div class="value">{{ kpi.services_total }} / 9</div>
+    <div class="delta">
+      {% if kpi.services_total == 9 %}
+        full stack
+      {% else %}
+        {{ 9 - kpi.services_total }} unconfigured · add from Catalogue
+      {% endif %}
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="label">Last audit event</div>
+    {% if kpi.last_event_type %}
+      <div class="value small font-mono" style="font-size: 14px; word-break: break-all;">
+        {{ kpi.last_event_type }}{% if kpi.last_event_target %}
+          <span style="color: var(--text-2);"> · </span>{{ kpi.last_event_target }}
+        {% endif %}
+      </div>
+      <div class="delta font-mono" style="font-size: 11px;">
+        {{ (kpi.last_event_when[:19] if kpi.last_event_when else '') | replace('T', ' ') }}
+      </div>
+    {% else %}
+      <div class="value">—</div>
+      <div class="delta">no events recorded</div>
+    {% endif %}
+  </div>
+</div>

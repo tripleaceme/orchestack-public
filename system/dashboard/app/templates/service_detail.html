@@ -249,7 +249,7 @@
                     {% endif %}
                   </div>
                   <div class="when">
-                    opened {{ (s.created_at or '—')[:19] | replace('T', ' ') }}
+                    opened {{ ((s.opened_at or s.created_at) or '—')[:19] | replace('T', ' ') }}
                     {% if s.last_heartbeat_at %}
                       · heartbeat {{ s.last_heartbeat_at[11:19] }}
                     {% endif %}
@@ -264,8 +264,20 @@
               </div>
             {% endfor %}
           {% else %}
+            {# Empty-state copy distinguishes the three states an
+               operator can be looking at — the previous copy ("Sessions
+               appear here when an operator opens this tool") was
+               misleading because it implied the only reason for running
+               was someone opening it. Now we tell the operator why the
+               service is up. #}
             <div style="padding: 24px 18px; font-size: 13px; color: var(--text-2); font-style: italic;">
-              No open sessions. Sessions appear here when an operator opens this tool.
+              {% if is_running and is_pinned %}
+                No active sessions — the service is being kept warm by a pin.
+              {% elif is_running %}
+                No active sessions — the service is still within its idle window.
+              {% else %}
+                Service is stopped — start it to allow sessions.
+              {% endif %}
             </div>
           {% endif %}
         </div>
