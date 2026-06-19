@@ -168,22 +168,23 @@
     {# Edit-mode panel — hidden by default; replaces the matrix when
        Edit is toggled.
 
-       Save semantics: per-row Save button. Checkboxes are PLAIN inputs
-       (no hx-* attrs) so they hold their visual state across multiple
-       clicks without re-fetching the row. When the operator clicks
-       Save, the button's hx-post collects all 4 checkboxes via
-       hx-include (using the row's unique id selector — `closest`
-       can't compose with descendant queries in HTMX) and the
-       service_name + selected_role_id via hx-vals.
+       Single Save button at the bottom: operator ticks the boxes
+       they want across ALL service rows, then clicks Save once.
+       Checkboxes are plain inputs; the Save button HTMX-collects
+       every checkbox under .role-edit via hx-include and POSTs them
+       all to a bulk endpoint that processes each (service, perm-set)
+       in turn.
 
-       Each row saves independently. Operators choose all permissions
-       for a service then click Save once — instead of every
-       checkbox firing its own request. #}
+       Field naming: each checkbox is `<svc>__can_<perm>` (double
+       underscore separator) so the backend can demux which service
+       each value belongs to. Unchecked checkboxes don't send their
+       name (HTML form convention), which the bulk handler reads as
+       "all false → delete the row." #}
     <div class="role-edit" id="role-edit-{{ role.id }}">
       <p class="hint">
         Tick the boxes for the permissions this role should have for each
-        service, then click <strong>Save</strong> on that row. Rows save
-        independently.
+        service across all rows, then click <strong>Save changes</strong>
+        below. All rows save together.
       </p>
       <table class="matrix">
         <thead>
@@ -193,45 +194,44 @@
             <th>Use</th>
             <th>Force-stop</th>
             <th>Edit config</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for svc in services %}
             {% set m = matrix.get(svc.name, {}) %}
-            {% set _post = url_for('roles_set_permissions_action', role_id=role.id) %}
-            {% set _row_id = 'perm-row-' ~ role.id ~ '-' ~ svc.name %}
-            {% set _vals %}{"service_name": "{{ svc.name }}", "selected_role_id": "{{ role.id }}"}{% endset %}
-            <tr id="{{ _row_id }}">
+            <tr>
               <td>{{ svc.display_name }}</td>
               <td>
-                <input type="checkbox" name="can_start" value="true"
+                <input type="checkbox" name="{{ svc.name }}__can_start" value="true"
                        {% if m.can_start %}checked{% endif %}>
               </td>
               <td>
-                <input type="checkbox" name="can_use" value="true"
+                <input type="checkbox" name="{{ svc.name }}__can_use" value="true"
                        {% if m.can_use %}checked{% endif %}>
               </td>
               <td>
-                <input type="checkbox" name="can_force_stop" value="true"
+                <input type="checkbox" name="{{ svc.name }}__can_force_stop" value="true"
                        {% if m.can_force_stop %}checked{% endif %}>
               </td>
               <td>
-                <input type="checkbox" name="can_edit_config" value="true"
+                <input type="checkbox" name="{{ svc.name }}__can_edit_config" value="true"
                        {% if m.can_edit_config %}checked{% endif %}>
-              </td>
-              <td style="text-align: right;">
-                <button type="button" class="btn btn-sm btn-primary"
-                        hx-post="{{ _post }}"
-                        hx-target="#roles-list"
-                        hx-swap="innerHTML"
-                        hx-include="#{{ _row_id }} input[type='checkbox']"
-                        hx-vals='{{ _vals }}'>Save</button>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+
+      <div style="display: flex; justify-content: end; margin-top: 14px; gap: 8px;">
+        <button type="button" class="btn btn-sm btn-primary"
+                hx-post="{{ url_for('roles_bulk_set_permissions_action', role_id=role.id) }}"
+                hx-target="#roles-list"
+                hx-swap="innerHTML"
+                hx-include="#role-edit-{{ role.id }} input[type='checkbox']"
+                hx-vals='{"selected_role_id": "{{ role.id }}"}'>
+          Save changes
+        </button>
+      </div>
 
       {% if has_wildcard %}
         <p class="hint" style="margin-top: 14px; color: #b91c1c;">

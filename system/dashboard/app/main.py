@@ -1340,6 +1340,79 @@ async def roles_delete_action(
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
+@app.post("/api/dashboard/roles/{role_id}/permissions/bulk-set",
+           response_class=HTMLResponse, name="roles_bulk_set_permissions_action")
+async def roles_bulk_set_permissions_action(
+    request: Request, role_id: int, user=Depends(require_admin),
+) -> HTMLResponse:
+    """Bulk replace the role's per-service permission set.
+
+    Receives form fields named `<service>__can_<perm>` (double
+    underscore separator) and processes ALL catalogue services in
+    one POST. For each (role, service) tuple:
+      - If any of the 4 perms is True → upsert the row with that set.
+      - If all 4 are False → revoke the row if present (keeps the
+        permission table semantically clean).
+
+    Used by the single "Save changes" button at the bottom of the
+    edit panel — operators tick whatever they want across all
+    rows and commit them together instead of clicking a Save
+    button per row.
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    form = await request.form()
+
+    # Pre-fetch existing permissions so we know which rows to delete
+    # vs which can stay unchanged. One read covers everything.
+    try:
+        perms_data = await orchestrator.admin_list_permissions(cookie)
+        existing_by_service = {
+            p["service_name"]: p
+            for p in perms_data.get("permissions", [])
+            if p["role_id"] == role_id
+        }
+    except (httpx.HTTPError, ValueError):
+        existing_by_service = {}
+
+    # Iterate every catalogue service and apply the form's view of
+    # its permissions. Services with no form fields are treated as
+    # all-false (operators can revoke a row by un-ticking every box).
+    try:
+        svc_data = await orchestrator.list_services()
+        all_services = svc_data.get("services", [])
+    except (httpx.HTTPError, ValueError):
+        all_services = []
+
+    for svc in all_services:
+        sn = svc["name"]
+        can_start       = form.get(f"{sn}__can_start") == "true"
+        can_use         = form.get(f"{sn}__can_use") == "true"
+        can_force_stop  = form.get(f"{sn}__can_force_stop") == "true"
+        can_edit_config = form.get(f"{sn}__can_edit_config") == "true"
+        any_perm = can_start or can_use or can_force_stop or can_edit_config
+
+        try:
+            if any_perm:
+                await orchestrator.admin_grant_permission(
+                    cookie, role_id=role_id, service_name=sn,
+                    can_start=can_start, can_use=can_use,
+                    can_force_stop=can_force_stop, can_edit_config=can_edit_config,
+                )
+            else:
+                existing = existing_by_service.get(sn)
+                if existing:
+                    await orchestrator.admin_revoke_permission(
+                        cookie, existing["id"],
+                    )
+        except httpx.HTTPError as e:
+            log.warning(
+                "bulk-set permissions failed for %s/%s: %s", role_id, sn, e,
+            )
+
+    ctx = await _roles_render_context(request, user, selected_role_id=role_id)
+    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+
+
 @app.post("/api/dashboard/roles/{role_id}/permissions/set",
            response_class=HTMLResponse, name="roles_set_permissions_action")
 async def roles_set_permissions_action(
