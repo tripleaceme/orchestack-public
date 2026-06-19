@@ -264,20 +264,25 @@
               </div>
             {% endfor %}
           {% else %}
-            {# Empty-state copy distinguishes the three states an
-               operator can be looking at — the previous copy ("Sessions
-               appear here when an operator opens this tool") was
-               misleading because it implied the only reason for running
-               was someone opening it. Now we tell the operator why the
-               service is up. #}
-            <div style="padding: 24px 18px; font-size: 13px; color: var(--text-2); font-style: italic;">
-              {% if is_running and is_pinned %}
-                No active sessions — the service is being kept warm by a pin.
-              {% elif is_running %}
-                No active sessions — the service is still within its idle window.
-              {% else %}
-                Service is stopped — start it to allow sessions.
-              {% endif %}
+            {# Empty-state rendered as a session-row so the section's
+               visual rhythm matches the populated case. The Force-end
+               button on the right is disabled (greyed-out, non-
+               interactive) — same shape as the active button so the
+               card height doesn't shift when a session opens. #}
+            <div class="session-row">
+              <div class="who">
+                <div><span class="muted">
+                  {% if is_running and is_pinned %}
+                    No active sessions — the service is being kept warm by a pin.
+                  {% elif is_running %}
+                    No active sessions — the service is still within its idle window.
+                  {% else %}
+                    Service is stopped — start it to allow sessions.
+                  {% endif %}
+                </span></div>
+                <div class="when">sessions appear here once an operator opens this tool</div>
+              </div>
+              <button class="btn btn-sm btn-danger" aria-disabled="true" disabled>Force-end</button>
             </div>
           {% endif %}
         </div>

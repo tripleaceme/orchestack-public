@@ -178,7 +178,19 @@
     .btn-danger { background: var(--surface); color: #b91c1c; border-color: #fecaca; }
     .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; }
     .btn:hover { border-color: var(--navy); }
-    .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+    /* Disabled / inert buttons: override colored variants (primary navy,
+       danger red) with neutral greyscale so it's unambiguous that the
+       button isn't clickable. Two selectors so it applies to native
+       <button disabled> AND to ARIA-disabled <a>/`<button>` (the latter
+       happens on the home cards where the same role is rendered as
+       a link for Open). */
+    .btn[disabled],
+    .btn[aria-disabled="true"] {
+      opacity: 0.55; cursor: not-allowed; pointer-events: none;
+      background: var(--bg) !important;
+      color: var(--text-2) !important;
+      border-color: var(--border) !important;
+    }
 
     /* === Tables === */
     .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
