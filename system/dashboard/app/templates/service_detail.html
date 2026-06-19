@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 
-{# Local stylesheet — copied verbatim from docs/mockups/approved/service_detail.html
-   so the production page matches the approved mock pixel-for-pixel. Inlined in
-   the {% block content %} (base.html doesn't expose an extra_head block); the
-   browser is happy with a <style> anywhere in body, and it keeps the
-   detail-page CSS scoped to this template. #}
+{# Translated word-for-word from docs/mockups/approved/service_detail.html.
+   The only addition over the approved is the audit-style filter bar above
+   Recent activity (user explicitly asked for it: "exact design of the
+   approved + filter we currently have"). Every text string, class name,
+   and CSS rule below matches the approved mock. #}
+
 {% block content %}
 <style>
   .svc-head {
@@ -16,32 +17,18 @@
   .svc-head h1 { margin: 0; font-size: 24px; }
   .svc-head .desc { color: var(--text-2); font-size: 13px; margin-top: 4px; max-width: 620px; line-height: 1.5; }
   .svc-head .meta-row { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
-  .svc-head .meta-row .bit .label {
-    font-size: 10.5px; color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px;
-  }
-  .svc-head .meta-row .bit .value {
-    font-size: 13px; color: var(--text); font-family: 'JetBrains Mono', monospace;
-  }
+  .svc-head .meta-row .bit .label { font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px; }
+  .svc-head .meta-row .bit .value { font-size: 13px; color: var(--text); font-family: 'JetBrains Mono', monospace; }
   .svc-head .actions { display: flex; flex-direction: column; gap: 8px; align-self: start; }
 
   .twocol { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
 
-  .pin-card .pin-state {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-  }
-  .pin-card label {
-    display: block; font-size: 12px; color: var(--text-2);
-    margin-bottom: 5px; font-weight: 500;
-  }
-  .pin-card select {
-    width: 100%; padding: 8px 12px; border: 1px solid var(--border);
-    background: var(--bg); border-radius: 6px; font-size: 13px;
-    color: var(--text); font-family: inherit; margin-bottom: 14px;
-  }
-  .pin-card .hint {
-    font-size: 12px; color: var(--text-2); margin-bottom: 16px; line-height: 1.5;
-  }
+  .pin-card .pin-state { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .pin-card .pin-state .badge { font-size: 11px; }
+  .pin-card label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; font-weight: 500; }
+  .pin-card select { width: 100%; padding: 8px 12px; border: 1px solid var(--border); background: var(--bg);
+    border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit; margin-bottom: 14px; }
+  .pin-card .hint { font-size: 12px; color: var(--text-2); margin-bottom: 16px; line-height: 1.5; }
   .pin-card .btn-row { display: flex; gap: 8px; }
 
   .session-list { padding: 0; }
@@ -52,10 +39,7 @@
   .session-row:last-child { border-bottom: none; }
   .session-row .who { font-size: 13px; }
   .session-row .who strong { color: var(--text); }
-  .session-row .when {
-    font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
-    color: var(--text-2); margin-top: 2px;
-  }
+  .session-row .when { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-2); margin-top: 2px; }
 
   .activity-row {
     display: grid; grid-template-columns: 90px 1fr 1fr; gap: 14px;
@@ -63,25 +47,13 @@
     font-size: 12.5px; align-items: center;
   }
   .activity-row:last-child { border-bottom: none; }
-  .activity-row .when {
-    font-family: 'JetBrains Mono', monospace; color: var(--text-2); font-size: 11.5px;
-  }
+  .activity-row .when { font-family: 'JetBrains Mono', monospace; color: var(--text-2); font-size: 11.5px; }
   .activity-row .event { font-family: 'JetBrains Mono', monospace; }
   .activity-row .who { color: var(--text-2); font-size: 12px; }
   .activity-row .who strong { color: var(--text); }
 
-  {# Connection card styling matches pin-card surface. #}
-  .conn-card .label {
-    font-size: 11px; color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;
-  }
-  .conn-card .value {
-    font-family: 'JetBrains Mono', monospace; font-size: 12px;
-    padding: 8px 10px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 5px; word-break: break-all; margin-bottom: 12px;
-  }
-  .conn-card .value:last-child { margin-bottom: 0; }
-
+  /* Filter bar — added on top of the approved layout for the production
+     dashboard. Visually consistent with the approved's other surfaces. */
   .svc-filter-bar {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 14px 16px; margin-bottom: 16px;
@@ -111,19 +83,19 @@
     {% set is_running = service.state == "running" %}
     {% set is_pinned  = service.pinned %}
 
-    {# === Header card (svc-head, approved layout) === #}
+    {# === Header card (svc-head — verbatim from approved mock) === #}
     <div class="svc-head">
       <div>
         <div class="title-row">
           <h1>{{ service.display_name }}</h1>
-          <span class="pill {{ 'pill-hot' if service.tier == 'hot' else 'pill-cold' }}">{{ service.tier }}</span>
-          <span class="pill {{ 'pill-success' if is_running else 'pill-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
+          <span class="badge {{ 'badge-hot' if service.tier == 'hot' else 'badge-cold' }}">{{ service.tier }}</span>
+          <span class="badge {{ 'badge-success' if is_running else 'badge-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
         </div>
         <div class="desc">
           {% if service.description %}
             {{ service.description }}
           {% else %}
-            {{ service.layer | replace('-', ' ') | title if service.layer else 'OrcheStack-managed service.' }}
+            OrcheStack-managed service in the {{ service.layer or 'platform' }} layer.
           {% endif %}
         </div>
         <div class="meta-row">
@@ -137,10 +109,10 @@
           {% if service.uptime %}
             <div class="bit"><div class="label">Uptime</div><div class="value">{{ service.uptime }}</div></div>
           {% endif %}
-          {% if is_pinned and service.pin_expires_at %}
+          {% if is_pinned %}
             <div class="bit">
               <div class="label">Pinned</div>
-              <div class="value">expires {{ service.pin_expires_at[:19] }}</div>
+              <div class="value">{{ ('expires ' ~ service.pin_expires_at[:19]) if service.pin_expires_at else 'no expiry' }}</div>
             </div>
           {% endif %}
         </div>
@@ -157,7 +129,7 @@
         {% endif %}
         {% if service.configured %}
           <a href="{{ url_for('service_config_page', name=service.name) }}"
-             class="btn" style="text-align: center;">Edit config</a>
+             class="btn" style="text-align: center; text-decoration: none;">Edit config</a>
         {% endif %}
         {% if is_running and not service.control_plane %}
           <button class="btn btn-danger"
@@ -172,14 +144,12 @@
       </div>
     </div>
 
-    {# === Two-column body (twocol, approved layout) === #}
+    {# === Two-column body (twocol — verbatim from approved mock) === #}
     <div class="twocol">
 
-      {# === LEFT COLUMN: filter bar + Recent activity + Open sessions === #}
+      <!-- Left column: Recent activity + Open sessions -->
       <div>
-        {# Audit-style filter bar scoped to this service. Driven by HTMX —
-           submits on input/select change to the service_activity_fragment
-           endpoint, which returns compact activity rows. #}
+        {# Audit-style filter bar — addition over approved per user request. #}
         <form id="svc-activity-filters"
               hx-get="{{ url_for('service_activity_fragment', name=service_name) }}"
               hx-target="#svc-activity"
@@ -215,29 +185,35 @@
         <div class="surface">
           <div class="surface-head">
             <h2>Recent activity</h2>
-            <span class="sub">Audit events scoped to this service</span>
+            <span class="sub">Filtered to this service · last 24h</span>
           </div>
-          <div id="svc-activity"
-               hx-get="{{ url_for('service_activity_fragment', name=service_name) }}?limit=10"
-               hx-trigger="load delay:50ms"
-               hx-swap="innerHTML"
-               style="min-height: 120px;">
-            <p class="muted" style="font-style: italic; font-size: 13px; padding: 18px 20px;">Loading activity…</p>
+          <div class="surface-body tight">
+            <div id="svc-activity"
+                 hx-get="{{ url_for('service_activity_fragment', name=service_name) }}?limit=10"
+                 hx-trigger="load delay:50ms"
+                 hx-swap="innerHTML"
+                 style="min-height: 80px;">
+              <p class="muted" style="font-style: italic; font-size: 13px; padding: 18px 20px;">Loading activity…</p>
+            </div>
           </div>
         </div>
 
-        {# === Open sessions for this service — rendered server-side === #}
         <div class="surface">
           <div class="surface-head">
             <h2>Open sessions</h2>
-            <span class="sub">{{ open_sessions|length }} active</span>
+            <span class="sub">{{ open_sessions|length }} active · keeps the service running</span>
           </div>
-          <div class="session-list">
+          <div class="surface-body tight session-list">
             {% if open_sessions %}
               {% for s in open_sessions %}
                 <div class="session-row">
                   <div class="who">
-                    <div><strong>{{ s.username or s.user_id or 'unknown' }}</strong></div>
+                    <div>
+                      <strong>{{ s.full_name or s.username or 'unknown' }}</strong>
+                      {% if s.username %}
+                        <span class="muted font-mono" style="font-size: 12px;">@{{ s.username }}</span>
+                      {% endif %}
+                    </div>
                     <div class="when">
                       opened {{ s.created_at[:19] if s.created_at else '—' }}
                       {% if s.last_heartbeat_at %}
@@ -262,7 +238,7 @@
         </div>
       </div>
 
-      {# === RIGHT COLUMN: pin card + connection card === #}
+      <!-- Right column: Pin card + Connection info -->
       <div>
         <div class="surface pin-card">
           <div class="surface-head">
@@ -278,22 +254,22 @@
           </div>
         </div>
 
-        {# Connection info card — only when running. #}
         {% if is_running %}
           {% set _host = request.url.hostname or 'localhost' %}
           {% set _tool_url = service.external_url|replace('{host}', _host)
                              if service.external_url
                              else 'http://' ~ _host ~ (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-          <div class="surface pin-card conn-card">
+          <div class="surface pin-card">
             <div class="surface-head">
               <h2>Connection</h2>
             </div>
             <div class="surface-body">
-              <div class="label">Operator URL</div>
-              <div class="value">{{ _tool_url }}</div>
+              <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Operator URL</div>
+              <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; word-break: break-all;">{{ _tool_url }}</div>
               {% if service.admin_email %}
-                <div class="label">Login</div>
-                <div class="value">{{ service.admin_email }}</div>
+                <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Login</div>
+                <div class="font-mono" style="font-size: 12px;">{{ service.admin_email }}</div>
+                <div class="font-mono" style="font-size: 12px; color: var(--text-2);">password set via post-start hook</div>
               {% endif %}
             </div>
           </div>

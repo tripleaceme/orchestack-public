@@ -1244,10 +1244,12 @@ async def service_activity_fragment(
         log.warning("service_activity_fragment(%s) list_audit failed: %s", name, e)
         error = "Couldn't load activity from the orchestrator."
 
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
     return templates.TemplateResponse(
         "_service_activity_fragment.html",
         {"request": request, "events": events, "error": error,
-         "service_name": name, "limit": limit},
+         "service_name": name, "limit": limit, "today": today},
     )
 
 
@@ -1397,9 +1399,20 @@ async def stop_service_action(request: Request, name: str) -> HTMLResponse:
 # ===========================================================================
 @app.post("/api/dashboard/services/{name}/pin", response_class=HTMLResponse,
            name="pin_service_action")
-async def pin_service_action(request: Request, name: str) -> HTMLResponse:
+async def pin_service_action(
+    request: Request, name: str, ttl_seconds: int = Form(7200),
+) -> HTMLResponse:
+    """Pin a service (or extend an existing pin) with a TTL from the form.
+
+    The approved mock's pin card has a select with values: +1h / +4h /
+    +1d / +7d / Never. The select posts here with ttl_seconds as the
+    submitted value; "Never" maps to None (orchestrator stores the pin
+    without an expiry).
+    """
     try:
-        await orchestrator.pin_service(name)
+        await orchestrator.pin_service(
+            name, ttl_seconds=None if ttl_seconds == 0 else ttl_seconds,
+        )
     except httpx.HTTPError as e:
         log.warning("pin_service(%s) failed: %s", name, e)
     return await _render_pin_button(request, name)

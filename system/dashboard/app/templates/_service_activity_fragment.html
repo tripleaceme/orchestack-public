@@ -1,12 +1,18 @@
 {#
-  Compact activity rows for the service detail page. Matches the
-  approved mock's `.activity-row` layout: a 3-column grid showing
-  timestamp | event badge | who. Distinct from the full audit
-  table (data-table) used on the /audit page.
+  Compact activity rows for the service detail page. Word-for-word
+  layout match with docs/mockups/approved/service_detail.html lines
+  118-154. Uses `.badge` classes + an actor·context "who" column.
+
+  Event-type → badge color mapping:
+    - .start / .pin / .deploy_complete / .create_role / .bootstrapped
+      → badge-success
+    - .pin / .migration.applied → badge-info
+    - .stop / .force_stop / .unpin / .revoked / .deleted → badge-warn
+    - else → badge-neutral
 #}
 {% if error %}
-  <div style="background: #fef2f2; border: 1px solid #fecaca;
-              padding: 12px 18px; font-size: 12.5px; color: #991b1b;">
+  <div style="padding: 14px 18px; font-size: 12.5px; color: #991b1b;
+              background: #fef2f2; border-radius: 0;">
     <strong>{{ error }}</strong>
   </div>
 {% elif events|length == 0 %}
@@ -15,38 +21,51 @@
   </div>
 {% else %}
   {% for ev in events %}
-    {# Pick a badge color: success for create/start/bootstrap events,
-       warn for stop/unpin/revoke, neutral otherwise. Pattern-match on
-       the event_type tail (after the dot). #}
-    {% set _evt = ev.event_type or '' %}
+    {% set _evt  = ev.event_type or '' %}
     {% set _tail = _evt.split('.')[-1] %}
-    {% if _tail in ['start', 'started', 'created', 'pinned', 'bootstrapped', 'opened', 'granted'] %}
-      {% set _badge = 'pill-success' %}
-    {% elif _tail in ['stop', 'stopped', 'unpinned', 'revoked', 'force_stopped', 'closed', 'deleted', 'failed'] %}
-      {% set _badge = 'pill-warn' %}
+    {% if _tail in ['start', 'started', 'deploy_complete', 'create_role', 'bootstrapped', 'granted', 'opened', 'created'] %}
+      {% set _badge = 'badge-success' %}
+    {% elif _tail in ['pin', 'pinned', 'applied'] or 'migration' in _evt %}
+      {% set _badge = 'badge-info' %}
+    {% elif _tail in ['stop', 'stopped', 'force_stop', 'force_stopped', 'unpin', 'unpinned', 'revoked', 'deleted', 'failed', 'closed'] %}
+      {% set _badge = 'badge-warn' %}
     {% else %}
-      {% set _badge = 'pill-neutral' %}
+      {% set _badge = 'badge-neutral' %}
     {% endif %}
 
+    {# Same-day rows show HH:MM:SS, older rows show YYYY-MM-DD HH:MM:SS —
+       same convention as the approved mock. Replace the ISO `T` separator
+       with a space so 2026-06-18T02:02:57 becomes 2026-06-18 02:02:57. #}
+    {% set _ts = (ev.created_at or '') | replace('T', ' ') %}
+    {% set _date_part = _ts[:10] %}
+    {% if today and _date_part == today %}
+      {% set _display_when = _ts[11:19] %}
+    {% else %}
+      {% set _display_when = _ts[:19] %}
+    {% endif %}
+
+    {# The approved mock signals "system actor" via class="muted" + bare
+       text (no <strong>); human actors get <strong>username</strong>. #}
+    {% set _is_system = not ev.actor_username or ev.actor_username == 'system' %}
+
     <div class="activity-row">
-      <div class="when">{{ ev.created_at[11:19] if ev.created_at else '—' }}</div>
-      <div class="event">
-        <span class="pill {{ _badge }}">{{ _evt }}</span>
-      </div>
-      <div class="who">
-        {% if ev.actor_username %}
-          <strong>{{ ev.actor_username }}</strong>
-        {% elif ev.actor_id %}
-          <span class="font-mono">user#{{ ev.actor_id }}</span>
+      <div class="when">{{ _display_when }}</div>
+      <div class="event"><span class="badge {{ _badge }}">{{ _evt }}</span></div>
+      <div class="who{{ ' muted' if _is_system else '' }}">
+        {% if _is_system %}
+          system
         {% else %}
-          <span style="color: var(--text-2);">system</span>
+          <strong>{{ ev.actor_username }}</strong>
         {% endif %}
+        {% if ev.context %} · {{ ev.context }}{% elif ev.target and ev.target != service_name %} · {{ ev.target }}{% endif %}
       </div>
     </div>
   {% endfor %}
 
-  <div style="padding: 12px 18px; font-size: 12px;">
+  <div style="padding: 12px 20px; border-top: 1px solid var(--border); text-align: center;">
     <a href="{{ url_for('audit_page') }}?target={{ service_name }}"
-       style="color: var(--navy); text-decoration: underline;">View full audit log →</a>
+       style="font-size: 12px; color: var(--navy); font-weight: 500; text-decoration: none;">
+      View full audit log →
+    </a>
   </div>
 {% endif %}

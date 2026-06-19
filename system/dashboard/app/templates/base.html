@@ -198,18 +198,22 @@
     .muted { color: var(--text-2); }
 
     /* === Badges === */
-    .pill {
+    /* `.pill` and `.badge` are aliases — both styles render identically.
+       Approved mocks use `.badge`; some pre-3.7 production templates still
+       use `.pill`. Keeping both keeps every page working without a
+       big-bang rename. */
+    .pill, .badge {
       font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.5px; font-family: 'JetBrains Mono', monospace;
       display: inline-block;
     }
-    .pill-hot     { background: #fffbeb; color: var(--warning); }
-    .pill-cold    { background: #eff6ff; color: #1d4ed8; }
-    .pill-success { background: #ecfdf5; color: #047857; }
-    .pill-warn    { background: #fffbeb; color: var(--warning); border: 1px solid #fde68a; }
-    .pill-info    { background: var(--info-bg); color: #1d4ed8; }
-    .pill-neutral { background: var(--bg); color: var(--text-2); border: 1px solid var(--border); }
-    .pill-danger  { background: #fef2f2; color: #b91c1c; }
+    .pill-hot,     .badge-hot     { background: #fffbeb; color: var(--warning); }
+    .pill-cold,    .badge-cold    { background: #eff6ff; color: #1d4ed8; }
+    .pill-success, .badge-success { background: #ecfdf5; color: #047857; }
+    .pill-warn,    .badge-warn    { background: #fffbeb; color: var(--warning); border: 1px solid #fde68a; }
+    .pill-info,    .badge-info    { background: var(--info-bg); color: #1d4ed8; }
+    .pill-neutral, .badge-neutral { background: var(--bg); color: var(--text-2); border: 1px solid var(--border); }
+    .pill-danger,  .badge-danger  { background: #fef2f2; color: #b91c1c; }
 
     /* Status dot */
     .status-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
