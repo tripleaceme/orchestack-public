@@ -99,6 +99,30 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def no_html_cache(request: Request, call_next):
+    """Set Cache-Control: no-store on every HTML response.
+
+    HTML output is dynamic — operators changing service state, opening
+    sessions, or saving credentials need the next page-load to reflect
+    those changes immediately. Browser heuristics had been caching
+    HTML for ~5 minutes, causing "I just refreshed but don't see the
+    update" reports. no-store is the strict opt-out: browser never
+    stores a copy, every navigation re-fetches.
+
+    Scoped to text/html (not JSON / images / CSS / JS) so static
+    asset caching stays efficient. HTMX fragments are also text/html
+    so they pick up the same header — same logic applies (they're
+    rendering live-data views).
+    """
+    response = await call_next(request)
+    ct = response.headers.get("content-type", "")
+    if ct.startswith("text/html"):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     log.info(
