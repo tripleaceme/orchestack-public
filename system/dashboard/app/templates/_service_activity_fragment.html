@@ -1,0 +1,52 @@
+{#
+  Compact activity rows for the service detail page. Matches the
+  approved mock's `.activity-row` layout: a 3-column grid showing
+  timestamp | event badge | who. Distinct from the full audit
+  table (data-table) used on the /audit page.
+#}
+{% if error %}
+  <div style="background: #fef2f2; border: 1px solid #fecaca;
+              padding: 12px 18px; font-size: 12.5px; color: #991b1b;">
+    <strong>{{ error }}</strong>
+  </div>
+{% elif events|length == 0 %}
+  <div style="padding: 24px 18px; font-size: 12.5px; color: var(--text-2); font-style: italic;">
+    No activity recorded for this service yet.
+  </div>
+{% else %}
+  {% for ev in events %}
+    {# Pick a badge color: success for create/start/bootstrap events,
+       warn for stop/unpin/revoke, neutral otherwise. Pattern-match on
+       the event_type tail (after the dot). #}
+    {% set _evt = ev.event_type or '' %}
+    {% set _tail = _evt.split('.')[-1] %}
+    {% if _tail in ['start', 'started', 'created', 'pinned', 'bootstrapped', 'opened', 'granted'] %}
+      {% set _badge = 'pill-success' %}
+    {% elif _tail in ['stop', 'stopped', 'unpinned', 'revoked', 'force_stopped', 'closed', 'deleted', 'failed'] %}
+      {% set _badge = 'pill-warn' %}
+    {% else %}
+      {% set _badge = 'pill-neutral' %}
+    {% endif %}
+
+    <div class="activity-row">
+      <div class="when">{{ ev.created_at[11:19] if ev.created_at else '—' }}</div>
+      <div class="event">
+        <span class="pill {{ _badge }}">{{ _evt }}</span>
+      </div>
+      <div class="who">
+        {% if ev.actor_username %}
+          <strong>{{ ev.actor_username }}</strong>
+        {% elif ev.actor_id %}
+          <span class="font-mono">user#{{ ev.actor_id }}</span>
+        {% else %}
+          <span style="color: var(--text-2);">system</span>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+
+  <div style="padding: 12px 18px; font-size: 12px;">
+    <a href="{{ url_for('audit_page') }}?target={{ service_name }}"
+       style="color: var(--navy); text-decoration: underline;">View full audit log →</a>
+  </div>
+{% endif %}

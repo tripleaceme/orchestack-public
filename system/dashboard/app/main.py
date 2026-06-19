@@ -1178,11 +1178,31 @@ async def service_config_save(
 async def service_detail(
     request: Request, name: str, user=Depends(require_user)
 ) -> HTMLResponse:
-    """`/app/services/{name}` — per-service detail page with pin toggle."""
+    """`/app/services/{name}` — per-service detail page.
+
+    Server-side aggregates everything the approved mock shows above the
+    fold: service detail, open sessions for this service, and pin state.
+    The audit/activity list streams in via HTMX from the dedicated
+    service_activity_fragment endpoint (so the filter form can drive it).
+    """
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError:
         svc = None
+
+    # Open sessions for THIS service. Filter client-side from the active
+    # list — orchestrator doesn't expose a per-service filter yet, but
+    # 100 active sessions is a tiny payload to scan in Python.
+    open_sessions = []
+    try:
+        sess_data = await orchestrator.list_sessions(limit=100, offset=0)
+        open_sessions = [
+            s for s in sess_data.get("sessions", [])
+            if s.get("service_name") == name
+        ]
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("service_detail(%s) list_sessions failed: %s", name, e)
+
     return templates.TemplateResponse(
         "service_detail.html",
         {
@@ -1190,8 +1210,44 @@ async def service_detail(
             "page_title": svc["display_name"] if svc else name,
             "service": svc,
             "service_name": name,
+            "open_sessions": open_sessions,
             "user": user,
         },
+    )
+
+
+@app.get("/api/dashboard/services/{name}/activity", response_class=HTMLResponse,
+          name="service_activity_fragment")
+async def service_activity_fragment(
+    request: Request, name: str,
+    event_type: str | None = None, since: str | None = None,
+    until: str | None = None, limit: int = 10,
+) -> HTMLResponse:
+    """Render activity rows scoped to a single service in the COMPACT
+    layout used by service_detail.html (90px when | event | who grid).
+
+    Distinct from audit_table_fragment because the visual treatment is
+    different — service_detail wants a list-style read, not a full
+    data-table. The filter form on service_detail posts here and the
+    response replaces the activity list in place.
+    """
+    events = []
+    error = None
+    try:
+        data = await orchestrator.list_audit(
+            target=name, event_type=event_type or None,
+            since=since or None, until=until or None,
+            limit=limit, offset=0,
+        )
+        events = data.get("events", [])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("service_activity_fragment(%s) list_audit failed: %s", name, e)
+        error = "Couldn't load activity from the orchestrator."
+
+    return templates.TemplateResponse(
+        "_service_activity_fragment.html",
+        {"request": request, "events": events, "error": error,
+         "service_name": name, "limit": limit},
     )
 
 
