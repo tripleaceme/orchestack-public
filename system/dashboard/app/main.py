@@ -1016,6 +1016,59 @@ async def roles_revoke_permission_action(
 # service's keys plus the pipeline-warehouse keys (so Postgres-backed
 # services show the warehouse creds they actually use to connect).
 # ----------------------------------------------------------------------
+# Per-service credential groupings rendered on the service-config page.
+# Each tuple is (group_title, group_subtitle, key_substring_patterns).
+# Rules apply in order; the first match wins per credential. Variables
+# matching no rule fall into "Other". Subtitles match the approved
+# mock's tone ("auto-regenerated on every start from these values").
+CREDENTIAL_GROUP_RULES: list[tuple[str, str, list[str]]] = [
+    ("Repository",
+     "Where the project clones from on every start",
+     ["REPO"]),
+    ("Admin",
+     "Operator-facing login for the tool's web UI",
+     ["ADMIN_EMAIL", "ADMIN_USER", "ADMIN_PASSWORD"]),
+    ("Database connection",
+     "Auto-regenerated on every start from these values",
+     ["DATABASE", "SCHEMA", "DB_NAME", "DB_USER", "DB_PASSWORD"]),
+    ("Secrets",
+     "Token/secret material; rotate periodically",
+     ["JWT_SECRET", "API_KEY", "_SECRET", "_TOKEN"]),
+    ("Service topology",
+     "Fixed by the deployment",
+     ["_HOST", "_PORT"]),
+]
+
+
+def _group_credentials(creds: list[dict]) -> list[dict]:
+    """Group a flat credential list by the rules above.
+
+    Returns a list of `{title, sub, creds}` dicts in the order defined
+    by CREDENTIAL_GROUP_RULES, skipping any empty groups. Unmatched
+    credentials are bundled into a trailing "Other" group so nothing
+    falls off the page.
+    """
+    buckets: dict[str, list[dict]] = {t: [] for t, _, _ in CREDENTIAL_GROUP_RULES}
+    other: list[dict] = []
+    for c in creds:
+        matched_title: str | None = None
+        for title, _, patterns in CREDENTIAL_GROUP_RULES:
+            if any(p in c["key"] for p in patterns):
+                matched_title = title
+                break
+        if matched_title:
+            buckets[matched_title].append(c)
+        else:
+            other.append(c)
+    groups: list[dict] = []
+    for title, sub, _ in CREDENTIAL_GROUP_RULES:
+        if buckets[title]:
+            groups.append({"title": title, "sub": sub, "creds": buckets[title]})
+    if other:
+        groups.append({"title": "Other", "sub": "Uncategorized variables", "creds": other})
+    return groups
+
+
 SERVICE_CREDENTIAL_GROUPS: dict[str, list[str]] = {
     "metabase":     ["Metabase"],
     "pgadmin":      ["pgAdmin"],
@@ -1068,8 +1121,33 @@ async def service_config_page(
     for c in all_creds:
         c["service"] = _service_for_credential(c["key"])
     creds = [c for c in all_creds if c["service"] in groups_for_service]
+    grouped = _group_credentials(creds)
+
+    # "Last edited" data — pulled from the audit log. We look for the
+    # most recent credential_updated event whose target falls inside
+    # this service's credential keys; that maps a credential edit back
+    # to which service-config page the operator was on. Falls back to
+    # None if no edits ever happened, so the template hides the line.
+    last_edited_at = None
+    last_edited_by = None
+    try:
+        own_keys = {c["key"] for c in creds}
+        audit_data = await orchestrator.list_audit(limit=50, offset=0)
+        for ev in audit_data.get("events", []):
+            if ev.get("event_type") != "credential_updated":
+                continue
+            tgt = ev.get("target") or ""
+            if tgt in own_keys:
+                last_edited_at = ev.get("created_at")
+                last_edited_by = (
+                    ev.get("actor_full_name") or ev.get("actor_username")
+                )
+                break
+    except (httpx.HTTPError, ValueError):
+        pass
 
     display_name = (svc or {}).get("display_name", name)
+    is_running = (svc or {}).get("state") == "running"
     return templates.TemplateResponse(
         "service_config.html",
         {
@@ -1080,7 +1158,10 @@ async def service_config_page(
             "service_name": name,
             "display_name": display_name,
             "credentials": creds,
-            "is_running": (svc or {}).get("state") == "running",
+            "credential_groups": grouped,
+            "is_running": is_running,
+            "last_edited_at": last_edited_at,
+            "last_edited_by": last_edited_by,
             "saved_keys": [],
             "save_error": None,
         },

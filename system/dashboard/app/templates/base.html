@@ -379,28 +379,14 @@
       {% block content %}{% endblock %}
     </main>
 
-    {# Build info row.
-         - phase            (which milestone the dashboard tracks to)
-         - version          (the FastAPI app's `version` constant)
-         - bundle           (the runtime bundle's VERSION file)
-         - dashboard sha    (BUILD_SHA env var set at image build time)
-         - orchestrator sha (queried from /orchestrator/api/health) #}
+    {# Minimal footer: brand + version only. Removed phase / bundle /
+       dashboard-SHA / orchestrator-SHA chips — operators don't need
+       internal milestone/build-tracking noise on every page, and the
+       data is still available via /api/dashboard/health for
+       diagnostics. #}
     <footer>
-      <span>OrcheStack dashboard · phase 3.7</span>
-      <span class="font-mono">
-        v{{ request.app.version }}
-        {% if build_info %}
-          {% if build_info.bundle_version %}
-            · bundle <span style="color: var(--text);">{{ build_info.bundle_version }}</span>
-          {% endif %}
-          {% if build_info.dashboard_sha %}
-            · dashboard <span style="color: var(--text);">{{ build_info.dashboard_sha[:8] }}</span>
-          {% endif %}
-          {% if build_info.orchestrator_sha %}
-            · orchestrator <span style="color: var(--text);">{{ build_info.orchestrator_sha[:8] }}</span>
-          {% endif %}
-        {% endif %}
-      </span>
+      <span>OrcheStack</span>
+      <span class="font-mono">v{{ request.app.version }}</span>
     </footer>
   </div>
 

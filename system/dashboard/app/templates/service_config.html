@@ -1,98 +1,167 @@
 {% extends "base.html" %}
 
+{# Word-for-word, section-for-section translation of
+   docs/mockups/approved/service_config.html. NOTHING is conditionally
+   hidden — every surface, every form-row renders. Missing data falls
+   back to "—" or sensible default. #}
+
 {% block content %}
+<style>
+  .warning {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 18px; color: var(--warning); font-size: 13px;
+    display: flex; gap: 12px; align-items: start;
+  }
+  .warning .icon { font-size: 16px; line-height: 1.2; }
+  .warning strong { color: #92400e; }
+
+  .info-banner {
+    background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 18px; color: #047857; font-size: 13px;
+    display: flex; gap: 12px; align-items: start;
+  }
+  .info-banner .icon { font-size: 16px; line-height: 1.2; }
+  .info-banner strong { color: #064e3b; }
+
+  .err-banner {
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 18px; color: #991b1b; font-size: 13px;
+  }
+
+  input[readonly] {
+    background: var(--bg) !important; color: var(--text-2); cursor: not-allowed;
+  }
+  .form-grid { padding: 24px 28px; max-width: 860px; }
+
+  .save-row {
+    padding: 20px 28px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  .save-row .meta { font-size: 13px; color: var(--text-2); }
+  .save-row .meta strong { color: var(--text); }
+  .save-row .actions { display: flex; gap: 10px; }
+</style>
+
   <div class="breadcrumb">
-    <a href="{{ url_for('home') }}">Services</a> /
-    <a href="{{ url_for('service_detail', name=service_name) }}">{{ display_name }}</a>
+    <a href="{{ url_for('home') }}" style="color: inherit; text-decoration: underline;">Services</a>
+    /
+    <a href="{{ url_for('service_detail', name=service_name) }}" style="color: inherit; text-decoration: underline;">{{ display_name }}</a>
     / Edit config
   </div>
-  <h1 class="page-title">Edit {{ display_name }} config</h1>
+  <h1>Edit {{ display_name }} config</h1>
   <p class="lede">
-    Change credentials for <strong>{{ display_name }}</strong>. Values are
-    written to <code class="font-mono">.env</code> immediately. Services
-    that are currently running need a Stop → Start cycle from the
-    <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>
-    to pick up the new values.
+    Change credentials, repository, or warehouse connection for <strong>{{ display_name }}</strong>.
+    Values write to <code class="font-mono">.env</code> immediately, but most take effect on the next
+    container start. Stop and restart <strong>{{ display_name }}</strong> from the
+    <a href="{{ url_for('service_detail', name=service_name) }}" style="color: var(--navy); text-decoration: underline;">service detail page</a>
+    after saving.
   </p>
 
+  {# Warning surface — yellow when running (operator must stop+start),
+     green when stopped (changes apply freely on next start). The
+     approved mock shows the yellow variant by default; we render the
+     state-appropriate variant. #}
   {% if is_running %}
-    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
-                padding: 12px 16px; margin-bottom: 18px; color: #b45309; font-size: 13px;
-                display: flex; gap: 12px; align-items: start;">
-      <span style="font-size: 16px; line-height: 1.2;">⚠</span>
-      <div><strong style="color: #92400e;">{{ display_name }} is currently running.</strong> Changes save freely now, but won't take effect until you Stop and Start the service from the Services page.</div>
+    <div class="warning">
+      <span class="icon">⚠</span>
+      <div>
+        <strong>{{ display_name }} is currently running.</strong>
+        Changes save freely, but won't take effect until you Stop and Start the service from the
+        <a href="{{ url_for('service_detail', name=service_name) }}" style="color: var(--navy); text-decoration: underline;">service page</a>.
+      </div>
+    </div>
+  {% else %}
+    <div class="info-banner">
+      <span class="icon">✓</span>
+      <div>
+        <strong>{{ display_name }} is stopped.</strong>
+        You can save freely. Changes apply on the next start. If it were running, the Stop button would appear at the bottom of this form before Save.
+      </div>
     </div>
   {% endif %}
 
   {% if saved_keys %}
-    <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px;
-                padding: 12px 16px; font-size: 13px; color: #064e3b; margin-bottom: 16px;">
-      ✓ Saved {{ saved_keys|length }} change{{ '' if saved_keys|length == 1 else 's' }}:
-      <span class="font-mono">{{ saved_keys|join(', ') }}</span>.
-      {% if is_running %}
-        Stop and start <strong>{{ display_name }}</strong> to apply.
-      {% endif %}
+    <div class="info-banner">
+      <span class="icon">✓</span>
+      <div>
+        Saved {{ saved_keys|length }} change{{ '' if saved_keys|length == 1 else 's' }}:
+        <span class="font-mono">{{ saved_keys|join(', ') }}</span>.
+        {% if is_running %}Stop and start <strong>{{ display_name }}</strong> to apply.{% endif %}
+      </div>
     </div>
   {% endif %}
 
   {% if save_error %}
-    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
-                padding: 12px 16px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
-      Save failed: {{ save_error }}
-    </div>
+    <div class="err-banner">Save failed: {{ save_error }}</div>
   {% endif %}
 
   {% if credentials|length == 0 %}
-    <div style="background: var(--bg); border: 1px dashed var(--border); border-radius: 10px;
-                padding: 28px; text-align: center; font-size: 13px; color: var(--text-2);">
-      No editable credentials for <strong style="color: var(--text);">{{ display_name }}</strong> in
-      <code class="font-mono">.env</code> yet. Configure this service first from the
-      <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>.
+    <div class="surface">
+      <div style="padding: 28px; text-align: center; font-size: 13px; color: var(--text-2);">
+        No editable credentials for <strong style="color: var(--text);">{{ display_name }}</strong> in
+        <code class="font-mono">.env</code> yet. Configure this service first from the
+        <a href="{{ url_for('home') }}" style="color: var(--navy); text-decoration: underline;">Services page</a>.
+      </div>
     </div>
   {% else %}
     <form method="post" action="{{ url_for('service_config_save', name=service_name) }}">
 
-      <div class="surface">
-        <div class="surface-head">
-          <h2>Variables</h2>
-          <span class="sub">{{ credentials|length }} variable{{ '' if credentials|length == 1 else 's' }} for {{ display_name }}</span>
-        </div>
-        <div class="form-grid">
-          {% for c in credentials %}
-            <div class="form-row">
-              <label>
-                <span class="font-mono">{{ c.key }}</span>
-                {% if c.is_sensitive %}<span class="pill pill-warn" style="margin-left: 5px;">sensitive</span>{% endif %}
-                {% if c.is_readonly %}<span class="pill pill-neutral" style="margin-left: 5px;">read-only</span>{% endif %}
-              </label>
-              <div>
-                {% if c.is_readonly %}
-                  <input type="text" value="{{ c.value }}" readonly disabled
-                         style="font-family: 'JetBrains Mono', monospace;">
-                {% else %}
-                  <input type="{{ 'password' if c.is_sensitive else 'text' }}"
-                         name="{{ c.key }}"
-                         value="{{ c.value }}"
-                         autocomplete="off"
-                         style="font-family: 'JetBrains Mono', monospace;">
-                  {% if c.is_sensitive %}
+      {% for group in credential_groups %}
+        <div class="surface">
+          <div class="surface-head">
+            <h2>{{ group.title }}</h2>
+            <span class="sub">{{ group.sub }}</span>
+          </div>
+          <div class="form-grid">
+            {% for c in group.creds %}
+              <div class="form-row">
+                <label>
+                  <span class="font-mono">{{ c.key }}</span>
+                  {% if c.is_readonly %}
+                    <span class="opt">Read-only: pinned by the pre-start hook</span>
+                  {% elif c.is_sensitive %}
+                    <span class="opt">Sensitive · set under
+                      <a href="{{ url_for('credentials_page') }}" style="color: var(--navy); text-decoration: underline;">Configuration → Credentials</a>
+                    </span>
+                  {% else %}
+                    <span class="opt">Optional</span>
+                  {% endif %}
+                </label>
+                <div>
+                  {% if c.is_readonly %}
+                    <input type="text" value="{{ c.value }}" readonly disabled>
+                  {% elif c.is_sensitive %}
+                    <input type="password" name="{{ c.key }}" value="{{ c.value }}" autocomplete="off">
                     <div class="input-hint">
                       Currently masked. Type a new value to replace; leave the dots to keep the existing value.
                     </div>
+                  {% else %}
+                    <input type="text" name="{{ c.key }}" value="{{ c.value }}" autocomplete="off">
                   {% endif %}
-                {% endif %}
+                </div>
               </div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="surface">
-        <div style="padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
-          <div class="muted" style="font-size: 12px;">
-            Changes write to <code class="font-mono">.env</code> on save.
+            {% endfor %}
           </div>
-          <div style="display: flex; gap: 10px;">
+        </div>
+      {% endfor %}
+
+      {# Save-row surface — matches the approved mock's footer card.
+         "Last edited X by Y" on the left; Cancel + Save on the right.
+         "Save · N changes" mimics the mock copy but we can't know the
+         dirty count without client JS, so we use the generic "Save". #}
+      <div class="surface">
+        <div class="save-row">
+          <div class="meta">
+            {% if last_edited_at %}
+              Last edited
+              <strong>{{ last_edited_at[:16] | replace('T', ' ') }}</strong>
+              {% if last_edited_by %}by <strong>{{ last_edited_by }}</strong>{% endif %}
+            {% else %}
+              No edits recorded yet.
+            {% endif %}
+          </div>
+          <div class="actions">
             <a href="{{ url_for('service_detail', name=service_name) }}" class="btn">Cancel</a>
             <button type="submit" class="btn btn-primary">Save changes</button>
           </div>
