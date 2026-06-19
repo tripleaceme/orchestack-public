@@ -1,10 +1,5 @@
 {% extends "base.html" %}
 
-{# Word-for-word, section-for-section translation of
-   docs/mockups/approved/service_config.html. NOTHING is conditionally
-   hidden — every surface, every form-row renders. Missing data falls
-   back to "—" or sensible default. #}
-
 {% block content %}
 <style>
   .warning {
@@ -51,17 +46,11 @@
   </div>
   <h1>Edit {{ display_name }} config</h1>
   <p class="lede">
-    Change credentials, repository, or warehouse connection for <strong>{{ display_name }}</strong>.
-    Values write to <code class="font-mono">.env</code> immediately, but most take effect on the next
-    container start. Stop and restart <strong>{{ display_name }}</strong> from the
-    <a href="{{ url_for('service_detail', name=service_name) }}" style="color: var(--navy); text-decoration: underline;">service detail page</a>
-    after saving.
+    Change credentials, repository, or warehouse connection for <strong>{{ display_name }}</strong>. Values write to <code class="font-mono">.env</code> immediately, 
+    but most take effect on the next container start. Stop and restart <strong>{{ display_name }}</strong> from the
+    <a href="{{ url_for('service_detail', name=service_name) }}" style="color: var(--navy); text-decoration: underline;">service detail page</a> after saving.
   </p>
 
-  {# Warning surface — yellow when running (operator must stop+start),
-     green when stopped (changes apply freely on next start). The
-     approved mock shows the yellow variant by default; we render the
-     state-appropriate variant. #}
   {% if is_running %}
     <div class="warning">
       <span class="icon">⚠</span>
@@ -146,10 +135,6 @@
         </div>
       {% endfor %}
 
-      {# Save-row surface — matches the approved mock's footer card.
-         "Last edited X by Y" on the left; Cancel + Save on the right.
-         "Save · N changes" mimics the mock copy but we can't know the
-         dirty count without client JS, so we use the generic "Save". #}
       <div class="surface">
         <div class="save-row">
           <div class="meta">

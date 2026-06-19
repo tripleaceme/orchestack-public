@@ -1,14 +1,5 @@
 {% extends "base.html" %}
 
-{# Word-for-word, section-for-section, button-for-button translation of
-   docs/mockups/approved/service_detail.html. NOTHING is conditionally
-   hidden — every surface, every button, every meta bit renders for
-   every service. Missing data falls back to "—" so the layout stays
-   intact.
-
-   The only addition over the approved mock is the audit-style filter
-   bar above Recent activity (user's prior turn). #}
-
 {% block content %}
 <style>
   .svc-head {
@@ -77,8 +68,6 @@
     font-family: 'JetBrains Mono', monospace; font-size: 12px;
   }
 
-  /* Disabled buttons keep the visual slot of the mock — important for
-     the user's directive that "NOTHING" should be omitted. */
   .btn[aria-disabled="true"] {
     opacity: 0.55; cursor: not-allowed; pointer-events: none;
   }
@@ -106,7 +95,6 @@
   {% set uptime_display = uptime_display if uptime_display is defined else svc.get('uptime') %}
   {% set image_display  = svc.get('image') %}
 
-  {# === Header card (svc-head — verbatim approved layout) === #}
   <div class="svc-head">
     <div>
       <div class="title-row">
@@ -123,12 +111,7 @@
         {% endif %}
       </div>
       <div class="meta-row">
-        {# Layer + Container always render — they're catalogue-fixed and
-           are always set by the orchestrator. Image + Uptime render only
-           when we actually have a value (no em-dash placeholders, per the
-           user's "remove the dash" feedback). Pinned renders always with
-           "—" when not pinned (because pinning is a meaningful state — the
-           absence of a pin is itself info worth surfacing). #}
+
         <div class="bit"><div class="label">Layer</div><div class="value">{{ svc.get('layer') or '—' }}</div></div>
         <div class="bit"><div class="label">Container</div><div class="value">{{ svc.get('container') or '—' }}</div></div>
         {% if image_display %}
@@ -177,7 +160,6 @@
 
     <!-- Left column: Recent activity + Open sessions -->
     <div>
-      {# Audit-style filter bar — addition over approved per user request. #}
       <form id="svc-activity-filters"
             hx-get="{{ url_for('service_activity_fragment', name=service_name) }}"
             hx-target="#svc-activity"
@@ -264,11 +246,6 @@
               </div>
             {% endfor %}
           {% else %}
-            {# Empty-state rendered as a session-row so the section's
-               visual rhythm matches the populated case. The Force-end
-               button on the right is disabled (greyed-out, non-
-               interactive). Same shape as the active button so the
-               card height doesn't shift when a session opens. #}
             <div class="session-row">
               <div class="who">
                 <div><span class="muted">

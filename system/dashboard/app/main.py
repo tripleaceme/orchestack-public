@@ -1307,28 +1307,39 @@ async def service_detail(
     # card answers "who is using this service?" — listing the same
     # name twice obscures that. Most-recent-per-user keeps the answer
     # crisp.
+    #
+    # Hard rule: if the service is stopped, we render the empty-state
+    # regardless of what the orchestrator returns. An "active" session
+    # against a stopped container is by definition stale — the operator's
+    # tab can't reach the tool anyway. Showing stale rows with an active
+    # Force-end button gave operators conflicting signals ("service is
+    # stopped, but there's a live session?"). Cleaner to treat stopped
+    # ⇒ no sessions in the UI; orphan rows get swept by the next stop_service
+    # call or by the backfill that ran with this fix.
     open_sessions = []
-    try:
-        sess_data = await orchestrator.list_sessions(limit=200, offset=0)
-        all_for_this_svc = [
-            s for s in sess_data.get("sessions", [])
-            if s.get("service") == name
-        ]
-        latest_by_user: dict = {}
-        for s in all_for_this_svc:
-            uid = s.get("user_id") or s.get("username") or s.get("token")
-            existing = latest_by_user.get(uid)
-            # Compare by last_heartbeat_at if present, else opened_at.
-            new_key = s.get("last_heartbeat_at") or s.get("opened_at") or ""
-            old_key = (
-                (existing.get("last_heartbeat_at") or existing.get("opened_at") or "")
-                if existing else ""
-            )
-            if existing is None or new_key > old_key:
-                latest_by_user[uid] = s
-        open_sessions = list(latest_by_user.values())
-    except (httpx.HTTPError, ValueError) as e:
-        log.warning("service_detail(%s) list_sessions failed: %s", name, e)
+    is_running = (svc or {}).get("state") == "running"
+    if is_running:
+        try:
+            sess_data = await orchestrator.list_sessions(limit=200, offset=0)
+            all_for_this_svc = [
+                s for s in sess_data.get("sessions", [])
+                if s.get("service") == name
+            ]
+            latest_by_user: dict = {}
+            for s in all_for_this_svc:
+                uid = s.get("user_id") or s.get("username") or s.get("token")
+                existing = latest_by_user.get(uid)
+                # Compare by last_heartbeat_at if present, else opened_at.
+                new_key = s.get("last_heartbeat_at") or s.get("opened_at") or ""
+                old_key = (
+                    (existing.get("last_heartbeat_at") or existing.get("opened_at") or "")
+                    if existing else ""
+                )
+                if existing is None or new_key > old_key:
+                    latest_by_user[uid] = s
+            open_sessions = list(latest_by_user.values())
+        except (httpx.HTTPError, ValueError) as e:
+            log.warning("service_detail(%s) list_sessions failed: %s", name, e)
 
     # Compute a humanised uptime ("2h 14m", "3m", "1d 4h") from the
     # orchestrator's started_at ISO string. None when the service isn't
