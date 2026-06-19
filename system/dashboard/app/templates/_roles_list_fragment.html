@@ -155,11 +155,16 @@
     </table>
 
     {# Edit-mode panel — hidden by default; replaces the matrix when
-       Edit is toggled. Each row is its own tiny <form> bound to the
-       Save endpoint; checkbox changes auto-submit. Wildcard '*' grant
-       isn't editable per-row from here — operators can revoke a
-       wildcard from the legacy explicit-grant view, or set per-service
-       grants which take precedence in practice. #}
+       Edit is toggled.
+
+       HTMX wiring: we DON'T wrap rows in <form> tags because
+       <form> isn't a valid descendant of <tr> — browsers hoist it
+       out of the table and HTMX then can't discover the inputs.
+       Instead each checkbox carries its own hx-post + hx-include
+       that gathers the OTHER checkboxes in the same <tr> plus the
+       hx-vals passing service_name + selected_role_id. The
+       endpoint receives the full {can_start, can_use,
+       can_force_stop, can_edit_config} set on every change. #}
     <div class="role-edit" id="role-edit-{{ role.id }}">
       <p class="hint">
         Check the boxes for each permission you want this role to have.
@@ -178,23 +183,56 @@
         <tbody>
           {% for svc in services %}
             {% set m = matrix.get(svc.name, {}) %}
-            <tr>
+            {% set _post = url_for('roles_set_permissions_action', role_id=role.id) %}
+            {% set _vals %}{"service_name": "{{ svc.name }}", "selected_role_id": "{{ role.id }}"}{% endset %}
+            <tr data-svc="{{ svc.name }}">
               <td>{{ svc.display_name }}</td>
-              {# One tiny form per row — submits on any checkbox change.
-                 Includes the service_name as a hidden field + the
-                 selected_role_id so the fragment re-renders with the
-                 same role still in view. #}
-              <form hx-post="{{ url_for('roles_set_permissions_action', role_id=role.id) }}"
-                    hx-target="#roles-list" hx-swap="innerHTML"
-                    hx-trigger="change from:input"
-                    style="display: contents;">
-                <input type="hidden" name="service_name" value="{{ svc.name }}">
-                <input type="hidden" name="selected_role_id" value="{{ role.id }}">
-                <td><input type="checkbox" name="can_start" value="true" {% if m.can_start %}checked{% endif %}></td>
-                <td><input type="checkbox" name="can_use" value="true" {% if m.can_use %}checked{% endif %}></td>
-                <td><input type="checkbox" name="can_force_stop" value="true" {% if m.can_force_stop %}checked{% endif %}></td>
-                <td><input type="checkbox" name="can_edit_config" value="true" {% if m.can_edit_config %}checked{% endif %}></td>
-              </form>
+              {# Each checkbox is its own HTMX trigger.
+                 hx-include="closest tr [type=checkbox]" gathers all 4
+                 checkboxes in this row, so the backend sees the full
+                 permission set every time. Unchecked checkboxes
+                 don't send their name (browser standard), which
+                 FastAPI interprets as default Form(False). #}
+              <td>
+                <input type="checkbox" name="can_start" value="true"
+                       {% if m.can_start %}checked{% endif %}
+                       hx-post="{{ _post }}"
+                       hx-trigger="change"
+                       hx-target="#roles-list"
+                       hx-swap="innerHTML"
+                       hx-include="closest tr [type='checkbox']"
+                       hx-vals='{{ _vals }}'>
+              </td>
+              <td>
+                <input type="checkbox" name="can_use" value="true"
+                       {% if m.can_use %}checked{% endif %}
+                       hx-post="{{ _post }}"
+                       hx-trigger="change"
+                       hx-target="#roles-list"
+                       hx-swap="innerHTML"
+                       hx-include="closest tr [type='checkbox']"
+                       hx-vals='{{ _vals }}'>
+              </td>
+              <td>
+                <input type="checkbox" name="can_force_stop" value="true"
+                       {% if m.can_force_stop %}checked{% endif %}
+                       hx-post="{{ _post }}"
+                       hx-trigger="change"
+                       hx-target="#roles-list"
+                       hx-swap="innerHTML"
+                       hx-include="closest tr [type='checkbox']"
+                       hx-vals='{{ _vals }}'>
+              </td>
+              <td>
+                <input type="checkbox" name="can_edit_config" value="true"
+                       {% if m.can_edit_config %}checked{% endif %}
+                       hx-post="{{ _post }}"
+                       hx-trigger="change"
+                       hx-target="#roles-list"
+                       hx-swap="innerHTML"
+                       hx-include="closest tr [type='checkbox']"
+                       hx-vals='{{ _vals }}'>
+              </td>
             </tr>
           {% endfor %}
         </tbody>

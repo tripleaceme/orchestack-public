@@ -1,8 +1,5 @@
 {% extends "base.html" %}
 
-{# Word-for-word translation of docs/mockups/approved/roles.html.
-   Header + right-aligned + New role button + HTMX-loaded role-card list. #}
-
 {% block content %}
 <style>
   .new-role-toolbar {
@@ -34,8 +31,7 @@
   <h1>Roles</h1>
   <p class="lede">
     Each role declares which services its members can Start, Use, Force-stop, and Edit config for.
-    Assign roles to users on the
-    <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
+    Assign roles to users on the <a href="{{ url_for('users_page') }}" style="color: var(--navy); text-decoration: underline;">Users page</a>.
   </p>
 
   {# Toolbar: role selector + + New role button. The select changes
