@@ -1,203 +1,224 @@
 {#
-  Roles list + per-role permission matrix.
-
-  Each role renders as an expandable card. The expanded view shows existing
-  service-permission grants as a small table, plus an inline "+ Add service
-  permission" form with:
-    - service dropdown (from the orchestrator's catalogue + a '*' wildcard)
-    - four permission checkboxes
-    - submit button
-
-  Posting the form upserts the (role_id, service_name) row — if the role
-  already had permissions on that service, the new values overwrite the
-  old ones (that's the "Update" semantics the operator gets from re-saving).
+  Roles list fragment. Phase 3.7 redesign: each role is a .surface card
+  with a header (name + built-in badge + delete) and a body (capability
+  matrix table + add-permission form). All HTMX bindings preserved.
 #}
 {% if error %}
-  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 mb-4">
-    <strong class="font-semibold">Couldn't load roles.</strong>
-    <span class="text-red-700"> {{ error }}</span>
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
+    <strong>Couldn't load roles.</strong> {{ error }}
   </div>
 {% endif %}
 
+<style>
+  .role-card { padding: 22px 24px; }
+  .role-card .role-head {
+    display: flex; justify-content: space-between; align-items: start;
+    margin-bottom: 6px;
+  }
+  .role-card .role-name {
+    font-size: 17px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .role-card .role-desc {
+    color: var(--text-2); font-size: 13px; line-height: 1.5;
+    max-width: 720px; margin: 0 0 16px;
+  }
+  .matrix {
+    width: 100%; border-collapse: collapse; margin: 8px 0 14px;
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .matrix thead { background: var(--bg); }
+  .matrix th, .matrix td {
+    padding: 9px 12px; font-size: 12px; border-bottom: 1px solid var(--border);
+    text-align: center; color: var(--text);
+  }
+  .matrix th:first-child, .matrix td:first-child {
+    text-align: left; font-weight: 500;
+  }
+  .matrix th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--text-2); font-weight: 600;
+  }
+  .matrix tr:last-child td { border-bottom: none; }
+  .matrix .check { color: var(--success); font-size: 14px; font-weight: 700; }
+  .matrix .deny  { color: #cbd5e1; font-size: 14px; }
+  .matrix .row-actions { text-align: right; }
+
+  .add-perm-form {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px;
+    display: grid; grid-template-columns: 2fr repeat(4, 1fr) auto; gap: 12px;
+    align-items: end;
+  }
+  .add-perm-form label .lbl {
+    display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .add-perm-form select {
+    width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: 6px; font-size: 13px;
+    color: var(--text); font-family: inherit;
+  }
+  .add-perm-form .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .add-perm-form input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--navy); margin: 0; }
+
+  .create-role-form {
+    display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 12px;
+    align-items: end; padding: 16px 18px;
+  }
+  .create-role-form label .lbl {
+    display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .create-role-form input {
+    width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+    background: var(--bg); border-radius: 6px; font-size: 13px;
+    color: var(--text); font-family: inherit;
+  }
+</style>
+
 {# --------------------- Create-role form --------------------- #}
-<form hx-post="{{ url_for('roles_create_action') }}"
-      hx-target="#roles-list" hx-swap="innerHTML"
-      class="bg-[var(--surface)] border border-[var(--border)] rounded-lg p-4 mb-6
-             grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">New role name</span>
-    <input type="text" name="name" required minlength="1" maxlength="64"
-           placeholder="e.g. Junior Analyst"
-           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
-  </label>
-  <label class="block">
-    <span class="text-xs font-medium text-[var(--text-2)]">Description (optional)</span>
-    <input type="text" name="description"
-           placeholder="What this role is for"
-           class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white" />
-  </label>
-  <button type="submit"
-          class="text-sm font-medium px-3 py-1.5 rounded
-                 bg-[var(--navy)] text-white hover:bg-[var(--navy-2)] transition-colors">
-    + Create role
-  </button>
-</form>
-
-{# --------------------- Role cards --------------------- #}
-<div class="space-y-4">
-  {% for role in roles %}
-    <article class="bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-      <header class="p-4 border-b border-[var(--border)] flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-base font-semibold text-[var(--text)] flex items-center gap-2">
-            {{ role.name }}
-            {% if role.is_system %}
-              <span class="text-[10px] uppercase tracking-wide font-semibold
-                           px-1.5 py-0.5 rounded
-                           bg-slate-100 text-slate-600 border border-slate-200">
-                built-in
-              </span>
-            {% endif %}
-          </h3>
-          {% if role.description %}
-            <p class="text-xs text-[var(--text-2)] mt-0.5">{{ role.description }}</p>
-          {% endif %}
-        </div>
-        {% if not role.is_system %}
-          <button hx-delete="{{ url_for('roles_delete_action', role_id=role.id) }}"
-                  hx-target="#roles-list" hx-swap="innerHTML"
-                  hx-confirm="Delete role '{{ role.name }}'? Users currently assigned this role will lose its permissions immediately."
-                  class="text-xs font-medium text-[var(--text-2)] hover:text-red-700
-                         underline-offset-2 hover:underline flex-shrink-0">
-            Delete role
-          </button>
-        {% endif %}
-      </header>
-
-      <div class="p-4">
-        {# Existing permissions for this role. #}
-        {% set role_perms = perms_by_role.get(role.id, []) %}
-        {% if role_perms %}
-          <p class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide mb-2">
-            Current grants
-          </p>
-          <div class="overflow-x-auto mb-4">
-            <table class="w-full text-xs">
-              <thead class="text-[var(--text-2)]">
-                <tr>
-                  <th class="text-left px-2 py-1 font-medium">Service</th>
-                  <th class="text-center px-2 py-1 font-medium">Start</th>
-                  <th class="text-center px-2 py-1 font-medium">Use</th>
-                  <th class="text-center px-2 py-1 font-medium">Force-stop</th>
-                  <th class="text-center px-2 py-1 font-medium">Edit&nbsp;config</th>
-                  <th class="text-right px-2 py-1 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-[var(--border)]">
-                {% for p in role_perms %}
-                  <tr>
-                    <td class="px-2 py-1.5">
-                      {% if p.service_name == '*' %}
-                        <span class="font-mono font-semibold">* (all services)</span>
-                      {% else %}
-                        <span class="font-mono">{{ p.service_name }}</span>
-                      {% endif %}
-                    </td>
-                    <td class="px-2 py-1.5 text-center">
-                      {{ '✓' if p.can_start else '—' }}
-                    </td>
-                    <td class="px-2 py-1.5 text-center">
-                      {{ '✓' if p.can_use else '—' }}
-                    </td>
-                    <td class="px-2 py-1.5 text-center">
-                      {{ '✓' if p.can_force_stop else '—' }}
-                    </td>
-                    <td class="px-2 py-1.5 text-center">
-                      {{ '✓' if p.can_edit_config else '—' }}
-                    </td>
-                    <td class="px-2 py-1.5 text-right">
-                      <button hx-delete="{{ url_for('roles_revoke_permission_action', permission_id=p.id) }}"
-                              hx-target="#roles-list" hx-swap="innerHTML"
-                              hx-confirm="Revoke this permission grant?"
-                              class="text-xs text-[var(--text-2)] hover:text-red-700
-                                     underline-offset-2 hover:underline">
-                        Revoke
-                      </button>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="text-xs text-[var(--text-2)] italic mb-4">
-            No service permissions yet. Add one below — without grants this
-            role can sign in but can't start, use, or configure any
-            services.
-          </p>
-        {% endif %}
-
-        {# --------------------- Grant new permission form --------------------- #}
-        <p class="text-xs font-medium text-[var(--text-2)] uppercase tracking-wide mb-2">
-          Add service permission
-        </p>
-        <form hx-post="{{ url_for('roles_grant_permission_action', role_id=role.id) }}"
-              hx-target="#roles-list" hx-swap="innerHTML"
-              class="bg-[var(--bg)] border border-[var(--border)] rounded-md p-3
-                     grid grid-cols-1 lg:grid-cols-6 gap-3 items-end">
-          <label class="block lg:col-span-2">
-            <span class="text-xs font-medium text-[var(--text-2)]">Service</span>
-            {# Already-granted services hidden from the picker — a single
-               row per service per role is the data model, so re-picking
-               would conflict on save. The wildcard "* (all services)"
-               option also disappears once any concrete service has been
-               assigned (the wildcard means EVERY service, mixing the
-               two would be confusing). #}
-            {% set granted_names = role_perms | map(attribute='service_name') | list %}
-            <select name="service_name" required
-                    class="mt-1 w-full text-sm border border-[var(--border)] rounded px-2 py-1.5 bg-white">
-              {% if '*' not in granted_names and granted_names|length == 0 %}
-                <option value="*">* (all services)</option>
-              {% endif %}
-              {% for svc in services %}
-                {% if svc.name not in granted_names %}
-                  <option value="{{ svc.name }}">{{ svc.display_name }}</option>
-                {% endif %}
-              {% endfor %}
-            </select>
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="can_start" value="true"
-                   class="w-4 h-4 accent-[var(--navy)]">
-            <span>can_start</span>
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="can_use" value="true"
-                   class="w-4 h-4 accent-[var(--navy)]">
-            <span>can_use</span>
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="can_force_stop" value="true"
-                   class="w-4 h-4 accent-[var(--navy)]">
-            <span>can_force_stop</span>
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="can_edit_config" value="true"
-                   class="w-4 h-4 accent-[var(--navy)]">
-            <span>can_edit_config</span>
-          </label>
-          <button type="submit"
-                  class="text-sm font-medium px-3 py-1.5 rounded
-                         bg-[var(--navy)] text-white
-                         hover:bg-[var(--navy-2)] transition-colors lg:col-span-1">
-            Save
-          </button>
-        </form>
-      </div>
-    </article>
-  {% endfor %}
+<div class="surface">
+  <div class="surface-head">
+    <h2>Create a new role</h2>
+    <span class="sub">Name + optional description · grant permissions below after saving</span>
+  </div>
+  <form hx-post="{{ url_for('roles_create_action') }}"
+        hx-target="#roles-list" hx-swap="innerHTML"
+        class="create-role-form">
+    <label>
+      <span class="lbl">Role name</span>
+      <input type="text" name="name" required minlength="1" maxlength="64" placeholder="e.g. Junior Analyst">
+    </label>
+    <label>
+      <span class="lbl">Description (optional)</span>
+      <input type="text" name="description" placeholder="What this role is for">
+    </label>
+    <button type="submit" class="btn btn-primary">+ Create role</button>
+  </form>
 </div>
 
-<p class="text-xs text-[var(--text-2)] mt-4">
+{# --------------------- Role cards --------------------- #}
+{% for role in roles %}
+  <div class="surface role-card">
+    <div class="role-head">
+      <div>
+        <div class="role-name">
+          {{ role.name }}
+          {% if role.is_system %}
+            <span class="pill pill-neutral">built-in</span>
+          {% endif %}
+        </div>
+        <div class="muted" style="font-size: 12px;">
+          Members: <strong style="color: var(--text);">{{ role.member_count if role.member_count is defined else '—' }}</strong>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        {% if not role.is_system %}
+          <button class="btn btn-sm btn-danger"
+                  hx-delete="{{ url_for('roles_delete_action', role_id=role.id) }}"
+                  hx-target="#roles-list" hx-swap="innerHTML"
+                  hx-confirm="Delete role '{{ role.name }}'? Users currently assigned this role will lose its permissions immediately.">
+            Delete
+          </button>
+        {% else %}
+          <button class="btn btn-sm btn-ghost" disabled>Built-in</button>
+        {% endif %}
+      </div>
+    </div>
+    {% if role.description %}
+      <p class="role-desc">{{ role.description }}</p>
+    {% endif %}
+
+    {# Capability matrix. Existing permissions for this role. #}
+    {% set role_perms = perms_by_role.get(role.id, []) %}
+    {% if role_perms %}
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Start</th>
+            <th>Use</th>
+            <th>Force-stop</th>
+            <th>Edit config</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in role_perms %}
+            <tr>
+              <td>
+                {% if p.service_name == '*' %}
+                  <span class="font-mono"><strong>* (all services)</strong></span>
+                {% else %}
+                  <span class="font-mono">{{ p.service_name }}</span>
+                {% endif %}
+              </td>
+              <td><span class="{{ 'check' if p.can_start else 'deny' }}">{{ '✓' if p.can_start else '—' }}</span></td>
+              <td><span class="{{ 'check' if p.can_use else 'deny' }}">{{ '✓' if p.can_use else '—' }}</span></td>
+              <td><span class="{{ 'check' if p.can_force_stop else 'deny' }}">{{ '✓' if p.can_force_stop else '—' }}</span></td>
+              <td><span class="{{ 'check' if p.can_edit_config else 'deny' }}">{{ '✓' if p.can_edit_config else '—' }}</span></td>
+              <td class="row-actions">
+                <button class="btn btn-sm btn-ghost"
+                        hx-delete="{{ url_for('roles_revoke_permission_action', permission_id=p.id) }}"
+                        hx-target="#roles-list" hx-swap="innerHTML"
+                        hx-confirm="Revoke this permission grant?"
+                        style="color: #b91c1c;">
+                  Revoke
+                </button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="font-size: 12px; font-style: italic; margin: 0 0 12px;">
+        No service permissions yet. Without grants this role can sign in but can't start, use, or configure any services.
+      </p>
+    {% endif %}
+
+    {# Grant new permission form. #}
+    <form hx-post="{{ url_for('roles_grant_permission_action', role_id=role.id) }}"
+          hx-target="#roles-list" hx-swap="innerHTML"
+          class="add-perm-form">
+      <label>
+        <span class="lbl">Service</span>
+        {% set granted_names = role_perms | map(attribute='service_name') | list %}
+        <select name="service_name" required>
+          {% if '*' not in granted_names and granted_names|length == 0 %}
+            <option value="*">* (all services)</option>
+          {% endif %}
+          {% for svc in services %}
+            {% if svc.name not in granted_names %}
+              <option value="{{ svc.name }}">{{ svc.display_name }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="can_start" value="true">
+        <span class="font-mono">can_start</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="can_use" value="true">
+        <span class="font-mono">can_use</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="can_force_stop" value="true">
+        <span class="font-mono">can_force_stop</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="can_edit_config" value="true">
+        <span class="font-mono">can_edit_config</span>
+      </label>
+      <button type="submit" class="btn btn-primary">+ Grant</button>
+    </form>
+  </div>
+{% endfor %}
+
+<p class="muted" style="font-size: 12px; margin-top: 12px; text-align: right;">
   {{ roles | length }} role{{ '' if roles | length == 1 else 's' }}.
 </p>

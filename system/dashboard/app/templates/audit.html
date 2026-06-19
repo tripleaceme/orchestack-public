@@ -4,9 +4,8 @@
   <div class="breadcrumb">Workspace / Audit</div>
   <h1 class="page-title">Audit log</h1>
   <p class="lede">
-    Append-only record of every privileged action — service starts/stops,
-    credential edits, sign-ins, role grants, setup deploys. Filter by
-    event type, target service, or date range.
+    Every state change (service starts/stops, credential edits, sign-ins, role grants) are recorded by OrcheStack. 
+    Filter by event type, target service, or actor.
   </p>
 
   <form id="audit-filters"
@@ -61,10 +60,10 @@
               style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
                      background: var(--bg); border-radius: 6px; font-size: 13px;
                      color: var(--text); font-family: inherit;">
-        <option value="20" selected>20</option>
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
         <option value="50">50</option>
         <option value="100">100</option>
-        <option value="200">200</option>
       </select>
     </label>
   </form>

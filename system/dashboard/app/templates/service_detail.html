@@ -7,7 +7,9 @@
 
   {% if service %}
     {% set is_running = service.state == "running" %}
+    {% set is_pinned  = service.pinned %}
 
+    {# === Header card === #}
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
                 padding: 24px 28px; margin-bottom: 18px;
                 display: grid; grid-template-columns: 1fr auto; gap: 24px;">
@@ -16,10 +18,34 @@
           <h1 class="page-title" style="margin: 0;">{{ service.display_name }}</h1>
           <span class="pill {{ 'pill-hot' if service.tier == 'hot' else 'pill-cold' }}">{{ service.tier }}</span>
           <span class="pill {{ 'pill-success' if is_running else 'pill-neutral' }}">{{ 'running' if is_running else 'stopped' }}</span>
+          {% if is_pinned %}<span class="pill pill-warn">pinned</span>{% endif %}
         </div>
-        <div style="color: var(--text-2); font-size: 13px; margin-top: 6px;">
-          <span class="font-mono">{{ service.layer or service.name }}</span>
-          {% if service.container %} · <span class="font-mono">{{ service.container }}</span>{% endif %}
+        <div style="color: var(--text-2); font-size: 13px;">
+          {{ service.description if service.description else service.layer | replace('-', ' ') | title }}
+        </div>
+        <div style="display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap;">
+          <div>
+            <div style="font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px;">Layer</div>
+            <div class="font-mono" style="font-size: 13px;">{{ service.layer or '—' }}</div>
+          </div>
+          {% if service.container %}
+          <div>
+            <div style="font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px;">Container</div>
+            <div class="font-mono" style="font-size: 13px;">{{ service.container }}</div>
+          </div>
+          {% endif %}
+          {% if service.image %}
+          <div>
+            <div style="font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px;">Image</div>
+            <div class="font-mono" style="font-size: 13px;">{{ service.image }}</div>
+          </div>
+          {% endif %}
+          {% if is_pinned and service.pin_expires_at %}
+          <div>
+            <div style="font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 3px;">Pin expires</div>
+            <div class="font-mono" style="font-size: 13px;">{{ service.pin_expires_at[:19] }}</div>
+          </div>
+          {% endif %}
         </div>
       </div>
       <div style="display: flex; flex-direction: column; gap: 8px; align-self: start; min-width: 160px;">
@@ -40,19 +66,70 @@
                   hx-post="{{ url_for('stop_service_action', name=service.name) }}"
                   hx-confirm="Stop {{ service.display_name }}? Active sessions will be ended."
                   hx-swap="none">Stop</button>
+        {% elif not is_running and service.configured and service.managed %}
+          <button class="btn btn-primary"
+                  hx-post="{{ url_for('start_service_action', name=service.name) }}"
+                  hx-swap="none">Start</button>
         {% endif %}
       </div>
     </div>
 
-    {# Two-column layout: Recent activity (wide) + Pin card (narrow). #}
-    <div style="display: grid; grid-template-columns: 1fr 320px; gap: 18px;">
+    {# === Two-column body === #}
+    <div style="display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start;">
+
+      {# LEFT COLUMN: Filter bar + Recent activity + Sessions list #}
       <div>
+        {# Audit-style filter bar scoped to this service. The form
+           submits via HTMX to the same audit endpoint with target
+           pre-set to this service. #}
+        <form id="svc-activity-filters"
+              hx-get="{{ url_for('audit_table_fragment') }}"
+              hx-target="#svc-activity"
+              hx-swap="innerHTML"
+              hx-trigger="change from:input, change from:select, submit"
+              style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+                     padding: 14px 16px; margin-bottom: 16px;
+                     display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+
+          {# Target is locked to this service — hidden input. #}
+          <input type="hidden" name="target" value="{{ service_name }}">
+
+          <label style="display: block;">
+            <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Event</div>
+            <input type="text" name="event_type" placeholder="e.g. service.start"
+                   style="width: 100%; padding: 7px 11px; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit;">
+          </label>
+
+          <label style="display: block;">
+            <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Since</div>
+            <input type="datetime-local" name="since"
+                   style="width: 100%; padding: 7px 11px; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; font-size: 12px; color: var(--text); font-family: 'JetBrains Mono', monospace;">
+          </label>
+
+          <label style="display: block;">
+            <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Until</div>
+            <input type="datetime-local" name="until"
+                   style="width: 100%; padding: 7px 11px; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; font-size: 12px; color: var(--text); font-family: 'JetBrains Mono', monospace;">
+          </label>
+
+          <label style="display: block;">
+            <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Per page</div>
+            <select name="limit"
+                    style="width: 100%; padding: 7px 11px; border: 1px solid var(--border); background: var(--bg); border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit;">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </label>
+        </form>
+
         <div class="surface">
           <div class="surface-head">
             <h2>Recent activity</h2>
-            <span class="sub">Filtered to this service</span>
+            <span class="sub">Audit events scoped to this service</span>
           </div>
-          <div hx-get="{{ url_for('audit_table_fragment') }}?target={{ service_name }}&limit=20"
+          <div id="svc-activity"
+               hx-get="{{ url_for('audit_table_fragment') }}?target={{ service_name }}&limit=10"
                hx-trigger="load delay:50ms"
                hx-swap="innerHTML"
                style="min-height: 120px;">
@@ -61,6 +138,7 @@
         </div>
       </div>
 
+      {# RIGHT COLUMN: Pin card + Connection card #}
       <div>
         <div class="surface">
           <div class="surface-head">
@@ -75,6 +153,23 @@
             </div>
           </div>
         </div>
+
+        {# Connection info card — only shown for services with a known external URL. #}
+        {% if is_running and (service.external_url or service.name in ['metabase', 'airflow', 'openmetadata', 'minio', 'airbyte', 'pgadmin', 'dbt', 'ge']) %}
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Connection</h2>
+          </div>
+          <div class="surface-body">
+            {% set _host = request.url.hostname or 'localhost' %}
+            {% set _tool_url = service.external_url|replace('{host}', _host)
+                               if service.external_url
+                               else 'http://' ~ _host ~ (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+            <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Operator URL</div>
+            <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; word-break: break-all;">{{ _tool_url }}</div>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
 

@@ -4,9 +4,8 @@
   <div class="breadcrumb">Account / Profile</div>
   <h1 class="page-title">My profile</h1>
   <p class="lede">
-    Update your own account details. Username is locked — only an Admin
-    can rename a user (changing it would orphan audit-log references).
-    Email and password changes take effect immediately.
+    Manage your name, email, company, and password. Username is fixed once set. 
+    So pick something you'll be happy with on the audit log.
   </p>
 
   {% if error %}
@@ -38,6 +37,24 @@
         <span class="sub">Changes write to platform.users immediately</span>
       </div>
       <div class="form-grid">
+
+        <div style="display: flex; align-items: center; gap: 16px; padding-bottom: 22px;
+                    margin-bottom: 8px; border-bottom: 1px solid var(--border);">
+          <div style="width: 56px; height: 56px; border-radius: 999px;
+                      background: var(--navy); color: #fff; display: grid;
+                      place-items: center; font-weight: 600; font-size: 22px; flex-shrink: 0;">
+            {{ (profile.full_name or profile.username or 'U')[:1] | upper }}
+          </div>
+          <div style="font-size: 13px; color: var(--text-2);">
+            <div style="color: var(--text); font-weight: 600; font-size: 15px; margin-bottom: 2px;">
+              {{ profile.full_name or profile.username }}
+            </div>
+            <div style="font-family: 'JetBrains Mono', monospace;">
+              @{{ profile.username }} · {{ profile.email or 'no email' }}
+              {% if profile.created_at %} · joined {{ profile.created_at[:10] }}{% endif %}
+            </div>
+          </div>
+        </div>
 
         <div class="form-row">
           <label>Username
@@ -101,4 +118,34 @@
       </div>
     </div>
   </form>
+
+  {# Session info — appears OUTSIDE the form so its fields aren't submitted. #}
+  <div class="surface">
+    <div class="surface-head">
+      <h2>This session</h2>
+      <span class="sub">Sign out everywhere from the sidebar</span>
+    </div>
+    <div style="display: flex; gap: 24px; padding: 18px 24px; flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 140px;">
+        <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px;">Signed in</div>
+        <div class="font-mono" style="font-size: 13px;">{{ session_info.signed_in_at[:19] if session_info and session_info.signed_in_at else '—' }}</div>
+      </div>
+      <div style="flex: 1; min-width: 120px;">
+        <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px;">IP</div>
+        <div class="font-mono" style="font-size: 13px;">{{ session_info.ip if session_info else (request.client.host if request.client else '—') }}</div>
+      </div>
+      <div style="flex: 2; min-width: 160px;">
+        <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px;">User agent</div>
+        <div class="font-mono" style="font-size: 12px;">{{ (session_info.user_agent if session_info and session_info.user_agent else (request.headers.get('user-agent') or '—'))[:60] }}</div>
+      </div>
+      <div style="flex: 1; min-width: 120px;">
+        <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px;">Roles</div>
+        <div class="font-mono" style="font-size: 13px;">{{ profile.roles | join(', ') if profile.roles else 'none' }}</div>
+      </div>
+    </div>
+  </div>
 {% endblock %}

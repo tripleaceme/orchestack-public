@@ -359,10 +359,64 @@ async def healthz() -> str:
 # ===========================================================================
 @app.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """Service grid + platform health card."""
+    """Service grid + KPI strip + platform health card.
+
+    KPI aggregation: fetch the four overview metrics so the KPI strip
+    on index.html shows real numbers, not placeholders. We don't HTMX-poll
+    them — they refresh on every page load alongside the grid's first
+    fetch. If the orchestrator is unreachable, render dashes rather
+    than crash; the user sees the layout intact + the dashboard
+    connection indicator tells them why the numbers are blank.
+    """
+    # KPI 1+2: services running + total. From the orchestrator's list_services.
+    services_running = 0
+    services_total = 0
+    try:
+        svc_data = await orchestrator.list_services()
+        all_services = svc_data.get("services", [])
+        configured = [s for s in all_services if s.get("configured")]
+        services_total = len(configured)
+        services_running = sum(1 for s in configured if s.get("state") == "running")
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("home KPI list_services failed: %s", e)
+
+    # KPI 3: active sessions count.
+    active_sessions = 0
+    try:
+        sess_data = await orchestrator.list_sessions(limit=200, offset=0)
+        active_sessions = len(sess_data.get("sessions", []))
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("home KPI list_sessions failed: %s", e)
+
+    # KPI 4: last audit event (most recent one). Single row from /audit.
+    last_event_type = None
+    last_event_when = None
+    try:
+        audit_data = await orchestrator.list_audit(limit=1, offset=0)
+        events = audit_data.get("events", [])
+        if events:
+            last_event_type = events[0].get("event_type")
+            last_event_when = events[0].get("created_at")
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("home KPI list_audit failed: %s", e)
+
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "page_title": "Home", "user": user},
+        {
+            "request": request, "page_title": "Home", "user": user,
+            "kpi": {
+                "services_running": services_running,
+                "services_total":   services_total,
+                "active_sessions":  active_sessions,
+                "last_event_type":  last_event_type,
+                "last_event_when":  last_event_when,
+            },
+            # Sidebar shows N / M deployed; reuses the same data.
+            "sidebar_counts": {
+                "configured": services_total,
+                "total":      services_total + (svc_data.get("unconfigured_count", 0) if 'svc_data' in dir() else 0),
+            } if services_total else None,
+        },
     )
 
 
@@ -1585,12 +1639,13 @@ async def session_close(token: str) -> Response:
 @app.get("/api/dashboard/sessions/active", response_class=HTMLResponse,
           name="sessions_active_fragment")
 async def sessions_active_fragment(
-    request: Request, limit: int = 20, offset: int = 0,
+    request: Request, limit: int = 10, offset: int = 0,
 ) -> HTMLResponse:
     """Render the active-sessions table fragment (polled every 10s).
 
-    Page size defaults to 20 to keep the polled response small; operator
-    can bump via the page-size selector on the sessions page.
+    Page size defaults to 10 to keep the polled response small + the
+    table compact. Operator can bump via the page-size selector on the
+    sessions page.
     """
     try:
         data = await orchestrator.list_sessions(active=True, limit=limit, offset=offset)
@@ -1624,7 +1679,7 @@ async def audit_table_fragment(
     request: Request,
     event_type: str | None = None, target: str | None = None,
     since: str | None = None, until: str | None = None,
-    limit: int = 20, offset: int = 0,
+    limit: int = 10, offset: int = 0,
 ) -> HTMLResponse:
     """Render the audit-log table fragment with optional filters."""
     try:

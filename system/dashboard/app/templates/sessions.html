@@ -9,31 +9,63 @@
     disappear from this list automatically.
   </p>
 
-  {#
-    Page-size selector. Lives outside the polled fragment so its value
-    survives the every-10s reload. `hx-include` pulls the dropdown into
-    the polled request as a `limit` query param.
-  #}
+  {# Filter form — matches the audit page pattern. All filters are
+     client-side (just the rows we render) for now; M5+ wires them
+     server-side via query params. #}
   <form id="sessions-controls"
         hx-get="{{ url_for('sessions_active_fragment') }}"
         hx-target="#sessions-table"
         hx-swap="innerHTML"
-        hx-trigger="change from:select"
+        hx-trigger="change from:input, change from:select"
         style="background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-               padding: 12px 16px; margin-bottom: 16px;
-               display: inline-flex; align-items: center; gap: 12px;">
-    <label style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
-                  letter-spacing: 0.6px; font-weight: 600;">
-      Rows per page
+               padding: 14px 16px; margin-bottom: 16px;
+               display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Service</div>
+      <input type="text" name="service" placeholder="e.g. openmetadata"
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 13px;
+                    color: var(--text); font-family: inherit;">
     </label>
-    <select name="limit"
-            style="padding: 6px 10px; border: 1px solid var(--border); background: var(--bg);
-                   border-radius: 5px; font-size: 13px; color: var(--text); font-family: inherit;">
-      <option value="20" selected>20</option>
-      <option value="50">50</option>
-      <option value="100">100</option>
-      <option value="200">200</option>
-    </select>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">User</div>
+      <input type="text" name="user" placeholder="e.g. ayoade"
+             style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                    background: var(--bg); border-radius: 6px; font-size: 13px;
+                    color: var(--text); font-family: inherit;">
+    </label>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Idle threshold</div>
+      <select name="idle"
+              style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                     background: var(--bg); border-radius: 6px; font-size: 13px;
+                     color: var(--text); font-family: inherit;">
+        <option value="">All</option>
+        <option value="60">&gt; 1 min</option>
+        <option value="300">&gt; 5 min (at risk)</option>
+        <option value="600">&gt; 10 min</option>
+      </select>
+    </label>
+
+    <label style="display: block;">
+      <div style="font-size: 11px; color: var(--text-2); text-transform: uppercase;
+                  letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;">Per page</div>
+      <select name="limit"
+              style="width: 100%; padding: 7px 11px; border: 1px solid var(--border);
+                     background: var(--bg); border-radius: 6px; font-size: 13px;
+                     color: var(--text); font-family: inherit;">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </label>
   </form>
 
   <div id="sessions-table"
