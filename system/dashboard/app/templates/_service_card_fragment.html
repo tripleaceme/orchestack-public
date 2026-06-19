@@ -134,15 +134,21 @@
     {% elif is_running %}
       {% set _host = request.url.hostname or 'localhost' %}
       {% if service.actions %}
-        {# Multi-action service (dbt, GE): one button per action, stacked. #}
-        {% for action in service.actions %}
-          {% set _action_url = action.external_url|replace('{host}', _host)
-                               if action.external_url
-                               else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
-          <a href="{{ _action_url }}" target="_blank" rel="noopener noreferrer"
-             onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}', '{{ action.key }}'); return false;"
-             class="svc-btn svc-btn-primary">{{ action.label }}</a>
-        {% endfor %}
+        {# Multi-action service (dbt, GE): one button per action.
+           Renders side-by-side in a .btn-row so the card height matches
+           single-action cards on the same row of the grid — stacking
+           them vertically pushed the card ~40px taller than its
+           neighbours and broke the grid's visual rhythm. #}
+        <div class="btn-row">
+          {% for action in service.actions %}
+            {% set _action_url = action.external_url|replace('{host}', _host)
+                                 if action.external_url
+                                 else (request.scope.root_path or '/app') ~ '/' ~ service.name %}
+            <a href="{{ _action_url }}" target="_blank" rel="noopener noreferrer"
+               onclick="event.preventDefault(); orchestackOpenService('{{ service.name }}', '{{ action.key }}'); return false;"
+               class="svc-btn svc-btn-primary">{{ action.label }}</a>
+          {% endfor %}
+        </div>
       {% else %}
         {% set _tool_url = service.external_url|replace('{host}', _host)
                            if service.external_url

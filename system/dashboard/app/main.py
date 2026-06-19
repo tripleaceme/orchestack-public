@@ -1217,13 +1217,35 @@ async def service_detail(
     # the active-session set is bounded (capped at MAX_PER_USER × users).
     # NB: orchestrator returns `service`, not `service_name` — match
     # exactly what its /api/sessions schema emits.
+    #
+    # We dedupe by user_id, keeping ONLY the most recent session per
+    # user. The session-lifecycle layer issues a fresh session token
+    # every time the operator opens a new tab against the same tool,
+    # so a single operator browsing dbt across two windows shows up
+    # as two rows even though they're one human. The Open sessions
+    # card answers "who is using this service?" — listing the same
+    # name twice obscures that. Most-recent-per-user keeps the answer
+    # crisp.
     open_sessions = []
     try:
         sess_data = await orchestrator.list_sessions(limit=200, offset=0)
-        open_sessions = [
+        all_for_this_svc = [
             s for s in sess_data.get("sessions", [])
             if s.get("service") == name
         ]
+        latest_by_user: dict = {}
+        for s in all_for_this_svc:
+            uid = s.get("user_id") or s.get("username") or s.get("token")
+            existing = latest_by_user.get(uid)
+            # Compare by last_heartbeat_at if present, else opened_at.
+            new_key = s.get("last_heartbeat_at") or s.get("opened_at") or ""
+            old_key = (
+                (existing.get("last_heartbeat_at") or existing.get("opened_at") or "")
+                if existing else ""
+            )
+            if existing is None or new_key > old_key:
+                latest_by_user[uid] = s
+        open_sessions = list(latest_by_user.values())
     except (httpx.HTTPError, ValueError) as e:
         log.warning("service_detail(%s) list_sessions failed: %s", name, e)
 
