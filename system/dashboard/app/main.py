@@ -580,10 +580,42 @@ async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLRes
 
 @app.get("/audit", response_class=HTMLResponse, name="audit_page")
 async def audit_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """`/app/audit` — paginated audit log with filters."""
+    """`/app/audit` — paginated audit log with filters.
+
+    Populates two dropdowns at first paint:
+      - Event types — distinct event_type values seen in the last 500
+        audit rows (covers the catalogue's currently-active vocabulary
+        without forcing a hard-coded list to stay in sync).
+      - Target services — every catalogue display name (so the operator
+        can filter even for services that haven't fired an event yet).
+    """
+    event_types: list[str] = []
+    try:
+        recent = await orchestrator.list_audit(limit=500, offset=0)
+        event_types = sorted({
+            ev.get("event_type") for ev in recent.get("events", [])
+            if ev.get("event_type")
+        })
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("audit_page event_types fetch failed: %s", e)
+
+    services: list[dict] = []
+    try:
+        svc_data = await orchestrator.list_services()
+        services = sorted(
+            svc_data.get("services", []),
+            key=lambda s: s.get("display_name", ""),
+        )
+    except (httpx.HTTPError, ValueError):
+        pass
+
     return templates.TemplateResponse(
         "audit.html",
-        {"request": request, "page_title": "Audit log", "user": user},
+        {
+            "request": request, "page_title": "Audit log", "user": user,
+            "event_types": event_types,
+            "services": services,
+        },
     )
 
 
