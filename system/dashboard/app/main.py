@@ -1203,6 +1203,39 @@ async def service_detail(
     except (httpx.HTTPError, ValueError) as e:
         log.warning("service_detail(%s) list_sessions failed: %s", name, e)
 
+    # Compute a humanised uptime ("2h 14m", "3m", "1d 4h") from the
+    # orchestrator's started_at ISO string. None when the service isn't
+    # running OR docker ps didn't return started_at (e.g. control-plane
+    # services that don't carry the orchestack.service label).
+    uptime_display = None
+    if svc and svc.get("started_at"):
+        try:
+            from datetime import datetime, timezone
+            # Docker ps's CreatedAt format: "2026-06-18 23:56:55 +0000 UTC"
+            raw = svc["started_at"]
+            # Strip trailing " UTC" / timezone-name segment if present.
+            iso = raw.replace(" UTC", "").strip()
+            # Handle "+0000" vs "+00:00" — datetime.fromisoformat needs the colon.
+            if len(iso) >= 5 and (iso[-5] in "+-") and iso[-3] != ":":
+                iso = iso[:-2] + ":" + iso[-2:]
+            started = datetime.fromisoformat(iso)
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            delta = datetime.now(timezone.utc) - started
+            total_min = int(delta.total_seconds() // 60)
+            days  = total_min // 1440
+            hours = (total_min % 1440) // 60
+            mins  = total_min % 60
+            if days:
+                uptime_display = f"{days}d {hours}h"
+            elif hours:
+                uptime_display = f"{hours}h {mins}m"
+            else:
+                uptime_display = f"{mins}m"
+        except (ValueError, TypeError) as e:
+            log.warning("uptime parse failed for %s started_at=%r: %s",
+                        name, svc.get("started_at"), e)
+
     return templates.TemplateResponse(
         "service_detail.html",
         {
@@ -1211,6 +1244,7 @@ async def service_detail(
             "service": svc,
             "service_name": name,
             "open_sessions": open_sessions,
+            "uptime_display": uptime_display,
             "user": user,
         },
     )

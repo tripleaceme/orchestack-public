@@ -1813,17 +1813,21 @@ async def list_running_services() -> list[dict[str, str]]:
 
     Returns a list of dicts:
         [{"service": "metabase", "container": "orchestack-metabase",
-          "started_at": "2026-06-02T..."}]
+          "started_at": "2026-06-02T...", "image": "metabase/metabase:v0.50.16"}]
 
     The filter `label=orchestack.service` is what scopes us to managed
     services — base control-plane containers (proxy, postgres, auth, etc.)
     don't carry this label so they're invisible to the reconciler.
+
+    We capture `{{.Image}}` alongside the previously-captured fields so
+    the dashboard's service-detail page can show the running image tag
+    in its meta-row (matches the approved mock).
     """
     res = await asyncio.to_thread(
         _run_sync,
         ["docker", "ps",
          "--filter", "label=orchestack.service",
-         "--format", "{{.Label \"orchestack.service\"}}\t{{.Names}}\t{{.CreatedAt}}"],
+         "--format", "{{.Label \"orchestack.service\"}}\t{{.Names}}\t{{.CreatedAt}}\t{{.Image}}"],
         10,
     )
     if not res.ok:
@@ -1831,9 +1835,14 @@ async def list_running_services() -> list[dict[str, str]]:
         return []
     out: list[dict[str, str]] = []
     for line in res.stdout.strip().splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) == 3:
-            out.append({"service": parts[0], "container": parts[1], "started_at": parts[2]})
+        parts = line.split("\t", 3)
+        if len(parts) >= 3:
+            out.append({
+                "service": parts[0],
+                "container": parts[1],
+                "started_at": parts[2],
+                "image": parts[3] if len(parts) == 4 else "",
+            })
     return out
 
 

@@ -79,6 +79,7 @@ async def list_services() -> dict[str, object]:
         # don't carry).
         is_running = is_control_plane or (name in running_by_name)
         pin_row = pinned_by_name.get(name)
+        running_info = running_by_name.get(name, {})
         items.append({
             "name": name,
             "display_name": meta["display_name"],
@@ -91,8 +92,15 @@ async def list_services() -> dict[str, object]:
                 # docker ps reported.
                 f"orchestack-{name.replace('postgresql', 'postgres')}"
                 if is_control_plane and is_running
-                else running_by_name.get(name, {}).get("container")
+                else running_info.get("container")
             ),
+            # `image` and `started_at` come from docker ps for managed
+            # services; control-plane containers don't carry the
+            # orchestack.service label so they don't appear in
+            # running_info — return None for those (dashboard hides the
+            # bit instead of showing em-dash).
+            "image":      running_info.get("image") or None,
+            "started_at": running_info.get("started_at") or None,
             "managed": bool(meta.get("managed", False)),
             "control_plane": is_control_plane,
             "configured": name in configured_names,
