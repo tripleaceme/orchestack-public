@@ -1557,18 +1557,36 @@ async def services_grid_fragment(
 # ===========================================================================
 @app.post("/api/dashboard/services/{name}/start", response_class=HTMLResponse,
            name="start_service_action")
-async def start_service_action(request: Request, name: str) -> HTMLResponse:
-    """Tell the orchestrator to start `name`, return the updated card.
+async def start_service_action(
+    request: Request, name: str, user=Depends(require_user),
+) -> HTMLResponse:
+    """Tell the orchestrator to start `name` AND open a session for the
+    operator, return the updated card.
 
-    Error path: if start fails (orchestrator down, compose error), we
-    re-fetch the service to render its actual current state — the visual
-    cue of the still-stopped dot is the error feedback. Phase 3.6 may add
-    a toast for explicit error feedback.
+    Why both: pressing Start signals "I want to use this." A bare
+    docker-start with no session row left the dashboard's Open sessions
+    card empty for the operator who just started the service —
+    semantically wrong (they're the reason it's running) and
+    operationally bad (the reconciler's idle check would see "no
+    sessions" and try to stop the service right back down again after
+    the IDLE_THRESHOLD elapses).
+
+    We delegate to open_session because it does both jobs atomically:
+      1. INSERT a session row attributed to the operator (or reuse
+         the operator's existing open session — same dedup path as the
+         Open button).
+      2. auto_start=True → docker compose start if not already running.
+
+    Error path: if the orchestrator is unreachable we re-fetch the
+    service to render its actual current state — the visual cue of
+    the still-stopped dot is the error feedback.
     """
     try:
-        await orchestrator.start_service(name)
+        await orchestrator.open_session(
+            name, auto_start=True, user_id=user.get("user_id"),
+        )
     except httpx.HTTPError as e:
-        log.warning("start_service(%s) failed: %s", name, e)
+        log.warning("start_service(%s) via open_session failed: %s", name, e)
     return await _render_card(request, name)
 
 
