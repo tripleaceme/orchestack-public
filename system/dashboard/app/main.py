@@ -811,9 +811,56 @@ async def profile_save_action(
 # ===========================================================================
 @app.get("/users", response_class=HTMLResponse, name="users_page")
 async def users_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    """Users page — aggregates KPI metrics at first paint so the strip
+    isn't blank pre-HTMX-load. The table itself still loads via the
+    HTMX fragment so future updates after invite / role grant can
+    swap just the table without re-rendering the KPI strip.
+    """
+    cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    total_users   = 0
+    admin_count   = 0
+    active_24h    = 0
+    not_signed_in = 0
+    most_recent_login_username = None
+    try:
+        users_data = await orchestrator.admin_list_users(cookie)
+        users = users_data.get("users", [])
+        total_users = len(users)
+        admin_count = sum(1 for u in users if "Admin" in (u.get("roles") or []))
+        # Active in last 24h: last_login_at within 24h of now.
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        for u in users:
+            lla = u.get("last_login_at")
+            if lla:
+                try:
+                    last = datetime.fromisoformat(lla.replace("Z", "+00:00"))
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    if last >= cutoff:
+                        active_24h += 1
+                        if (not most_recent_login_username or
+                                last > datetime.fromisoformat(
+                                    (most_recent_login_username[1] or "").replace("Z", "+00:00")
+                                    if most_recent_login_username[1] else "1970-01-01T00:00:00+00:00")):
+                            most_recent_login_username = (u.get("full_name") or u.get("username"), lla)
+                except (ValueError, TypeError):
+                    pass
+            else:
+                not_signed_in += 1
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("users_page KPI fetch failed: %s", e)
+
     return templates.TemplateResponse(
         "users.html",
-        {"request": request, "page_title": "Users", "user": user},
+        {
+            "request": request, "page_title": "Users", "user": user,
+            "kpi_total":        total_users,
+            "kpi_admins":       admin_count,
+            "kpi_active_24h":   active_24h,
+            "kpi_not_signed":   not_signed_in,
+            "kpi_active_who":   most_recent_login_username[0] if most_recent_login_username else None,
+        },
     )
 
 

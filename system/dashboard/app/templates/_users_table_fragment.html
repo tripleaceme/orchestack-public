@@ -1,7 +1,16 @@
 {#
-  Users table fragment. Phase 3.7 redesign. Renders the invite form, a
-  list of every user with their roles + status, and the one-time
-  starter-password reveal when an invite has just succeeded.
+  Users table fragment — translated word-for-word from
+  docs/mockups/approved/users.html lines 75-156.
+
+  Structure:
+    - Optional banners (error / invite_result / invite_error)
+    - .surface "Invite a new user"  → .invite-form-grid (4 cols + button)
+    - .surface "All users"          → .table rows with:
+        - Avatar circle + name + @username · email
+        - Role pills (admin = red, others = blue)
+        - Status badge (active = green, internal/system = neutral)
+        - Last login (relative: "12s ago" / "3h ago" / "—")
+        - Per-row actions: Edit roles (inline expand) / Disable / Locked
 #}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
@@ -14,7 +23,7 @@
   <div style="background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px;
               padding: 16px 18px; font-size: 13px; color: #064e3b; margin-bottom: 16px;">
     <div style="font-weight: 600;">
-      ✓ Invited <span style="font-family: 'JetBrains Mono', monospace;">{{ invite_result.username }}</span>
+      ✓ Invited <span class="font-mono">{{ invite_result.username }}</span>
       ({{ invite_result.email }}).
       {% if invite_result.roles_granted %}
         Roles granted: {{ invite_result.roles_granted | join(', ') }}.
@@ -40,159 +49,203 @@
 {% endif %}
 
 <style>
-  .invite-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px; align-items: end; padding: 16px 18px;
+  .invite-form-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 0.8fr auto;
+    gap: 12px; padding: 18px 20px; align-items: end;
   }
-  .invite-grid label { display: block; }
-  .invite-grid label .lbl {
-    font-size: 11px; color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px;
+  .invite-form-grid input, .invite-form-grid select {
+    padding: 8px 12px; border: 1px solid var(--border); background: var(--bg);
+    border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit;
+    width: 100%;
   }
-  .invite-grid input, .invite-grid select {
-    width: 100%; padding: 7px 11px; border: 1px solid var(--border);
-    background: var(--bg); border-radius: 6px; font-size: 13px;
-    color: var(--text); font-family: inherit;
+  .invite-form-grid label {
+    display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+    margin-bottom: 5px;
   }
-  .role-pill-inline {
+  .role-pill {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 11px; padding: 2px 8px; border-radius: 999px;
-    background: #ecfdf5; color: #047857; margin-right: 4px; font-weight: 500;
+    background: var(--info-bg); color: #1d4ed8; margin-right: 4px; font-weight: 500;
     font-family: 'JetBrains Mono', monospace;
   }
-  .role-pill-inline button {
+  .role-pill.admin { background: #fef2f2; color: #b91c1c; }
+  .role-pill button {
     background: none; border: none; color: inherit; cursor: pointer;
     line-height: 1; font-size: 12px; padding: 0; margin-left: 2px;
   }
-  .role-pill-inline button:hover { color: #b91c1c; }
+  .role-pill button:hover { color: #b91c1c; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 999px;
+    background: var(--navy); color: #fff;
+    display: inline-grid; place-items: center;
+    font-weight: 600; font-size: 13px; margin-right: 10px;
+    vertical-align: middle; flex-shrink: 0;
+  }
+  .avatar.alt { background: #ea580c; }  /* fallback for system / 2nd actor */
+  .user-cell { display: flex; align-items: center; }
+  .user-meta { display: inline-block; vertical-align: middle; }
+  .grant-role-form { margin-top: 6px; }
   .grant-role-form select {
     font-size: 11px; border: 1px solid var(--border); background: var(--surface);
     border-radius: 4px; padding: 3px 8px; color: var(--text-2);
   }
 </style>
 
-{# --------------------- Invite form --------------------- #}
+{# ============== Invite form ============== #}
 <div class="surface">
   <div class="surface-head">
     <h2>Invite a new user</h2>
     <span class="sub">Invitee gets a one-time starter password revealed here</span>
   </div>
-  <form hx-post="{{ url_for('users_invite_action') }}"
-        hx-target="#users-table"
-        hx-swap="innerHTML"
-        class="invite-grid">
-    <label>
-      <div class="lbl">Username</div>
-      <input type="text" name="username" required minlength="3" maxlength="32"
-             pattern="[a-zA-Z0-9_.\-]+" placeholder="jdoe">
-    </label>
-    <label>
-      <div class="lbl">Email</div>
-      <input type="email" name="email" required placeholder="user@orchestack.local">
-    </label>
-    <label>
-      <div class="lbl">Full name</div>
-      <input type="text" name="full_name" required placeholder="J. Doe">
-    </label>
-    <label>
-      <div class="lbl">Starter role</div>
-      <select name="role_id">
-        <option value="">No role yet</option>
-        {% for r in roles %}
-          <option value="{{ r.id }}">{{ r.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit" class="btn btn-primary">+ Invite user</button>
-  </form>
+  <div class="surface-body tight">
+    <form hx-post="{{ url_for('users_invite_action') }}"
+          hx-target="#users-table"
+          hx-swap="innerHTML"
+          class="invite-form-grid">
+      <div>
+        <label>Username</label>
+        <input type="text" name="username" required minlength="3" maxlength="32"
+               pattern="[a-zA-Z0-9_.\-]+" placeholder="jdoe">
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" name="email" required placeholder="teammate@orchestack.local">
+      </div>
+      <div>
+        <label>Full name</label>
+        <input type="text" name="full_name" required placeholder="Their name">
+      </div>
+      <div>
+        <label>Roles</label>
+        <select name="role_id">
+          <option value="">No role yet</option>
+          {% for r in roles %}
+            <option value="{{ r.id }}">{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="submit">
+        <button type="submit" class="btn btn-primary">Invite</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-{# --------------------- Users table --------------------- #}
+{# ============== Users table ============== #}
 <div class="surface">
   <div class="surface-head">
     <h2>All users</h2>
-    <span class="sub">{{ users | length }} user{{ '' if users | length == 1 else 's' }}</span>
+    <span class="sub">
+      {{ users|length }} user{{ '' if users|length == 1 else 's' }}
+      {% set ns = namespace(admins=0) %}
+      {% for u in users %}{% if 'Admin' in (u.roles or []) %}{% set ns.admins = ns.admins + 1 %}{% endif %}{% endfor %}
+      {% if ns.admins %} · {{ ns.admins }} admin{{ '' if ns.admins == 1 else 's' }}{% endif %}
+    </span>
   </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>User</th>
-        <th>Roles</th>
-        <th>Status</th>
-        <th>Last login</th>
-        <th class="right">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-        <tr style="{{ 'opacity: 0.55;' if not u.is_active else '' }}">
-          <td>
-            <div><strong>{{ u.full_name }}</strong>{% if u.id == current_user_id %} <span class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">· you</span>{% endif %}</div>
-            <div class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-              @{{ u.username }} · {{ u.email }}
-            </div>
-            {% if u.company_name %}
-              <div class="muted" style="font-size: 11px; font-style: italic;">{{ u.company_name }}</div>
-            {% endif %}
-          </td>
-          <td>
-            {% if u.roles %}
-              <div>
-                {% for role_name in u.roles %}
-                  {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
-                  <span class="role-pill-inline">
-                    {{ role_name }}
-                    {% if role and not (u.id == current_user_id and role_name == 'Admin') %}
-                      <button hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
-                              hx-target="#users-table" hx-swap="innerHTML"
-                              hx-confirm="Revoke {{ role_name }} from {{ u.username }}?"
-                              title="Revoke">✕</button>
-                    {% endif %}
-                  </span>
-                {% endfor %}
-              </div>
-            {% else %}
-              <span class="muted" style="font-size: 12px; font-style: italic;">no roles</span>
-            {% endif %}
-            <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
-                  hx-target="#users-table" hx-swap="innerHTML"
-                  hx-trigger="change from:select"
-                  class="grant-role-form" style="margin-top: 6px;">
-              <select name="role_id">
-                <option value="">+ Grant role</option>
-                {% for r in roles %}
-                  {% if r.name not in u.roles %}
-                    <option value="{{ r.id }}">{{ r.name }}</option>
-                  {% endif %}
-                {% endfor %}
-              </select>
-            </form>
-          </td>
-          <td>
-            {% if u.is_active %}
-              <span class="pill pill-success">active</span>
-            {% else %}
-              <span class="pill pill-neutral">disabled</span>
-            {% endif %}
-          </td>
-          <td class="muted" style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">
-            {{ u.last_login_at[:19] if u.last_login_at else 'never' }}
-          </td>
-          <td class="right">
-            {% if u.id != current_user_id %}
-              <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
-                    hx-target="#users-table" hx-swap="innerHTML" style="display: inline;">
-                <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
-                <button type="submit" class="btn btn-sm {{ 'btn-danger' if u.is_active else '' }}">
-                  {{ 'Disable' if u.is_active else 'Enable' }}
-                </button>
-              </form>
-            {% else %}
-              <span class="muted" style="font-size: 11px; font-style: italic;">you</span>
-            {% endif %}
-          </td>
+  <div class="surface-body tight">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Roles</th>
+          <th>Status</th>
+          <th>Last login</th>
+          <th class="right">Actions</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          {% set is_system = u.username == 'system' %}
+          {% set is_self   = u.id == current_user_id %}
+          <tr style="{{ 'opacity: 0.7;' if not u.is_active and not is_system else '' }}">
+            <td>
+              <div class="user-cell">
+                <span class="avatar{{ ' alt' if is_system else '' }}">{{ (u.full_name or u.username or 'U')[:1] | upper }}</span>
+                <div class="user-meta">
+                  <div>
+                    <strong>{{ u.full_name or u.username }}</strong>
+                    {% if is_self %}
+                      <span class="muted font-mono" style="font-size: 12px;">· you</span>
+                    {% elif is_system %}
+                      <span class="muted font-mono" style="font-size: 12px;">· system</span>
+                    {% endif %}
+                  </div>
+                  <div class="muted font-mono" style="font-size: 12px;">
+                    @{{ u.username }} · {{ u.email or 'platform-internal' }}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td>
+              {% if u.roles %}
+                <div>
+                  {% for role_name in u.roles %}
+                    {% set role = roles | selectattr('name', 'equalto', role_name) | first %}
+                    <span class="role-pill{{ ' admin' if role_name == 'Admin' else '' }}">
+                      {{ role_name }}
+                      {% if role and not is_system and not (is_self and role_name == 'Admin') %}
+                        <button hx-delete="{{ url_for('users_revoke_role_action', user_id=u.id, role_id=role.id) }}"
+                                hx-target="#users-table" hx-swap="innerHTML"
+                                hx-confirm="Revoke {{ role_name }} from {{ u.username }}?"
+                                title="Revoke">✕</button>
+                      {% endif %}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="muted" style="font-size: 12px; font-style: italic;">no roles</span>
+              {% endif %}
+              {% if not is_system %}
+                <form hx-post="{{ url_for('users_grant_role_action', user_id=u.id) }}"
+                      hx-target="#users-table" hx-swap="innerHTML"
+                      hx-trigger="change from:select"
+                      class="grant-role-form">
+                  <select name="role_id">
+                    <option value="">+ Grant role</option>
+                    {% for r in roles %}
+                      {% if r.name not in u.roles %}
+                        <option value="{{ r.id }}">{{ r.name }}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </form>
+              {% endif %}
+            </td>
+            <td>
+              {% if is_system %}
+                <span class="badge badge-neutral">internal</span>
+              {% elif u.is_active %}
+                <span class="badge badge-success">active</span>
+              {% else %}
+                <span class="badge badge-neutral">disabled</span>
+              {% endif %}
+            </td>
+            <td class="font-mono" style="font-size: 12px; color: var(--text-2);">
+              {% if u.last_login_at %}
+                {{ u.last_login_at[:16] | replace('T', ' ') }}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td class="right">
+              {% if is_system %}
+                <button class="btn btn-sm btn-ghost" aria-disabled="true" disabled>Locked</button>
+              {% elif is_self %}
+                <span class="muted" style="font-size: 11px; font-style: italic;">you</span>
+              {% else %}
+                <form hx-post="{{ url_for('users_toggle_action', user_id=u.id) }}"
+                      hx-target="#users-table" hx-swap="innerHTML" style="display: inline;">
+                  <input type="hidden" name="enable" value="{{ 'false' if u.is_active else 'true' }}">
+                  <button type="submit" class="btn btn-sm {{ 'btn-danger' if u.is_active else '' }}">
+                    {{ 'Disable' if u.is_active else 'Enable' }}
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>

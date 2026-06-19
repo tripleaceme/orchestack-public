@@ -1,13 +1,64 @@
 {% extends "base.html" %}
 
+{# Word-for-word translation of docs/mockups/approved/users.html.
+   KPI strip + invite form + users table. Invite form and table both
+   live in the HTMX-swapped fragment so a successful invite swaps the
+   table in place with the starter-password reveal banner. #}
+
 {% block content %}
+<style>
+  .invite-form-grid {
+    display: grid; grid-template-columns: 1.4fr 1fr 1.4fr auto;
+    gap: 12px; padding: 18px 20px;
+  }
+  .invite-form-grid input, .invite-form-grid select {
+    padding: 8px 12px; border: 1px solid var(--border); background: var(--bg);
+    border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit;
+    width: 100%;
+  }
+  .invite-form-grid label {
+    display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .invite-form-grid .submit { align-self: end; }
+</style>
+
   <div class="breadcrumb">Configuration / Users</div>
-  <h1 class="page-title">Users</h1>
+  <h1>Users</h1>
   <p class="lede">
-    Operators who can sign into OrcheStack. Adding a user generates a one-time starter password shown to the inviter once. 
-    Roles control which services each operator can Start, Use, Force-stop, and edit config for.
+    Operators who can sign into OrcheStack. Adding a user generates a one-time starter password
+    shown to the inviter once. Roles control which services each operator can Start, Use,
+    Force-stop, and edit config for.
   </p>
 
+  {# KPI strip — server-rendered. Static across HTMX swaps; refreshes
+     on full page navigation. #}
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="label">Total users</div>
+      <div class="value">{{ kpi_total }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Admins</div>
+      <div class="value">{{ kpi_admins }}</div>
+      <div class="delta">full platform access</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Active last 24h</div>
+      <div class="value">{{ kpi_active_24h }}</div>
+      <div class="delta">
+        {% if kpi_active_who %}{{ kpi_active_who }}{% else %}no recent logins{% endif %}
+      </div>
+    </div>
+    <div class="kpi">
+      <div class="label">Invited, not signed in</div>
+      <div class="value">{{ kpi_not_signed }}</div>
+    </div>
+  </div>
+
+  {# Users table + invite form. HTMX-swapped on invite/role/disable
+     actions so the operator sees the new state without full reload. #}
   <div id="users-table"
        hx-get="{{ url_for('users_table_fragment') }}"
        hx-trigger="load delay:50ms"
