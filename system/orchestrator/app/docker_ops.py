@@ -1670,6 +1670,40 @@ async def _bootstrap_openmetadata() -> None:
             output[-300:],
         )
 
+    # ES single-node fix. OM 1.6.x creates every index with
+    # number_of_replicas=1. We run ES single-node, so every replica
+    # shard stays "unassigned" and the cluster sits in yellow. Most
+    # OM queries work in yellow, but a few search code paths (notably
+    # tag_search_index queries used by Domains → Subdomains pages)
+    # return 500 "all shards failed". Setting replicas to 0 — both on
+    # existing indices and on the index template OM uses for new
+    # indices going forward — moves the cluster to green and makes the
+    # search errors stop. Idempotent: applying twice does nothing the
+    # second time.
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        es = "http://orchestack-openmetadata-es:9200"
+        try:
+            r1 = await client.put(
+                f"{es}/_all/_settings",
+                json={"index": {"number_of_replicas": 0}},
+            )
+            r2 = await client.put(
+                f"{es}/_template/orchestack_no_replicas",
+                json={"index_patterns": ["*"],
+                      "settings": {"index": {"number_of_replicas": "0"}}},
+            )
+            if r1.status_code in (200, 201) and r2.status_code in (200, 201):
+                log.info(
+                    "openmetadata bootstrap: ES replicas → 0 (existing + template) — single-node fix applied",
+                )
+            else:
+                log.warning(
+                    "openmetadata bootstrap: ES replica reset returned %d / %d",
+                    r1.status_code, r2.status_code,
+                )
+        except httpx.HTTPError as e:
+            log.warning("openmetadata bootstrap: ES replica reset failed: %s", e)
+
 
 POST_START_HOOKS = {
     "metabase":     _bootstrap_metabase,

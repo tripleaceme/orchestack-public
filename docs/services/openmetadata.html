@@ -175,8 +175,8 @@
     </tr>
     <tr>
       <td><strong>Database</strong></td>
-      <td><code class="inline">data_warehouse</code></td>
-      <td>The warehouse DB. Other DBs in this Postgres (<code class="inline">openmetadata_db</code>, <code class="inline">airflow_db</code>, <code class="inline">airbyte_db</code>, <code class="inline">metabase_db</code>) are each tool's internal storage — don't ingest them, they're noise.</td>
+      <td><code class="inline">your_database_name</code></td>
+      <td>Your DB or any other database you want to ingest. Other DBs in this Postgres (<code class="inline">openmetadata_db</code>, <code class="inline">airflow_db</code>, <code class="inline">airbyte_db</code>, <code class="inline">metabase_db</code>) are each tool's internal storage, so don't ingest them, they're noise.</td>
     </tr>
     <tr>
       <td><strong>Scheme</strong></td>
@@ -224,7 +224,7 @@
     <tr><th>Source</th><th>Host:Port</th><th>Username</th><th>Password env var</th><th>Database</th></tr>
   </thead>
   <tbody>
-    <tr><td>Warehouse (Postgres)</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">warehouse_admin</code></td><td><code class="inline">WAREHOUSE_DB_PASSWORD</code></td><td><code class="inline">data_warehouse</code></td></tr>
+    <tr><td>Database (Postgres)</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">warehouse_admin</code></td><td><code class="inline">WAREHOUSE_DB_PASSWORD</code></td><td><code class="inline">your_database_name</code></td></tr>
     <tr><td>Airbyte internal</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">airbyte_admin</code></td><td><code class="inline">AIRBYTE_DB_PASSWORD</code></td><td><code class="inline">airbyte_db</code></td></tr>
     <tr><td>Airflow metadata</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">airflow_admin</code></td><td><code class="inline">AIRFLOW_DB_PASSWORD</code></td><td><code class="inline">airflow_db</code></td></tr>
     <tr><td>Metabase application</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">metabase_admin</code></td><td><code class="inline">METABASE_DB_PASSWORD</code></td><td><code class="inline">metabase_db</code></td></tr>
@@ -232,7 +232,7 @@
 </table>
 
 <h3 id="ingesting-external">Ingesting an external database (outside OrcheStack)</h3>
-<p>If your warehouse is hosted elsewhere — RDS, Cloud SQL, a colleague's VM — the same connection form takes the external host's reachable hostname or IP. OpenMetadata's ingestion container makes outbound network calls like any other container, so as long as DNS resolves and the firewall allows it, you're good.</p>
+<p>If your warehouse is hosted elsewhere RDS, Cloud SQL, a colleague's VM, the same connection form takes the external host's reachable hostname or IP. OpenMetadata's ingestion container makes outbound network calls like any other container, so as long as DNS resolves and the firewall allows it, you're good.</p>
 <ul>
   <li><strong>Public RDS endpoint:</strong> <code class="inline">my-warehouse.abc123.eu-west-1.rds.amazonaws.com:5432</code></li>
   <li><strong>Internal hostname over VPN:</strong> resolves via your host's DNS; make sure your Docker daemon's DNS is configured to see it (host network not required for outbound).</li>
@@ -241,6 +241,33 @@
 
 <h3 id="scheduling">Scheduling repeat ingestion</h3>
 <p>After the first ingestion succeeds, add a Metadata workflow with a cron schedule (e.g. <code class="inline">0 2 * * *</code> for nightly at 02:00). The ingestion runs inside the <code class="inline">orchestack-openmetadata-ingestion</code> sidecar (Airflow under the hood), so it survives across OM server restarts.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table class="docs-table">
+  <thead>
+    <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Popup: <em>"Search failed due to Elasticsearch exception [type=search_phase_execution_exception, reason=all shards failed]"</em> when browsing Domains, Tags, or Glossary pages.</td>
+      <td>OM creates every search index with <code class="inline">number_of_replicas=1</code>. OrcheStack runs Elasticsearch single-node, so replicas can never be allocated and the cluster sits in <strong>yellow</strong>. Most queries still work in yellow, but a few search paths return 500.</td>
+      <td>The OM bootstrap hook applies the fix automatically on every service start (drops replicas to 0 on existing indices + future ones). To apply manually if the popup persists after a fresh start, run:<br>
+        <code class="inline">docker exec orchestack-openmetadata-es curl -X PUT "http://localhost:9200/_all/_settings" -H "Content-Type: application/json" -d '{"index":{"number_of_replicas":0}}'</code><br>
+        then refresh the OM tab.
+      </td>
+    </tr>
+    <tr>
+      <td>OM login fails with <em>"invalid username or password"</em> even though you typed what the wizard asked for.</td>
+      <td>OM 1.6.x's <code class="inline">AUTHORIZER_ADMIN_PRINCIPALS</code> env var creates the admin user with the hardcoded default password <code class="inline">admin</code>, not the value of <code class="inline">OPENMETADATA_ADMIN_PASSWORD</code>.</td>
+      <td>OrcheStack's bootstrap hook runs <code class="inline">openmetadata-ops.sh reset-password</code> after the API comes up to fix this. If you ever land in the broken state (e.g. hook timed out on slow boot), log in with <code class="inline">admin / admin</code> and change the password via the OM Settings UI.</td>
+    </tr>
+    <tr>
+      <td>OM UI loads but every page spins on "Loading"; no errors in browser console.</td>
+      <td>First-boot migrations are still running. OM 1.6 migrates its Postgres schema on first start; can take 90–120s on a cold container.</td>
+      <td>Wait 2 minutes; the spinner resolves on its own. If it doesn't, check <code class="inline">docker logs orchestack-openmetadata</code> for migration errors.</td>
+    </tr>
+  </tbody>
+</table>
 
     <div class="next-prev">
       <a href="metabase.html">
@@ -267,6 +294,7 @@
       <li class="sub"><a href="#more-sources">Other stack services</a></li>
       <li class="sub"><a href="#ingesting-external">External databases</a></li>
       <li class="sub"><a href="#scheduling">Scheduling</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
     </ul>
   </aside>
 
