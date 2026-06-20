@@ -19,6 +19,13 @@
   </div>
 {% endif %}
 
+{% if create_error %}
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+              padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
+    <strong>Couldn't create role.</strong> {{ create_error }}
+  </div>
+{% endif %}
+
 {# Role selector lives INSIDE the fragment so it re-renders fresh with
    every swap — keeping HTMX's change listener correctly bound. (We
    tried OOB-swapping it on the page level; OOB swap replaces the

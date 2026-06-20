@@ -74,4 +74,28 @@
        style="min-height: 200px;">
     <p class="muted" style="font-style: italic; font-size: 13px;">Loading roles…</p>
   </div>
+
+  <script>
+    // Reset + close the create form when the backend fires
+    // HX-Trigger: roleCreated after a successful create. Also surfaces
+    // a brief toast via the existing #toast-tray (set up in base.html).
+    document.body.addEventListener('roleCreated', function(e) {
+      var row = document.getElementById('create-role-row');
+      if (row) row.classList.remove('open');
+      var btn = document.querySelector('.new-role-toolbar button');
+      if (btn) btn.textContent = '+ New role';
+      document.querySelectorAll('#create-role-row input').forEach(function(i) {
+        i.value = '';
+      });
+      var name = (e.detail && e.detail.role_name) || 'Role';
+      var tray = document.getElementById('toast-tray');
+      if (tray) {
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-ok';
+        toast.textContent = '✓ ' + name + ' created';
+        tray.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 3500);
+      }
+    });
+  </script>
 {% endblock %}

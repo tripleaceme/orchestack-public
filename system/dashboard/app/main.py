@@ -1317,13 +1317,40 @@ async def roles_create_action(
     request: Request, name: str = Form(...),
     description: str = Form(""), user=Depends(require_admin),
 ) -> HTMLResponse:
+    """Create a role; on success select it as the visible role + fire
+    `roleCreated` HX-Trigger so the page-level JS can close the
+    create form, reset inputs, and surface a confirmation toast.
+
+    create_error is passed into the context so the fragment can show
+    an inline error banner if the orchestrator rejected the create.
+    """
+    import json as _json
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    new_role_id: int | None = None
+    create_error: str | None = None
     try:
-        await orchestrator.admin_create_role(cookie, name, description or None)
+        result = await orchestrator.admin_create_role(cookie, name, description or None)
+        # Orchestrator returns {"role_id": int, "name": str} — read the
+        # canonical key, falling back to "id" in case of future variant.
+        new_role_id = (result or {}).get("role_id") or (result or {}).get("id")
     except httpx.HTTPError as e:
         log.warning("create role failed: %s", e)
-    ctx = await _roles_render_context(request, user)
-    return templates.TemplateResponse("_roles_list_fragment.html", ctx)
+        create_error = (
+            getattr(getattr(e, "response", None), "text", None) or str(e)
+        )
+
+    ctx = await _roles_render_context(request, user, selected_role_id=new_role_id)
+    ctx["create_error"] = create_error
+    ctx["just_created_name"] = name if new_role_id else None
+    resp = templates.TemplateResponse("_roles_list_fragment.html", ctx)
+    if new_role_id:
+        # Fire a custom event the page-level JS listens for to close +
+        # reset the create form. Payload carries the new role name +
+        # id so the toast can name what was created.
+        resp.headers["HX-Trigger"] = _json.dumps({
+            "roleCreated": {"role_id": new_role_id, "role_name": name},
+        })
+    return resp
 
 
 @app.delete("/api/dashboard/roles/{role_id}", response_class=HTMLResponse,
