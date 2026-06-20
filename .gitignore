@@ -63,3 +63,10 @@ Thumbs.db
 *.swo
 *~
 .claude/
+
+
+# Screen recordings / video assets (per-developer, not source).
+*.mp4
+*.mov
+*.webm
+
