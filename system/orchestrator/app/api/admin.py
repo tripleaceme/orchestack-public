@@ -1,68 +1,4 @@
-"""Admin endpoints — users, roles, role-permissions.
-
-Every endpoint in this module requires the caller to hold the built-in
-'Admin' role (verified via `_require_admin` against the session cookie
-the dashboard forwards). The system seed user (Admin role) is the only
-account that can hit these by default; subsequent admins can be created
-by an existing admin via POST /api/admin/users/invite.
-
-Endpoints overview:
-
-  Users:
-    GET    /api/admin/users                  → list every user with their roles
-    POST   /api/admin/users/invite           → create a user with a starter password
-    POST   /api/admin/users/{id}/disable     → soft-disable (is_active = false)
-    POST   /api/admin/users/{id}/enable      → re-activate
-
-  User-role assignments:
-    POST   /api/admin/user-roles             → grant a role to a user
-    DELETE /api/admin/user-roles/{u}/{r}     → revoke a role from a user
-
-  Roles:
-    GET    /api/admin/roles                  → list every role (built-in + custom)
-    POST   /api/admin/roles                  → create a custom role
-    DELETE /api/admin/roles/{id}             → delete a custom role (not system roles)
-
-  Role-permissions (per role × per service):
-    GET    /api/admin/role-permissions       → list every grant
-    POST   /api/admin/role-permissions       → grant a permission set
-    PUT    /api/admin/role-permissions/{id}  → update a grant
-    DELETE /api/admin/role-permissions/{id}  → revoke a grant
-
-Permission model
-----------------
-The 4 platform-level permissions on platform.role_permissions are:
-
-    can_start         — start a service via the dashboard
-    can_use           — open a session against the service (which the
-                        orchestrator may auto-start)
-    can_force_stop    — stop a service even when OTHER users have active
-                        sessions (always audited separately)
-    can_edit_config   — edit credentials on /app/credentials
-
-These are PLATFORM permissions — what the OrcheStack user can do to the
-service through OrcheStack's own surface. They are NOT the tool's own
-internal permissions (e.g. Metabase dashboard editing, Airflow DAG triggering).
-M4+ may layer tool-internal permission propagation on top via per-tool
-API calls when a user opens a session.
-
-service_name = '*' is a wildcard meaning "applies to every service". Per-
-service rows override the wildcard for that specific service. The query
-that resolves a user's effective permission for a given service is:
-
-    SELECT *
-    FROM   platform.role_permissions
-    WHERE  role_id IN (user's role ids)
-      AND  (service_name = ? OR service_name = '*')
-    ORDER  BY (service_name = '*')   -- specific row wins over wildcard
-    LIMIT  1
-
-Audit log
----------
-Every state-changing endpoint here writes an audit row. The KEY is logged
-(role name, service name, permission flag) but secret values (passwords,
-emails) are not.
-"""
+"""Admin endpoints for users, roles, and role-permissions; all require the Admin role."""
 
 from __future__ import annotations
 
@@ -88,9 +24,6 @@ BCRYPT_COST = 12
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
-# ===========================================================================
-#  Admin auth dependency
-# ===========================================================================
 async def _require_admin(request: Request) -> dict:
     """Resolve the session cookie + require the Admin role. 401 / 403 otherwise."""
     user = await resolve_session(request)
@@ -101,12 +34,8 @@ async def _require_admin(request: Request) -> dict:
     return user
 
 
-# ===========================================================================
-#  Users
-# ===========================================================================
 @router.get("/users")
 async def list_users(admin: dict = Depends(_require_admin)) -> dict:
-    """Every user + their roles."""
     rows = await db.fetch(
         """
         SELECT
@@ -156,8 +85,6 @@ async def _hash(plain: str) -> str:
 
 
 def _gen_starter_password(length: int = 16) -> str:
-    """Cryptographically random starter password. Operator gives it to the
-    invitee out-of-band; the invitee changes it on first login."""
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
@@ -165,12 +92,7 @@ def _gen_starter_password(length: int = 16) -> str:
 @router.post("/users/invite", status_code=201)
 async def invite_user(req: InviteRequest,
                        admin: dict = Depends(_require_admin)) -> dict:
-    """Create a user with a system-generated starter password.
-
-    Returns the starter password ONCE — admin should hand it to the
-    invitee out-of-band. We do NOT email it; that requires SMTP config
-    which is out of scope for M3.6.
-    """
+    """Create a user with a system-generated starter password returned once."""
     starter_pw = _gen_starter_password()
     password_hash = await _hash(starter_pw)
 
@@ -192,8 +114,7 @@ async def invite_user(req: InviteRequest,
             detail = "That email is already registered."
         raise HTTPException(409, detail)
 
-    # Grant requested roles, if any. Skip silently for unknown role names —
-    # the audit row records which were actually granted.
+    # Unknown role names are skipped silently; audit row records what was actually granted.
     granted: list[str] = []
     if req.role_names:
         result = await db.fetch(
@@ -253,9 +174,6 @@ async def enable_user(user_id: int, admin: dict = Depends(_require_admin)) -> di
     return {"ok": True, "changed": "1" in res}
 
 
-# ===========================================================================
-#  User-role assignments
-# ===========================================================================
 class UserRoleRequest(BaseModel):
     user_id: int
     role_id: int
@@ -282,8 +200,7 @@ async def grant_user_role(req: UserRoleRequest,
 @router.delete("/user-roles/{user_id}/{role_id}")
 async def revoke_user_role(user_id: int, role_id: int,
                              admin: dict = Depends(_require_admin)) -> dict:
-    # Defensive: prevent admin from revoking their own Admin role and
-    # locking themselves out.
+    # Prevent admin from revoking their own Admin role and locking themselves out.
     if user_id == admin["user_id"]:
         row = await db.fetchrow(
             "SELECT name FROM platform.roles WHERE id = $1", role_id,
@@ -301,9 +218,6 @@ async def revoke_user_role(user_id: int, role_id: int,
     return {"ok": True, "changed": "1" in res}
 
 
-# ===========================================================================
-#  Roles
-# ===========================================================================
 @router.get("/roles")
 async def list_roles(admin: dict = Depends(_require_admin)) -> dict:
     rows = await db.fetch(
@@ -370,9 +284,6 @@ async def delete_role(role_id: int, admin: dict = Depends(_require_admin)) -> di
     return {"ok": True}
 
 
-# ===========================================================================
-#  Role-permissions
-# ===========================================================================
 class PermissionGrant(BaseModel):
     role_id: int
     service_name: str = Field(..., min_length=1,
@@ -434,12 +345,7 @@ async def list_role_permissions(
 @router.post("/role-permissions", status_code=201)
 async def grant_permission(req: PermissionGrant,
                              admin: dict = Depends(_require_admin)) -> dict:
-    """Grant (or replace) the per-service permission set for a role.
-
-    Upserts on (role_id, service_name) — if a grant exists, it's
-    overwritten. This is the operation behind the dashboard's "Add
-    service permission" form.
-    """
+    """Upsert the per-service permission set for a role on (role_id, service_name)."""
     row = await db.fetchrow(
         """
         INSERT INTO platform.role_permissions

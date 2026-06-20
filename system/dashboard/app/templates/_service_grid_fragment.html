@@ -1,9 +1,7 @@
 {#
-  The full service grid. Returned from /api/dashboard/services/grid every
-  10s by HTMX's auto-refresh. Splits services into Running and Stopped
-  sections — operators want to see "what's live" first, "what's idle"
-  second. Errors render as a banner that replaces both sections.
+  Service grid fragment. Rendered on the dashboard and re-rendered on service state changes.
 #}
+
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 18px;">

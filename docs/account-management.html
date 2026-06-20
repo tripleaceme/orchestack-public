@@ -186,7 +186,7 @@
   <li><strong>Tool users</strong> sign into each managed tool separately, Metabase at <code class="inline">/app/metabase</code>, OpenMetadata at <code class="inline">/app/openmetadata</code> etc. Each tool maintains its own user list inside its own database. You invite these users from the tool's own admin interface, not from OrcheStack.</li>
 </ul>
 <p>A stakeholder who just wants to view dashboards typically only needs a <strong>tool user</strong>, not an OrcheStack user. See each service's documentation for how to invite tool users, e.g. <a href="services/metabase.html#adding-stakeholders">Adding stakeholders</a> on the Metabase page.</p>
-<p>Unified single sign-on across both systems is roadmapped for M5. Until then, two user lists is the correct mental model.</p>
+<p>Unified single sign-on across both systems is on the roadmap. Until it lands, two user lists is the correct mental model.</p>
 
 <h3 id="roles-do-not-propagate">Important: roles in OrcheStack do not propagate to the tools</h3>
 <p>When you create an OrcheStack user and assign them the <strong>Engineer</strong> or <strong>Analyst</strong> role on the <code class="inline">/app/users</code> page, that role governs ONLY what they can do inside the OrcheStack admin dashboard such as viewing the audit log, editing service credentials, starting and stopping services. <strong>It does NOT automatically give them access to the data in Metabase, the warehouse, MinIO, or any other deployed tool.</strong></p>

@@ -1,5 +1,5 @@
+{# User profile page: edit name/email/company, change password, view session info. #}
 {% extends "base.html" %}
-
 {% block content %}
   <div class="breadcrumb">Account / Profile</div>
   <h1 class="page-title">My profile</h1>
@@ -119,7 +119,7 @@
     </div>
   </form>
 
-  {# Session info — appears OUTSIDE the form so its fields aren't submitted. #}
+  {# Outside the form so its fields aren't submitted. #}
   <div class="surface">
     <div class="surface-head">
       <h2>This session</h2>

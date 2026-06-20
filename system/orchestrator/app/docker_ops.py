@@ -1,25 +1,4 @@
-"""Docker operations — subprocess wrappers around `docker compose` and `docker`.
-
-The orchestrator owns the lifecycle of cold-tier services. To start one, we
-shell out to `docker compose -f services/<name>.yml -p orchestack-service-<name>
-up -d`; to stop, we use the matching `stop` command. We use subprocess +
-the docker CLI (installed in the orchestrator image) rather than the Python
-Docker SDK for three reasons:
-
-1. The CLI does proper API version negotiation with the daemon. We had a
-   nasty class of bugs in M1 where Traefik's embedded Go client hardcoded
-   v1.24 and got rejected by modern daemons — the CLI doesn't have that
-   problem.
-2. Operators can reproduce any orchestrator action by running the exact
-   command from their own shell. Debuggability beats abstraction.
-3. The Python SDK would have its own API-version pitfalls and would
-   require us to re-implement `compose` semantics (multi-file, project
-   namespaces, etc.) on top of the lower-level container API.
-
-Every function here is async-aware: it runs the subprocess in a thread pool
-via asyncio.to_thread so the FastAPI event loop isn't blocked while docker
-does its thing (which can take a few seconds for image pulls).
-"""
+"""Docker operations — subprocess wrappers around `docker compose` and `docker`."""
 
 from __future__ import annotations
 
@@ -36,12 +15,7 @@ log = logging.getLogger("orchestrator.docker")
 
 @dataclass
 class CommandResult:
-    """Return value of every docker_ops call.
-
-    `ok` is the headline — True iff the subprocess exited 0 AND we
-    didn't catch an exception. `stdout`/`stderr` are captured so callers
-    can pass them to audit logging on failure.
-    """
+    """Return value of every docker_ops call."""
     ok: bool
     returncode: int
     stdout: str
@@ -56,34 +30,13 @@ class CommandResult:
 def _env_file_usable() -> bool:
     """Return True if config.ENV_FILE is actually openable + readable.
 
-    Three failure modes this function has to detect:
-
-    1. The file is missing. Easy — os.path.isfile() returns False.
-
-    2. The host's ./.env was missing at compose-up time, so Docker
-       materialised the bind-mount target as an empty directory at
-       /etc/orchestack/.env. os.path.isfile() catches this (False).
-
-    3. STALE BIND-MOUNT INODE. The host's .env was edited after
-       compose-up (most editors do atomic-rename: write to tmpfile,
-       rename over original), which unlinks the original inode the
-       bind-mount is pointing at. Inside the container, `ls -la` and
-       `os.stat()` still see the file via the directory entry (cached
-       on the bind mount), so isfile() and os.access(R_OK) BOTH
-       return True. But any actual read attempt fails with ENOENT
-       because the underlying inode was deleted on the host.
-
-       Detected by st_nlink == 0 (a hard-deleted file with active
-       refs) and confirmed by actually attempting an open() + read().
-
-       Recovery is operator-side: `docker compose up -d orchestrator`
-       restarts the container which re-resolves the bind mount to the
-       current host inode.
-
-    Returning False from this function makes stop_service fall back
-    to direct `docker stop <container>` (compose-free), which keeps
-    the dashboard's Stop button working even when the bind mount
-    has gone stale.
+    Must detect stale bind-mount inodes: when the host's .env is edited via
+    atomic rename, isfile() and os.access(R_OK) still return True (cached
+    directory entry) but read attempts fail with ENOENT. Detected by
+    st_nlink == 0 and confirmed by an actual open()+read(). Recovery is
+    operator-side: restart the orchestrator container to re-resolve the
+    bind mount. Returning False makes stop_service fall back to direct
+    `docker stop <container>` so the dashboard's Stop button still works.
     """
     try:
         if not os.path.isfile(config.ENV_FILE):
@@ -149,7 +102,7 @@ def _service_compose_args(service: str, *, need_env: bool = True) -> list[str]:
 
 
 def _run_sync(args: list[str], timeout: int = 180) -> CommandResult:
-    """Run a subprocess synchronously. Wrapped in to_thread() by callers."""
+    """Run a subprocess synchronously; wrapped in to_thread() by callers."""
     log.debug("subprocess: %s", " ".join(args))
     try:
         proc = subprocess.run(
@@ -173,8 +126,6 @@ def _run_sync(args: list[str], timeout: int = 180) -> CommandResult:
             stderr=f"timeout after {timeout}s: {e}",
         )
     except FileNotFoundError as e:
-        # `docker` CLI not installed inside the container — should never
-        # happen in production but useful diagnostic for dev / wrong image.
         return CommandResult(
             ok=False,
             returncode=-1,
@@ -192,63 +143,30 @@ async def ping() -> bool:
 # ===========================================================================
 #  Pre-start hooks
 #
-# Some managed services depend on a sidecar Postgres database that must
-# already exist before the container boots. Metabase v0.50+ is the example
-# that surfaced in M3 testing — it stopped auto-creating its own DB and
-# now hard-errors with FATAL: database "metabase" does not exist, falling
-# into a restart loop. Each hook is best-effort + idempotent: CREATE
-# DATABASE IF NOT EXISTS pattern via pg_database lookup, run once per
-# start_service call. Add new managed services to PRE_START_HOOKS as
-# M4 brings them online (airflow, airbyte_internal, openmetadata).
-#
-# Why hook in the orchestrator vs adding a postgres-init/*.sql file:
-# postgres-init runs ONLY on first volume initialisation. Operators with
-# an existing platform volume (every M3 tester) would need to manually
-# drop the volume — which is a destructive ask. The orchestrator hook
-# fixes both fresh installs AND existing volumes on the next start
-# attempt, no operator action required.
+# Each managed service that needs a sidecar Postgres DB to exist BEFORE
+# the container boots registers a hook here. Hook in the orchestrator
+# rather than postgres-init/*.sql because postgres-init runs ONLY on first
+# volume initialisation; the orchestrator hook fixes both fresh installs
+# AND existing volumes on the next start attempt with no operator action.
 # ===========================================================================
 async def _ensure_metabase_database() -> None:
-    """Provision Metabase's PG role + dedicated `metabase` database.
+    """Provision Metabase's PG role + dedicated `metabase_db` database.
 
-    Architecture (per design/m4-multi-db.md, revised twice):
+    Metabase gets its own DB (not a schema in `services`) because Metabase
+    0.51's first-boot Liquibase changeset `v00.00-000` HARDCODES
+    `public.<tablename>` in every CREATE TABLE; MB_DB_SCHEMA is ignored
+    during initialization. Per-DB isolation is therefore the only working
+    arrangement — its hardcoded `public.<table>` writes land in a
+    Metabase-owned database we control.
 
-      - `orchestack`     — platform internals (users, audit, sessions)
-      - `data_warehouse` — operator's analytical data (WAREHOUSE_DB_NAME)
-      - `metabase`       — Metabase's own state (its own DB, see below)
-      - `services`       — shared DB for tools that HONOR a configurable
-                           schema setting (Airflow, OpenMetadata when M4
-                           lands). Each schema-aware tool gets its own
-                           schema inside this DB.
-
-    Why Metabase gets its OWN database, not a schema in `services`:
-
-      Metabase 0.51's first-boot Liquibase changeset `v00.00-000` runs
-      resources/migrations/initialization/metabase_postgres.sql which
-      HARDCODES `public.<tablename>` in every CREATE TABLE statement.
-      MB_DB_SCHEMA only takes effect AFTER setup — Metabase ignores it
-      during the initialization migration. There is no env var or
-      config flag to change this; it is fundamental to Metabase's
-      packaging. Tested end-to-end June 12: with services.metabase
-      schema correctly created and search_path set, the migration
-      still fails with "permission denied for schema public" because
-      the migration explicitly writes to public.<tablename>.
-
-      Per-DB isolation is therefore the architecturally honest choice
-      for Metabase: its own DB means its hardcoded `public.<table>` writes
-      land in a Metabase-owned database that we control. Pgadmin sees
-      `metabase` as a separate DB which is correct — that IS what it is.
-
-    Idempotent: safe to run on every start. Checks role + DB
-    independently, creates only what's missing, updates the password
-    unconditionally so .env-driven rotation works on next start.
+    Idempotent: checks role + DB independently, creates only what's
+    missing, updates the password unconditionally so .env-driven rotation
+    works on next start.
     """
     from . import db  # local import — avoids circular import at module load
     env = _read_env_file_or_empty()
     password = env.get("METABASE_DB_PASSWORD", "").strip()
     if not password:
-        # Fallback: derive a stable per-service password. M3 testers
-        # upgrading to per-service DBs don't have to re-deploy.
         platform_pw = env.get("ORCHESTACK_DB_PASSWORD", "")
         if not platform_pw:
             log.warning(
@@ -288,8 +206,8 @@ async def _ensure_metabase_database() -> None:
     quoted_pw = password.replace("'", "''")
 
     async with pool.acquire() as conn:
-        # 1. Role: backward-compat rename legacy "metabase" → "metabase_admin"
-        # then ensure the canonical name exists with the chosen password.
+        # Backward-compat: rename legacy "metabase" → "metabase_admin" then
+        # ensure the canonical name exists with the chosen password.
         legacy_role = await conn.fetchval(
             "SELECT 1 FROM pg_roles WHERE rolname = 'metabase'"
         )
@@ -310,9 +228,8 @@ async def _ensure_metabase_database() -> None:
                 f"ALTER ROLE metabase_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
 
-        # 2. Database: rename legacy "metabase" DB → "metabase_db" (the
-        # _db suffix convention). Then ensure metabase_db exists owned
-        # by metabase_admin.
+        # Backward-compat: rename legacy "metabase" DB → "metabase_db",
+        # then ensure metabase_db exists owned by metabase_admin.
         legacy_db = await conn.fetchval(
             "SELECT 1 FROM pg_database WHERE datname = 'metabase'"
         )
@@ -342,10 +259,9 @@ async def _ensure_metabase_database() -> None:
                     "ALTER DATABASE metabase_db OWNER TO metabase_admin"
                 )
 
-    # 3. If the database already had objects owned by the platform admin
-    # (pre-per-service-role testers), REASSIGN them to metabase_admin.
-    # Runs against the metabase_db itself — REASSIGN OWNED only acts on
-    # the connected database.
+    # If the database already had objects owned by the platform admin,
+    # REASSIGN them to metabase_admin. REASSIGN OWNED only acts on the
+    # connected database, so we open a fresh connection to metabase_db.
     platform_user = env.get("ORCHESTACK_DB_USER", "orchestack_admin")
     if platform_user != "metabase_admin":
         try:
@@ -395,14 +311,7 @@ _PGADMIN_INNER_CONF_DIR = "/etc/orchestack/conf"
 
 
 def _append_or_update_env_key(key: str, value: str) -> None:
-    """Write `KEY=value` into the operator's .env. Replaces in place
-    if the key already exists; appends to the end otherwise.
-
-    Same line-preserving semantics as _persist_credentials_to_env in
-    api/setup.py — comments and blank lines stay verbatim. We deliberately
-    don't reuse that helper here because this hook needs to work from
-    docker_ops (no API session, no audit-log dependencies).
-    """
+    """Write `KEY=value` into the operator's .env, replacing in place or appending."""
     path = config.ENV_FILE
     if not (os.path.isfile(path) and os.access(path, os.W_OK)):
         raise OSError(f".env at {path} is not a writable file")
@@ -424,13 +333,7 @@ def _append_or_update_env_key(key: str, value: str) -> None:
 
 
 def _read_env_file_or_empty() -> dict[str, str]:
-    """Read .env into a dict. Returns {} on any error.
-
-    Trivial parser — KEY=value, ignores comments and blank lines. We don't
-    handle quoting or escaping because docker compose itself doesn't, and
-    the orchestrator's _persist_credentials_to_env() writes raw KEY=value
-    lines too. The parser only sees keys we wrote.
-    """
+    """Read .env into a dict. Returns {} on any error. No quoting/escaping — docker compose doesn't either."""
     out: dict[str, str] = {}
     try:
         with open(config.ENV_FILE) as f:
@@ -446,22 +349,9 @@ def _read_env_file_or_empty() -> dict[str, str]:
 
 
 async def _ensure_pgadmin_servers_json() -> None:
-    """Materialise pgAdmin's servers.json so the operator opens the tool
-    and sees the OrcheStack platform DB and pipeline warehouse already
-    listed in the navigator — no manual "Add Server" required.
+    """Materialise pgAdmin's servers.json so the navigator pre-lists the warehouse server.
 
-    pgAdmin's auto-import deliberately does NOT carry passwords for
-    security reasons; the operator types the password once at first
-    connect (pgAdmin offers to remember it for the session). Pre-listing
-    the SERVERS — name, host, port, user, default DB — is what removes
-    the cognitive overhead of figuring out the right hostname / user
-    from a stack the operator didn't build.
-
-    Best-effort. If the .env can't be read or the file can't be written
-    (mount missing, filesystem RO, etc.), pgAdmin starts with an empty
-    server list and the operator adds entries manually — the path the
-    operator was on before this hook existed. Hook failure never blocks
-    pgAdmin starting.
+    Best-effort — failure never blocks pgAdmin starting; operator adds entries manually.
     """
     env = _read_env_file_or_empty()
     servers: dict[str, object] = {"Servers": {}}
@@ -509,7 +399,7 @@ async def _ensure_pgadmin_servers_json() -> None:
             except (OSError, PermissionError) as ce:
                 # Best-effort. On rootless docker the orchestrator may
                 # not have the privilege to chown; operator will see a
-                # password prompt instead, which is the pre-pgpass UX.
+                # password prompt instead.
                 log.warning("pgadmin pgpass chown skipped: %s", ce)
             pgpass_inner_path = f"{_PGADMIN_INNER_CONF_DIR}/pgadmin/.pgpass"
             log.info("pre-start hook: wrote pgadmin pgpass for %s@%s",
@@ -518,23 +408,10 @@ async def _ensure_pgadmin_servers_json() -> None:
             log.warning("pgadmin pgpass write failed: %s — operator will "
                           "be prompted for password on first connect", e)
 
-    # Warehouse — the only server we pre-load by default.
-    #
-    # We deliberately do NOT pre-load the OrcheStack platform DB
-    # (platform.users, platform.audit_log, etc). Day-2 admin access to
-    # that DB is intentionally friction-laden: surfacing it in every
-    # operator's pgAdmin navigator implies "this is for you to query,"
-    # which it isn't — the platform schema is OrcheStack's own private
-    # state, mutated through the dashboard's typed APIs, not by hand-
-    # written UPDATEs. Admins who need direct access can add the
-    # connection manually.
-    #
-    # The connection name is the actual database name (e.g.
-    # "data_warehouse") rather than a friendly label like "Pipeline
-    # warehouse" so operators don't conflate the pgAdmin connection
-    # display name with a real PostgreSQL database name — surfacing the
-    # actual name removes that ambiguity at the cost of a slightly less
-    # operator-friendly label.
+    # Warehouse is the only server we pre-load. We deliberately do NOT
+    # pre-load the OrcheStack platform DB — the platform schema is private
+    # state mutated through the dashboard's typed APIs, not by hand-written
+    # UPDATEs. Admins who need direct access can add the connection manually.
     if warehouse_db and pipeline_user:
         entry = {
             "Name":          warehouse_db,
@@ -544,14 +421,9 @@ async def _ensure_pgadmin_servers_json() -> None:
             "MaintenanceDB": warehouse_db,
             "Username":      pipeline_user,
             "SSLMode":       "prefer",
-            # NO DBRestriction — operator is the platform admin and
-            # gets to see every database the postgres server hosts.
-            # The wildcard pgpass entry below handles auth for all of
-            # them; if the operator clicks a database their role can't
-            # actually USE, postgres returns "permission denied" which
-            # is the clear signal, not "this is hidden from you."
-            # Per-role restriction lands in M5 with the multi-DB RBAC
-            # design (design/m4-multi-db.md §3).
+            # NO DBRestriction — operator is the platform admin and gets
+            # to see every database the postgres server hosts. The
+            # wildcard pgpass entry handles auth for all of them.
             "Comment":       "Your pipeline warehouse. dbt writes here; "
                               "Metabase reads here. Click to connect — "
                               "password auto-filled from your .env via pgpass.",
@@ -628,55 +500,20 @@ async def _ensure_pgadmin_servers_json() -> None:
             log.debug("pre-start hook: pgadmin sqlite sync skipped: %s", e)
 
 
-# ===========================================================================
-#  M4 service hooks — generic per-service DB + role provisioning
-#
-# Each managed service that needs a PostgreSQL role + database (or a
-# schema in `services`) registers a tiny pre-start hook here. The
-# common pattern factored into _ensure_service_setup below:
-#
-#   1. Read $$<SERVICE>_DB_PASSWORD from .env; derive deterministically
-#      from ORCHESTACK_DB_PASSWORD if absent; persist the derived value
-#      back to .env so the container sees it on the next compose-up.
-#   2. CREATE ROLE <role_name> WITH LOGIN PASSWORD IF NOT EXISTS.
-#   3. CREATE DATABASE <db_name> OWNER <role_name> IF NOT EXISTS.
-#   4. For Airflow specifically: also CREATE SCHEMA airflow inside
-#      `services` because Airflow honors AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA.
-#
-# Per the schema-aware test (design/m4-multi-db.md §1): MinIO,
-# GE, dbt need no DB; Airflow CAN take a custom schema and lives in
-# services.airflow; Airbyte + OpenMetadata + Metabase need their own
-# DBs because they hardcode public.<tablename>.
-# ===========================================================================
 async def _ensure_simple_pg_role_and_db(
     role_name: str, db_name: str, env_key: str,
     *, schema_in_services: str | None = None,
     legacy_role_name: str | None = None,
     legacy_db_name: str | None = None,
 ) -> None:
-    """Provision a per-service PG role + database OR schema.
+    """Provision a per-service PG role + database (or a schema inside `services`).
 
-    role_name: PG role to create (e.g. "airflow_admin")
-    db_name: database to own (e.g. "airflow_db") — IGNORED if schema_in_services set
-    env_key: .env var holding the password (e.g. "AIRFLOW_DB_PASSWORD")
-    schema_in_services: if set, the role gets the named schema inside
-                        `services` instead of its own database.
-    legacy_role_name: name a previous version of OrcheStack created
-                      this role under (e.g. "airbyte" before the
-                      <service>_admin convention). If set and the
-                      legacy name exists in pg_roles but the new
-                      name doesn't, ALTER ROLE RENAME migrates it
-                      in place — Postgres tracks ownership/grants
-                      by OID so the rename is non-destructive.
-    legacy_db_name: name a previous version of OrcheStack created
-                    the database under (e.g. "airbyte" before the
-                    _db suffix convention). If set and the legacy
-                    DB exists but the new name doesn't, ALTER
-                    DATABASE RENAME migrates it in place. Postgres
-                    requires no active connections for the rename,
-                    so this works only when the dependent containers
-                    are stopped (which the pre-start hook context
-                    guarantees: hook runs before compose up).
+    legacy_role_name / legacy_db_name: if set and the legacy name exists
+    but the new name doesn't, ALTER ROLE/DATABASE RENAME migrates in
+    place. Postgres tracks ownership/grants by OID so the rename is
+    non-destructive. ALTER DATABASE RENAME requires zero active
+    connections — safe only because the pre-start hook runs before
+    compose up, when the dependent container is stopped.
     """
     from . import db as _db
     env = _read_env_file_or_empty()
@@ -712,11 +549,9 @@ async def _ensure_simple_pg_role_and_db(
         role_exists = await conn.fetchval(
             f"SELECT 1 FROM pg_roles WHERE rolname = '{role_name}'"
         )
-        # Backward-compat: if the operator's install used a legacy role
-        # name (e.g. "airbyte" before the <service>_admin convention),
-        # rename it in place rather than creating a new one. Postgres
-        # tracks ownership + grants by OID so the rename preserves
-        # every database/schema/table the legacy role owned.
+        # Backward-compat: rename legacy role in place rather than
+        # creating a new one. Postgres tracks ownership + grants by OID
+        # so the rename preserves every owned object.
         if legacy_role_name and not role_exists:
             legacy_exists = await conn.fetchval(
                 f"SELECT 1 FROM pg_roles WHERE rolname = '{legacy_role_name}'"
@@ -741,8 +576,6 @@ async def _ensure_simple_pg_role_and_db(
             )
 
         if schema_in_services:
-            # Schema-in-services path: ensure `services` DB exists,
-            # then a per-role schema inside it.
             services_exists = await conn.fetchval(
                 "SELECT 1 FROM pg_database WHERE datname = 'services'"
             )
@@ -771,22 +604,13 @@ async def _ensure_simple_pg_role_and_db(
             )
         finally:
             await services_conn.close()
-        # Set the role's default search_path so the schema name doesn't
-        # have to be hardcoded in every query the tool runs.
         async with pool.acquire() as conn:
             await conn.execute(
                 f'ALTER ROLE "{role_name}" SET search_path TO '
                 f'"{schema_in_services}", public'
             )
     else:
-        # Dedicated-DB path: CREATE DATABASE owned by the role.
         async with pool.acquire() as conn:
-            # Backward-compat: rename a legacy DB to the new name if it
-            # exists (e.g. "airbyte" → "airbyte_db" when adding the _db
-            # suffix convention). ALTER DATABASE RENAME requires zero
-            # active connections — the pre-start hook runs before
-            # compose up, so the dependent container is stopped and
-            # the rename is safe.
             if legacy_db_name and legacy_db_name != db_name:
                 new_exists = await conn.fetchval(
                     f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"
@@ -813,38 +637,19 @@ async def _ensure_simple_pg_role_and_db(
 
 
 async def _ensure_airflow_setup() -> None:
-    """Airflow: dedicated airflow_db database (the services-DB schema
-    approach was abandoned because only Airflow ever used it cleanly;
-    Metabase, Airbyte, and OpenMetadata all need dedicated DBs because
-    they hardcode public-schema table names).
-
-    Migration: earlier installs created an `airflow` schema inside a
-    `services` database. The helper's legacy_db_name kwarg renames a
-    legacy DB to the new name, but we can't rename a SCHEMA-in-DB to a
-    standalone DB. So this hook also handles the schema-to-database
-    migration explicitly: pg_dump --schema=airflow services into the
-    fresh airflow_db, then drop the old services DB once Airflow is
-    confirmed running on the new one.
-
-    For an academic-project demo where the operator hasn't built up
-    much Airflow state yet, we skip the dump-and-restore: create
-    airflow_db fresh, drop services, and let Airflow re-run its
-    Liquibase migrations to create the schema. The DAG files
-    themselves live in a separate volume so they're preserved across
-    this migration.
+    """Airflow: dedicated airflow_db database, plus migration from the
+    legacy `services` DB (drop without dump-and-restore — Airflow re-runs
+    its Liquibase migrations; DAG files live in a separate volume).
     """
     from . import db as _db
     import asyncpg
-    # First the role + DB (with legacy_role_name for "airflow" → "airflow_admin"
-    # in case a previous install used the unsuffixed name).
     await _ensure_simple_pg_role_and_db(
         "airflow_admin", "airflow_db", "AIRFLOW_DB_PASSWORD",
         legacy_role_name="airflow",
     )
-    # Then clean up the legacy services DB if it exists. We only drop it
-    # if it has an `airflow` schema — that's the signal it was created
-    # by an old version of OrcheStack for Airflow's metadata. Any other
-    # use of `services` (none currently shipped) would be preserved.
+    # Only drop legacy `services` DB if it has an `airflow` schema —
+    # that's the signal it was created by an old version of OrcheStack
+    # for Airflow's metadata. Any other use of `services` is preserved.
     pool = _db.get_pool()
     async with pool.acquire() as conn:
         services_exists = await conn.fetchval(
@@ -870,10 +675,9 @@ async def _ensure_airflow_setup() -> None:
         await svc_conn.close()
     if not airflow_schema_exists:
         return
-    # Drop the legacy services DB. ALTER DATABASE / DROP DATABASE
-    # requires no active connections — pre-start hook context
-    # guarantees this for the Airflow container side, and nothing
-    # else in OrcheStack uses `services`.
+    # DROP DATABASE requires no active connections — pre-start hook
+    # context guarantees this for the Airflow side, and nothing else
+    # in OrcheStack uses `services`.
     async with pool.acquire() as conn:
         log.info(
             "airflow pre-start: dropping legacy `services` database "
@@ -887,28 +691,14 @@ async def _ensure_airflow_setup() -> None:
 
 
 async def _ensure_airbyte_setup() -> None:
-    """Airbyte: airbyte_admin role + airbyte DB + two extra DBs for Temporal.
-
-    The multi-container Airbyte deployment includes Temporal as the
-    workflow engine, and Temporal stores its workflow history and
-    visibility queries in two separate Postgres databases. All three
-    DBs (airbyte, temporal, temporal_visibility) share the
-    airbyte_admin role for simplicity; logical isolation is by
-    database, not by user.
-
-    Backward compat: earlier installs created the role as plain
-    "airbyte". The shared helper handles the ALTER ROLE rename via
-    its legacy_role_name kwarg — once renamed, ownership of the
-    airbyte/temporal/temporal_visibility DBs transfers automatically
-    (Postgres stores ownership by OID).
+    """Airbyte: airbyte_admin role + airbyte_db + two extra DBs for Temporal
+    (workflow history and visibility); all three DBs share the airbyte_admin role.
     """
     await _ensure_simple_pg_role_and_db(
         "airbyte_admin", "airbyte_db", "AIRBYTE_DB_PASSWORD",
         legacy_role_name="airbyte",
         legacy_db_name="airbyte",
     )
-    # Temporal databases. Apply the _db suffix convention with
-    # backward-compat renames from the legacy unsuffixed names.
     from . import db as _db
     pool = _db.get_pool()
     for new_name, legacy_name in (
@@ -923,11 +713,9 @@ async def _ensure_airbyte_setup() -> None:
                 f"SELECT 1 FROM pg_database WHERE datname = '{legacy_name}'"
             )
             if legacy_exists and new_exists:
-                # Both exist — partial migration from an earlier install.
-                # The legacy DB is orphaned (its owner role was renamed
-                # to airbyte_admin via the helper above, but the DB
-                # ownership doesn't track role renames). Drop it so
-                # pgAdmin doesn't show the RED-X "can't connect" tile.
+                # Both exist — partial migration from an earlier install
+                # left the legacy DB orphaned. Drop it so pgAdmin
+                # doesn't show the red-X "can't connect" tile.
                 log.info(
                     "pre-start hook (airbyte): legacy '%s' AND new '%s' both exist — dropping legacy (orphaned from previous install)",
                     legacy_name, new_name,
@@ -949,12 +737,7 @@ async def _ensure_airbyte_setup() -> None:
 
 
 async def _ensure_openmetadata_setup() -> None:
-    """OpenMetadata: own role + own DB (hardcodes public schema).
-
-    Naming follows the two conventions: <service>_admin for the role,
-    <service>_db for the database. legacy_* kwargs migrate older
-    installs that used the unsuffixed names.
-    """
+    """OpenMetadata: own role + own DB (hardcodes public schema)."""
     await _ensure_simple_pg_role_and_db(
         "openmetadata_admin", "openmetadata_db", "OPENMETADATA_DB_PASSWORD",
         legacy_role_name="openmetadata",
@@ -963,27 +746,13 @@ async def _ensure_openmetadata_setup() -> None:
 
 
 async def _ensure_dbt_setup() -> None:
-    """dbt: role + write/read grants on the chosen warehouse DB.
-
-    Privileges granted (operator-configurable target via DBT_DATABASE +
-    DBT_SCHEMA in .env):
-      - CONNECT on the target database
-      - OWNERSHIP of the target schema (CREATE/USAGE implicit)
-      - ALL on EXISTING + ALTER DEFAULT PRIVILEGES so any FUTURE objects
-        in the target schema (created by dbt OR by anyone else) are
-        accessible to dbt_admin — the operator explicitly asked for this
-        so model rebuilds and CI-driven schema changes don't trip on
-        "permission denied for table foo" mid-run.
-      - USAGE + SELECT on the `raw` schema (Airbyte's landing zone) so
-        dbt can `select * from {{ source('raw', 'orders') }}` cleanly,
-        plus DEFAULT PRIVILEGES for future raw tables.
+    """dbt_admin role with CONNECT on target DB, ownership of target schema,
+    ALL on existing + DEFAULT PRIVILEGES on future objects in that schema,
+    and USAGE/SELECT (+ defaults) on the `raw` schema in the pipeline DB.
     """
     from . import db as _db
     env = _read_env_file_or_empty()
     warehouse_db = env.get("WAREHOUSE_DB_NAME") or "data_warehouse"
-    # Operator-overridable target. Defaults to the pipeline warehouse
-    # but can be a separate DB if the operator wants production tables
-    # in their own namespace.
     target_db = env.get("DBT_DATABASE", "").strip() or warehouse_db
     target_schema = env.get("DBT_SCHEMA", "").strip() or "marts"
 
@@ -1005,12 +774,8 @@ async def _ensure_dbt_setup() -> None:
 
     pool = _db.get_pool()
     async with pool.acquire() as conn:
-        # Backward-compat: earlier installs used `dbt_user`. If that
-        # role exists and `dbt_admin` doesn't, rename it. ALTER ROLE
-        # RENAME updates all object permissions automatically because
-        # they're stored by OID, not by name — so any tables owned by
-        # dbt_user become owned by dbt_admin transparently and dbt's
-        # `dbt run` continues to work after the rename.
+        # Backward-compat rename `dbt_user` → `dbt_admin`. ALTER ROLE
+        # RENAME preserves all object ownership (stored by OID).
         old_exists = await conn.fetchval(
             "SELECT 1 FROM pg_roles WHERE rolname = 'dbt_user'"
         )
@@ -1031,9 +796,6 @@ async def _ensure_dbt_setup() -> None:
                 f"ALTER ROLE dbt_admin WITH LOGIN PASSWORD '{quoted_pw}'"
             )
 
-        # If the operator picked a different target DB, create it.
-        # CREATE DATABASE can't run inside a transaction so use a
-        # dedicated connection rather than the pool's pre-tx conn.
         if target_db != warehouse_db:
             db_exists = await conn.fetchval(
                 f"SELECT 1 FROM pg_database WHERE datname = '{target_db}'"
@@ -1045,16 +807,14 @@ async def _ensure_dbt_setup() -> None:
         await conn.execute(
             f'GRANT CONNECT ON DATABASE "{target_db}" TO dbt_admin'
         )
-        # Also CONNECT on the warehouse DB if it's different — dbt sources
-        # may reference `raw.*` in the warehouse DB even when writing
-        # marts to a different DB.
+        # dbt sources may reference `raw.*` in the warehouse DB even
+        # when writing marts to a different DB, so grant CONNECT there too.
         if target_db != warehouse_db:
             await conn.execute(
                 f'GRANT CONNECT ON DATABASE "{warehouse_db}" TO dbt_admin'
             )
 
-    # In-target-DB grants. Connect as the platform superuser so we can
-    # issue GRANT statements on objects owned by anyone.
+    # Connect as platform superuser so we can GRANT on objects owned by anyone.
     import asyncpg
     wh_conn = await asyncpg.connect(
         host=config.DB_HOST, port=config.DB_PORT,
@@ -1062,17 +822,13 @@ async def _ensure_dbt_setup() -> None:
         database=target_db,
     )
     try:
-        # Target schema (DBT_SCHEMA, default 'marts') OWNED BY dbt_admin.
-        # Ownership gives full rights to anything dbt creates here.
         await wh_conn.execute(
             f'CREATE SCHEMA IF NOT EXISTS "{target_schema}" '
             f'AUTHORIZATION dbt_admin'
         )
-        # Belt-and-suspenders: also GRANT ALL on the schema itself + on
-        # every existing object + ALTER DEFAULT PRIVILEGES for future
-        # objects. This covers the case where someone (e.g. an admin
-        # patching a model manually) creates a table in this schema —
-        # dbt_admin still has full access to it.
+        # Belt-and-suspenders for the case where someone else creates a
+        # table in this schema: GRANT ALL on existing + DEFAULT PRIVILEGES
+        # for future objects so dbt_admin keeps full access.
         await wh_conn.execute(
             f'GRANT ALL ON SCHEMA "{target_schema}" TO dbt_admin'
         )
@@ -1098,16 +854,10 @@ async def _ensure_dbt_setup() -> None:
             f'GRANT EXECUTE ON FUNCTIONS TO dbt_admin'
         )
 
-        # Read access for warehouse_admin (the role that owns the
-        # warehouse database itself). Without this, an operator
-        # connecting to the warehouse via pgAdmin as warehouse_admin
-        # gets "permission denied for schema marts" — even though
-        # they own the database — because dbt's pre-start hook
-        # transferred ownership of `marts` to dbt_admin. Granting
-        # warehouse_admin USAGE + SELECT on the existing schema +
-        # ALTER DEFAULT PRIVILEGES so future dbt-created tables
-        # are queryable lets the warehouse owner browse dbt's
-        # output without elevating to a superuser.
+        # warehouse_admin owns the warehouse DB but not the marts schema
+        # (dbt_admin owns it after this hook), so without explicit USAGE
+        # + SELECT grants pgAdmin sessions hit "permission denied for
+        # schema marts" even though the user owns the database.
         warehouse_role = "warehouse_admin"
         try:
             await wh_conn.execute(
@@ -1121,11 +871,9 @@ async def _ensure_dbt_setup() -> None:
                 f'GRANT SELECT ON ALL SEQUENCES IN SCHEMA "{target_schema}" '
                 f'TO {warehouse_role}'
             )
-            # Future tables created by dbt_admin in this schema → also
-            # SELECT for warehouse_admin. The "FOR ROLE dbt_admin"
-            # qualifier is important: ALTER DEFAULT PRIVILEGES is
-            # per-creating-role, so we set it specifically for the
-            # role that will create the objects.
+            # FOR ROLE dbt_admin is required: ALTER DEFAULT PRIVILEGES
+            # is per-creating-role, so it must target the role that will
+            # actually create the future objects.
             await wh_conn.execute(
                 f'ALTER DEFAULT PRIVILEGES FOR ROLE dbt_admin '
                 f'IN SCHEMA "{target_schema}" '
@@ -1137,10 +885,8 @@ async def _ensure_dbt_setup() -> None:
                 f'GRANT SELECT ON SEQUENCES TO {warehouse_role}'
             )
         except Exception as e:
-            # warehouse_admin role may not exist on a totally fresh
-            # install where the wizard hasn't run yet. Log + move on
-            # — the grants will succeed on next start when the role
-            # is created.
+            # warehouse_admin role may not exist on a fresh install where
+            # the wizard hasn't run yet; grants will apply on next start.
             log.info(
                 "dbt pre-start: warehouse_admin grants skipped (%s) — "
                 "fresh install; will apply on next start",
@@ -1149,8 +895,7 @@ async def _ensure_dbt_setup() -> None:
     finally:
         await wh_conn.close()
 
-    # raw schema lives in the PIPELINE DB (Airbyte's landing). Different
-    # connection if target_db != warehouse_db.
+    # raw schema lives in the PIPELINE DB (Airbyte's landing zone).
     raw_conn = await asyncpg.connect(
         host=config.DB_HOST, port=config.DB_PORT,
         user=config.DB_USER, password=config.DB_PASSWORD,
@@ -1185,46 +930,19 @@ PRE_START_HOOKS = {
 # ===========================================================================
 #  Post-start hooks
 #
-# Pre-start hooks handle prerequisites for the CONTAINER (sidecar DBs,
-# pre-loaded config files). Post-start hooks handle prerequisites for the
-# APPLICATION inside the container — first-run setup, admin user
-# creation, default workspace provisioning. Things that can only happen
-# after the app is actually listening.
+# Hook contract (per service in POST_START_HOOKS):
+#   - MUST be idempotent (operators click Open repeatedly)
+#   - MUST log success / failure via the audit log
+#   - MUST NOT exceed POST_START_HOOK_TIMEOUT
 #
-# Why this is its own framework rather than a continuation of
-# start_service: post-start hooks need to poll for the app to be ready
-# (Metabase's Liquibase migration can take 90+ seconds), and the user
-# who clicked Open shouldn't be blocked while that runs. Each post-start
-# hook runs in the background via asyncio.create_task; the start_service
-# call returns as soon as compose is done so the dashboard's session
-# heartbeat can begin immediately.
-#
-# Hook contract:
-#   async def hook(): ...
-#     - MUST be idempotent — if the app is already configured, return
-#       without raising. Operators clicking Open multiple times must not
-#       re-bootstrap.
-#     - MUST log success / failure via the audit log so the operator can
-#       see what happened on the dashboard's audit page.
-#     - MUST NOT exceed POST_START_HOOK_TIMEOUT (5 minutes) — orphaned
-#       hooks accumulate as zombie tasks otherwise.
+# Runs in the background via asyncio.create_task so the user clicking
+# Open isn't blocked by Metabase's multi-minute first-boot migration.
 # ===========================================================================
 POST_START_HOOK_TIMEOUT = 420  # 7 minutes; matches the slowest bootstrap (Metabase).
 
 
 async def _bootstrap_metabase() -> None:
-    """Complete Metabase's first-run setup via /api/setup.
-
-    Metabase exposes a one-time setup-token at /api/session/properties
-    while it's unconfigured. We poll for that, then POST /api/setup with
-    the credentials the operator entered in the wizard PLUS the pipeline
-    warehouse details so Metabase opens with the warehouse already
-    connected.
-
-    If Metabase is already configured, /api/session/properties returns
-    setup-token=null. We exit without acting — the hook is idempotent
-    across repeated Open clicks.
-    """
+    """Complete Metabase's first-run setup via /api/setup; idempotent."""
     import httpx  # local import: only loaded when this hook runs
     from . import audit, db as _db  # local imports avoid cycle at load
 
@@ -1232,15 +950,10 @@ async def _bootstrap_metabase() -> None:
     admin_email    = env.get("METABASE_ADMIN_EMAIL", "").strip()
     admin_password = env.get("METABASE_ADMIN_PASSWORD", "").strip()
     if not (admin_email and admin_password):
-        # CRITICAL: this is the silent-skip path that has been making
-        # the dashboard's "bootstrapping…" toast loop forever. If the
-        # operator's .env bind-mount went bad (became a directory rather
-        # than a file — same root cause as the credentials 500 we fixed
-        # earlier), _read_env_file_or_empty() returns {}, this skip
-        # fires, and the dashboard /ready endpoint never sees the
-        # setup-token disappear. Surface it in the audit log so the
-        # operator can see the cause on /app/audit instead of staring
-        # at the toast.
+        # If .env bind-mount goes bad, _read_env_file_or_empty() returns
+        # {} and this silent-skip would make the dashboard's
+        # "bootstrapping…" toast loop forever. Surface it via the audit
+        # log so the operator can see the cause on /app/audit.
         from . import audit
         log.warning(
             "metabase bootstrap: missing METABASE_ADMIN_EMAIL or "
@@ -1279,29 +992,20 @@ async def _bootstrap_metabase() -> None:
     base = "http://orchestack-metabase:3000"
     setup_token: str | None = None
     async with httpx.AsyncClient(timeout=15.0) as client:
-        # Poll up to ~6 minutes for Metabase's setup page to come online.
-        # Metabase's first-boot Liquibase migration runs ~420 changesets
-        # against an empty postgres; on Docker Desktop's macOS file-system
-        # layer that consistently takes 4-5 minutes (single-digit seconds
-        # on bare-metal Linux). Three minutes wasn't enough — the hook
-        # would time out before /api/setup became available, leaving
-        # Metabase showing its built-in setup wizard instead of being
-        # auto-configured.
-        #
-        # Match the POST_START_HOOK_TIMEOUT (300s) too — this 360s loop
-        # would otherwise be cut off by the outer asyncio.wait_for.
+        # Poll up to ~6 minutes — Metabase's first-boot Liquibase migration
+        # (~420 changesets) takes 4-5 minutes on Docker Desktop's macOS FS
+        # layer. Must stay under POST_START_HOOK_TIMEOUT or the outer
+        # asyncio.wait_for cancels this loop mid-poll.
         already_configured = False
         for attempt in range(180):
             try:
                 r = await client.get(f"{base}/api/session/properties")
                 if r.status_code == 200:
                     props = r.json()
-                    # `has-user-setup` is the canonical "Metabase has been
-                    # set up by someone" signal. `setup-token` lingers in
-                    # the in-memory store even after /api/setup completes,
-                    # so it is NOT a reliable "still needs setup" signal —
-                    # we used to check setup-token and bootstrap would
-                    # spin forever even after success.
+                    # `has-user-setup` is the canonical "already configured"
+                    # signal. `setup-token` lingers in the in-memory store
+                    # even after /api/setup completes, so checking it
+                    # instead would make the bootstrap spin forever.
                     if props.get("has-user-setup"):
                         log.info(
                             "metabase bootstrap: has-user-setup=true at ~%ds — "
@@ -1320,8 +1024,6 @@ async def _bootstrap_metabase() -> None:
                         break
             except httpx.HTTPError:
                 pass
-            # Heartbeat every minute so docker-logs observers can see the
-            # hook is making progress (not stuck) without spamming logs.
             if attempt > 0 and attempt % 30 == 0:
                 log.info(
                     "metabase bootstrap: still waiting for setup-token (%ds elapsed)",
@@ -1335,17 +1037,10 @@ async def _bootstrap_metabase() -> None:
             log.info("metabase bootstrap: timed out before setup-token appeared")
             return
 
-        # Step 1: complete first-run setup with the MINIMUM REQUIRED
-        # payload. Metabase 0.51 has a strict schema for /api/setup —
-        # extra fields can produce a 400 with a generic "Unable to set
-        # up Metabase" message that gives no clue what's wrong. The
-        # previous payload included `user.site_name` (which the schema
-        # rejects) and an inline `database` block (engine-specific keys
-        # tripped schema validation in some Metabase patch versions).
-        # Cleaner separation: (a) setup with `database: null`,
-        # (b) authenticate, (c) POST /api/database to register the
-        # warehouse. Each step is independently observable in the audit
-        # log so a partial failure is debuggable.
+        # Metabase 0.51 has a strict schema for /api/setup — extra fields
+        # produce a generic 400 with no clue what's wrong. Keep this
+        # payload to the minimum required and register the warehouse in
+        # a separate POST /api/database after authenticating.
         setup_payload = {
             "token": setup_token,
             "user": {
@@ -1358,8 +1053,8 @@ async def _bootstrap_metabase() -> None:
                 "site_name":      site_name,
                 "allow_tracking": False,
             },
-            # Explicit null — tells Metabase "no warehouse to add right
-            # now" so it doesn't sit waiting for a database step.
+            # Explicit null — without this Metabase sits waiting for a
+            # database block instead of completing setup.
             "database": None,
         }
 
@@ -1376,9 +1071,8 @@ async def _bootstrap_metabase() -> None:
             return
 
         if r.status_code not in (200, 201, 204):
-            # Surface the FULL response body in the audit log — that's
-            # how an operator finds out their password failed a Metabase
-            # rule (length/complexity) without needing docker logs.
+            # Surface full body in audit log so password-rule failures
+            # (length/complexity) are debuggable without docker logs.
             log.warning(
                 "metabase bootstrap: /api/setup returned %d: %s",
                 r.status_code, r.text[:500],
@@ -1403,9 +1097,8 @@ async def _bootstrap_metabase() -> None:
             details={"site_name": site_name, "setup_status_code": r.status_code},
         )
 
-        # Step 2: warehouse registration. Best-effort — failure here
-        # doesn't undo step 1's progress; operator can add the warehouse
-        # by hand from Metabase Admin → Databases.
+        # Warehouse registration — best-effort. Operator can add the
+        # warehouse by hand from Metabase Admin → Databases on failure.
         if not (pipeline_name and pipeline_user and pipeline_pass):
             log.info(
                 "metabase bootstrap: no WAREHOUSE_DB_* in .env; skipping "
@@ -1413,9 +1106,9 @@ async def _bootstrap_metabase() -> None:
             )
             return
 
-        # Sign in to get a session cookie for /api/database. POST /api/setup
-        # returns the admin user id but no session token in some Metabase
-        # versions, so re-authenticating is the portable path.
+        # Re-authenticate for a session cookie: POST /api/setup doesn't
+        # return a session token on some Metabase versions, so a fresh
+        # login is the portable path.
         try:
             session_resp = await client.post(
                 f"{base}/api/session",
@@ -1507,23 +1200,7 @@ async def _bootstrap_metabase() -> None:
 
 
 async def _bootstrap_airbyte() -> None:
-    """Skip Airbyte's first-run wizard + pre-set the workspace email.
-
-    Airbyte's webapp shows a "set your email" onboarding screen on
-    first visit when the default workspace has initialSetupComplete=false
-    or no email. The screen LOOKS like a login but is just analytics
-    opt-in. Operators expect "click Open → land on the workspace
-    dashboard" — the wizard breaks that expectation.
-
-    We poll for /api/v1/workspaces/list to come up (server may still
-    be initialising), find the default workspace, and POST
-    /api/v1/workspaces/update with the OrcheStack-collected admin
-    email + anonymousDataCollection=false. This is idempotent — if
-    the workspace is already set up, the update is a no-op.
-
-    Best-effort. Failure here doesn't block Open — the operator can
-    still click through the wizard manually.
-    """
+    """Skip Airbyte's first-run wizard + pre-set the workspace email; idempotent."""
     import httpx
     from . import audit
     env = _read_env_file_or_empty()
@@ -1595,30 +1272,14 @@ async def _bootstrap_openmetadata() -> None:
     """Reset the OM admin password to OPENMETADATA_ADMIN_PASSWORD from .env.
 
     OpenMetadata 1.6.x creates the admin user from
-    AUTHORIZER_ADMIN_PRINCIPALS with a hardcoded default password of
-    'admin' and a fixed email of admin@open-metadata.org. The
-    OPENMETADATA_ADMIN_EMAIL / OPENMETADATA_ADMIN_PASSWORD env vars in
-    our compose snippet are NOT standard OM env vars — they look like
-    config but are silently ignored.
+    AUTHORIZER_ADMIN_PRINCIPALS with hardcoded password 'admin' and
+    fixed email admin@open-metadata.org; the OPENMETADATA_ADMIN_* env
+    vars in our compose snippet are silently ignored by OM. This hook
+    calls OM's bootstrap CLI (upstream-supported) so .env's password
+    actually works. Email stays at admin@open-metadata.org — changing
+    it requires direct postgres edits in 1.6.x.
 
-    Without this hook, operators get "invalid username or password"
-    when they try to log in with the credentials they typed into the
-    wizard, and have no way to discover that the real password is
-    'admin' (since the wizard implies otherwise). They also can't fix
-    it without exec'ing into the container.
-
-    This hook calls OM's bootstrap CLI (the upstream-supported way to
-    reset an admin password) to make .env's value actually work. The
-    CLI requires the server already responding to API requests, so we
-    poll /api/v1/system/version first.
-
-    Email stays at admin@open-metadata.org — changing it in 1.6.x
-    requires editing the user's record directly in postgres, which is
-    a more invasive change. The wizard's hint copy now says this
-    explicitly.
-
-    Best-effort. Failure here doesn't block Open — operator can still
-    log in with admin/admin and change the password via the OM UI.
+    Best-effort and idempotent.
     """
     import httpx
     from . import audit
@@ -1643,11 +1304,9 @@ async def _bootstrap_openmetadata() -> None:
             log.info("openmetadata bootstrap: API never came up; skipping")
             return
 
-    # Use the CLI inside the container — it knows how to hash the
-    # password correctly (the OM HTTP API has a quirk where the
-    # change-password endpoint stores the base64-encoded form
-    # verbatim instead of decoding it, producing a password that
-    # nobody can guess).
+    # Use the container CLI for hashing: the OM HTTP change-password
+    # endpoint stores the base64-encoded form verbatim instead of
+    # decoding it, producing a password that nobody can guess.
     proc = await asyncio.create_subprocess_exec(
         "docker", "exec", "orchestack-openmetadata", "bash", "-c",
         f'./bootstrap/openmetadata-ops.sh reset-password '
@@ -1670,16 +1329,13 @@ async def _bootstrap_openmetadata() -> None:
             output[-300:],
         )
 
-    # ES single-node fix. OM 1.6.x creates every index with
-    # number_of_replicas=1. We run ES single-node, so every replica
-    # shard stays "unassigned" and the cluster sits in yellow. Most
-    # OM queries work in yellow, but a few search code paths (notably
-    # tag_search_index queries used by Domains → Subdomains pages)
-    # return 500 "all shards failed". Setting replicas to 0 — both on
-    # existing indices and on the index template OM uses for new
-    # indices going forward — moves the cluster to green and makes the
-    # search errors stop. Idempotent: applying twice does nothing the
-    # second time.
+    # ES single-node fix: OM 1.6.x creates indices with replicas=1, but
+    # we run ES single-node so every replica stays unassigned and the
+    # cluster sits yellow. Some search code paths (e.g.
+    # tag_search_index used by Domains → Subdomains) then return
+    # 500 "all shards failed". Setting replicas=0 on existing indices
+    # AND in OM's index template (for new indices) turns the cluster
+    # green. Idempotent.
     async with httpx.AsyncClient(timeout=10.0) as client:
         es = "http://orchestack-openmetadata-es:9200"
         try:
@@ -1713,8 +1369,7 @@ POST_START_HOOKS = {
 
 
 def _schedule_post_start_hook(service: str) -> None:
-    """Fire-and-forget post-start hook. Bounded by POST_START_HOOK_TIMEOUT
-    so a stuck hook can't accumulate as a zombie task forever."""
+    """Fire-and-forget post-start hook, bounded by POST_START_HOOK_TIMEOUT."""
     hook = POST_START_HOOKS.get(service)
     if hook is None:
         return
@@ -1730,53 +1385,35 @@ def _schedule_post_start_hook(service: str) -> None:
         except Exception as e:
             log.warning("post-start hook for %s raised: %s", service, e)
 
-    # Name the task so it surfaces in `asyncio` debugging output.
     asyncio.create_task(_run(), name=f"post-start:{service}")
 
 
 async def start_service(service: str) -> CommandResult:
     """Bring a cold-tier service up. Idempotent — `up -d` no-ops if already running.
 
-    Timeout is 5 minutes, not the usual 3, because the first start of a
-    fresh service pulls its image which can be 100-500 MB. On a
-    Nigerian-affordable VPS with a ~10 Mbps link, a 200 MB image takes
-    160 seconds just to pull. Subsequent starts are sub-second once the
-    image is cached, so the bigger timeout is paid only on cold cache.
-
-    Pre-start hook: for services that need a sidecar database to exist
-    BEFORE the container boots (Metabase, Airflow when M4 lands, etc),
-    the registered hook in PRE_START_HOOKS runs first. Hook failures are
-    logged but don't block the start — the container's own startup will
-    surface a clearer error message than the hook could.
-
-    Self-heal on name conflict: when a previous bundle install left a
-    container with the same name behind (typically because the operator
-    re-extracted the bundle into a new directory), `docker compose up -d`
-    fails with "container name '/orchestack-X' is already in use by
-    container 'abc...'". Detect that specific error, `docker rm -f` the
-    orphan, retry. Anything else returns the original error.
+    Timeout of 5 minutes accommodates first-pull of 100-500 MB images on
+    ~10 Mbps links (a 200 MB image takes ~160s to pull); cached starts
+    are sub-second. PRE_START_HOOKS run first (best-effort, failures
+    don't block start). Self-heals "container name is already in use"
+    by `docker rm -f` of the orphan + one retry.
     """
     hook = PRE_START_HOOKS.get(service)
     if hook is not None:
         try:
             await hook()
         except Exception as e:
-            # Best-effort. If the hook fails (e.g., DB pool not ready),
-            # the container's own start will report a clearer error.
             log.warning("pre-start hook for %s failed: %s", service, e)
 
     up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
     res = await asyncio.to_thread(_run_sync, up_args, 300)
 
     if res.ok:
-        # Post-start hook runs in background — doesn't block the caller.
         _schedule_post_start_hook(service)
         return res
 
     if "is already in use by container" not in res.stderr:
         return res
 
-    # Orphan-container conflict — clean up + retry once.
     container_name = f"orchestack-{service}"
     log.warning(
         "name conflict starting %s — removing orphan container %s and retrying",
@@ -1792,7 +1429,6 @@ async def start_service(service: str) -> CommandResult:
         )
         return res
 
-    # Retry the up. Same timeout as the first attempt.
     retry = await asyncio.to_thread(_run_sync, up_args, 300)
     if retry.ok:
         _schedule_post_start_hook(service)
@@ -1800,24 +1436,14 @@ async def start_service(service: str) -> CommandResult:
 
 
 async def stop_service(service: str) -> CommandResult:
-    """Stop a service. Keeps volumes + networks; only stops the container.
+    """Stop a service (keeps volumes + networks); subsequent start is ~1-2s vs ~10s for `down`.
 
-    We use `stop`, not `down`, so subsequent `start_service` is a fast
-    container-start (~1-2s) instead of a full recreate (~10s).
-
-    Path A (env file usable): `docker compose ... --env-file .env stop`.
-    Docker compose PARSES the yml regardless of subcommand, and
-    metabase.yml uses `${ORCHESTACK_DB_PASSWORD:?...}` which fails parse
-    if the var isn't provided — even though `stop` doesn't actually
-    USE the variable. Passing the env file satisfies the parser.
-
-    Path B (env file broken — the bind-mount-as-empty-directory trap):
-    fall back to `docker stop <container>` directly. This bypasses
-    compose entirely, so the missing-env-var parse failure can't bite.
-    The container is named by metabase.yml's container_name attribute,
-    which we mirror with the `orchestack-<service>` convention.
-    Without this fallback, an operator whose .env mount went bad
-    could never stop a running service from the dashboard.
+    Compose parses the yml on every subcommand; metabase.yml uses
+    `${ORCHESTACK_DB_PASSWORD:?...}` which fails parse if the var is
+    missing, even for `stop`. So if .env is unusable (the bind-mount-
+    as-empty-directory trap) we fall back to `docker stop <container>`
+    directly, bypassing the compose parser; without this fallback an
+    operator with a broken .env mount could never stop a service.
     """
     if _env_file_usable():
         return await asyncio.to_thread(
@@ -1825,8 +1451,6 @@ async def stop_service(service: str) -> CommandResult:
             _service_compose_args(service, need_env=True) + ["stop"],
             60,
         )
-    # Fallback: direct `docker stop`. Bypasses compose entirely so the
-    # missing .env can't trip the yml parser.
     container_name = f"orchestack-{service}"
     log.warning(
         "stop_service(%s): .env unusable; falling back to `docker stop %s` "
@@ -1843,29 +1467,15 @@ async def stop_service(service: str) -> CommandResult:
 
 
 async def list_running_services() -> list[dict[str, str]]:
-    """List every managed service container that's currently running.
+    """List every managed service container currently running.
 
-    Returns a list of dicts:
-        [{"service": "metabase", "container": "orchestack-metabase",
-          "started_at": "2026-06-02T03:14:09.123Z",
-          "image": "metabase/metabase:v0.50.16"}]
-
-    The filter `label=orchestack.service` is what scopes us to managed
-    services — base control-plane containers (proxy, postgres, auth, etc.)
-    don't carry this label so they're invisible to the reconciler.
-
-    `started_at` is the container's last-start time from
-    `.State.StartedAt`, NOT `.CreatedAt`. CreatedAt only changes on
-    `docker compose down` + recreate; StartedAt refreshes on every
-    `docker compose start`. Operators clicking Stop → Start would see
-    a misleadingly-old uptime if we used CreatedAt — the previous
-    behaviour was reporting "2d 17h" right after a fresh start because
-    that's how long ago the container row was first created.
-
-    To get StartedAt we have to fall back from `docker ps --format`
-    (which only exposes CreatedAt) to a single batched `docker inspect`
-    over every returned container name. One extra subprocess call
-    total per list_services request — not per container.
+    Filters on `label=orchestack.service` to scope to managed services;
+    control-plane containers (proxy, postgres, auth) don't carry the
+    label and are added separately from SERVICE_CATALOGUE. `started_at`
+    comes from `.State.StartedAt` (NOT `.CreatedAt`) because CreatedAt
+    only refreshes on `compose down`+recreate, so Stop→Start would
+    report a stale multi-day uptime. Requires a batched `docker inspect`
+    fallback since `docker ps --format` only exposes CreatedAt.
     """
     ps_res = await asyncio.to_thread(
         _run_sync,
@@ -1889,18 +1499,14 @@ async def list_running_services() -> list[dict[str, str]]:
                 "started_at": "",
             }
 
-    # Control-plane containers (orchestack-postgres, etc.) don't carry
-    # the orchestack.service label so the docker ps above misses them.
-    # Add them by-name from the catalogue so their image + StartedAt
-    # surface on the dashboard's service-detail page like every other
-    # service. The catalogue config holds the mapping (control_plane
-    # services point to "orchestack-postgres" via the container name
-    # convention).
+    # Control-plane containers don't carry the orchestack.service label;
+    # add them by-name from the catalogue so their image + StartedAt
+    # surface on the dashboard's service-detail page.
     for svc_name, meta in config.SERVICE_CATALOGUE.items():
         if not meta.get("control_plane"):
             continue
-        # Container name convention: orchestack-{svc} except for
-        # postgresql which is orchestack-postgres (no -ql suffix).
+        # postgresql maps to orchestack-postgres (no -ql suffix); all
+        # other services follow the orchestack-{svc} convention.
         cname = f"orchestack-{svc_name.replace('postgresql', 'postgres')}"
         if cname in by_container:
             continue
@@ -1914,10 +1520,6 @@ async def list_running_services() -> list[dict[str, str]]:
     if not by_container:
         return []
 
-    # Batched docker inspect for accurate per-container StartedAt + Image.
-    # Image too because the docker ps fallback only gave it for
-    # label-tagged containers; control-plane ones need inspect to
-    # report it.
     inspect_res = await asyncio.to_thread(
         _run_sync,
         ["docker", "inspect",
@@ -1932,11 +1534,9 @@ async def list_running_services() -> list[dict[str, str]]:
                 cname = parts[0].lstrip("/")
                 if cname in by_container:
                     by_container[cname]["started_at"] = parts[1]
-                    # Only overwrite image if docker ps didn't give us
-                    # one (control-plane case) — docker ps's image is
-                    # the resolved tag (e.g. `dpage/pgadmin4:8.13`),
-                    # which is what we want. inspect gives us the same
-                    # for control-plane services that ps missed.
+                    # Only overwrite image when docker ps didn't supply
+                    # one (control-plane case); ps gives the resolved
+                    # tag, which is the preferred display form.
                     if len(parts) == 3 and not by_container[cname]["image"]:
                         by_container[cname]["image"] = parts[2]
     else:
@@ -1947,11 +1547,10 @@ async def list_running_services() -> list[dict[str, str]]:
 
 
 async def container_uptime_seconds(service: str) -> int | None:
-    """How long has this service been running, in seconds? None if not running.
+    """Seconds since this service started, or None if not running.
 
-    Used by the reconciler's start-grace check — we don't want to stop a
-    service that was just started 5 seconds ago because a session POST
-    hasn't landed yet.
+    Used by the reconciler's start-grace check so a service that was
+    just started isn't stopped before its first session POST lands.
     """
     res = await asyncio.to_thread(
         _run_sync,
@@ -1960,8 +1559,8 @@ async def container_uptime_seconds(service: str) -> int | None:
          "--format", "{{.RunningFor}}"],
         10,
     )
-    # Docker prints something like "About a minute ago" or "2 hours ago" —
-    # not directly parseable. Easier: ask for StartedAt as ISO timestamp.
+    # RunningFor prints "About a minute ago" / "2 hours ago" — not
+    # parseable. Use StartedAt as an ISO timestamp instead.
     res2 = await asyncio.to_thread(
         _run_sync,
         ["docker", "inspect",
@@ -1971,7 +1570,6 @@ async def container_uptime_seconds(service: str) -> int | None:
     )
     if not res2.ok or not res2.stdout.strip():
         return None
-    # State.StartedAt format: 2026-06-02T03:14:09.123456789Z
     import datetime as _dt
     try:
         started = _dt.datetime.fromisoformat(res2.stdout.strip().replace("Z", "+00:00"))

@@ -1,35 +1,4 @@
-"""Credentials API — read + update the operator's `.env`.
-
-The orchestrator owns the operator's `.env` (bind-mounted at
-config.ENV_FILE — see system/docker/docker-compose.yml). This module
-exposes:
-
-    GET  /api/credentials             → list all variables, with sensitivity
-                                        flags and a coarse `editable` hint
-    PUT  /api/credentials/{key}       → update a single variable; persists
-                                        back to the bind-mounted file
-
-Why a per-key PUT rather than a bulk POST: each update produces an
-audit-log row and the partial-update semantics let the dashboard's
-HTMX swap target a single row at a time.
-
-Sensitivity / editability is decided from the variable NAME, not from
-its value:
-  - Always read-only: `*_TAG` (image tags — bundle-update concern, not
-    a credential rotation), and `ORCHESTACK_DB_PASSWORD` (rotating
-    breaks the platform without a co-ordinated restart; M4 will add a
-    proper rotation flow).
-  - Sensitive (masked in GET unless `?reveal=true`): anything matching
-    `*_PASSWORD`, `*_PASS`, `*_SECRET`, `*_KEY`, `*_TOKEN`.
-  - Everything else: plain value.
-
-The .env file is parsed and rewritten with care:
-  - Comments and blank lines are preserved.
-  - Variable VALUES are rewritten in place — line numbers stay stable.
-  - Unknown / unexpected keys in the file are returned to the dashboard
-    so the operator can see EVERYTHING in their .env, not just what
-    OrcheStack knows about.
-"""
+"""Credentials API — read + update the operator's `.env`."""
 
 from __future__ import annotations
 
@@ -48,58 +17,33 @@ log = logging.getLogger("orchestrator.credentials")
 router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 
 
-# Read-only keys — the dashboard renders these as informational only.
-# Operators can SEE the value but the input is disabled with a "read-only"
-# badge.
-#
-# Rule of thumb: lock anything the OPERATOR NEVER TYPES INTO A FORM.
-# Internal Postgres role names that tool sidecars use programmatically,
-# Docker hostnames, ports, image tags — these are platform decisions.
-# Operators should see the values (for verification, audit, debugging)
-# but can't edit them.
-#
-# Keep editable: anything the operator actually logs in with — pgAdmin
-# email, Metabase email, Airflow webserver username/email, MinIO root
-# user. Operators may want a unified `ayoade@orchestack.local` across
-# tools (one credential to remember) instead of per-service variants.
-# The convention <service>_admin is the default, not the lock.
+# Lock anything the operator never types into a form: platform bootstrap
+# state, internal Docker hostnames/ports, image tags, and the
+# <service>_admin DB roles that pre-start hooks provision by exact name
+# (renaming on the dashboard without also renaming in postgres breaks
+# the next service start). ORCHESTACK_* are frozen after first volume
+# creation — editing them later fails auth against postgres and forces a
+# destructive drop-volume recovery.
 READ_ONLY_PATTERNS = (
-    re.compile(r"_TAG$"),                     # AUTH_TAG, ORCHESTRATOR_TAG, …
-    # Internal Docker network: hostnames are container names, ports are
-    # service-defined. Operator doesn't choose either.
-    re.compile(r"_HOST$"),                    # ORCHESTACK_DB_HOST, WAREHOUSE_DB_HOST, AIRBYTE_DB_HOST, …
-    re.compile(r"_PORT$"),                    # All ports (postgres 5432, etc.)
-    # Every ORCHESTACK_* var is bootstrap state burned in at first
-    # `docker compose up` from .env. The postgres container initialises
-    # its superuser + database on FIRST volume creation only; subsequent
-    # restarts read these vars but the actual role/DB names + password
-    # inside postgres are frozen. Editing them on the dashboard would
-    # cause the next infra restart to fail auth against postgres — a
-    # multi-step recovery (drop volume → re-init → re-run wizard)
-    # that loses the platform DB's user accounts, audit log, and
-    # service-pinning state. Locking the whole prefix.
-    re.compile(r"^ORCHESTACK_"),              # all platform bootstrap vars
-    # Every <service>_admin DB user — the orchestrator's pre-start hook
-    # provisions roles by these EXACT names, and the compose files default
-    # to them via ${VAR:-default} fallback. Renaming on the dashboard
-    # without ALSO renaming the role in postgres (and re-running the hook)
-    # would break the next service start. We expose the value as read-only
-    # so operators can see what role each service uses without footgunning.
-    re.compile(r"^WAREHOUSE_DB_USER$"),       # warehouse_admin — operator's warehouse owner
-    re.compile(r"^DBT_DB_USER$"),             # dbt_admin — dbt → warehouse role
-    re.compile(r"^AIRBYTE_DB_USER$"),         # airbyte_admin — sidecar DB role
-    re.compile(r"^AIRBYTE_DB_NAME$"),         # airbyte sidecar DB name
-    re.compile(r"^AIRFLOW_DB_USER$"),         # airflow_admin — sidecar DB role
-    re.compile(r"^AIRFLOW_DB_NAME$"),         # airflow sidecar DB name
-    re.compile(r"^METABASE_DB_USER$"),        # metabase_admin — sidecar DB role
-    re.compile(r"^METABASE_DB_NAME$"),        # metabase sidecar DB name
-    re.compile(r"^OPENMETADATA_DB_USER$"),    # openmetadata_admin — sidecar DB role
-    re.compile(r"^OPENMETADATA_DB_NAME$"),    # openmetadata sidecar DB name
-    re.compile(r"^GE_DB_USER$"),              # warehouse_admin reuse — GE has no sidecar
+    re.compile(r"_TAG$"),
+    re.compile(r"_HOST$"),
+    re.compile(r"_PORT$"),
+    re.compile(r"^ORCHESTACK_"),
+    re.compile(r"^WAREHOUSE_DB_USER$"),
+    re.compile(r"^DBT_DB_USER$"),
+    re.compile(r"^AIRBYTE_DB_USER$"),
+    re.compile(r"^AIRBYTE_DB_NAME$"),
+    re.compile(r"^AIRFLOW_DB_USER$"),
+    re.compile(r"^AIRFLOW_DB_NAME$"),
+    re.compile(r"^METABASE_DB_USER$"),
+    re.compile(r"^METABASE_DB_NAME$"),
+    re.compile(r"^OPENMETADATA_DB_USER$"),
+    re.compile(r"^OPENMETADATA_DB_NAME$"),
+    re.compile(r"^GE_DB_USER$"),
     re.compile(r"^GE_DB_NAME$"),
 )
 
-# Sensitive patterns — values masked in GET responses unless reveal=true.
+# Values masked in GET responses unless reveal=true.
 SENSITIVE_PATTERNS = (
     re.compile(r"_PASSWORD$"),
     re.compile(r"_PASS$"),
@@ -121,17 +65,12 @@ def _is_sensitive(key: str) -> bool:
 
 
 def _iter_env_lines() -> Iterator[tuple[int, str]]:
-    """Yield (line_no, raw_line) for the operator's .env, 1-indexed.
-
-    Defensive against the bind-mount-as-empty-directory trap: if the
-    operator's .env didn't exist on the host when the orchestrator
-    started, Docker silently created a directory at the bind-mount
-    target instead of failing. Path.exists() returns True for that
-    directory, then read_text() raises IsADirectoryError and 500s the
-    credentials page. Treat missing OR not-a-file as "no .env" — the
-    credentials page then renders an empty list cleanly, and the
-    operator can see the orchestrator's warning logs to understand why.
-    """
+    """Yield (line_no, raw_line) for the operator's .env, 1-indexed."""
+    # Defend against the bind-mount-as-empty-directory trap: if .env
+    # didn't exist on the host at startup, Docker silently created a
+    # directory at the bind-mount target. Path.exists() returns True
+    # but read_text() then raises IsADirectoryError. is_file() rejects
+    # the directory case so the page renders an empty list cleanly.
     p = Path(config.ENV_FILE)
     if not p.is_file():
         return
@@ -147,7 +86,6 @@ def _iter_env_lines() -> Iterator[tuple[int, str]]:
 async def list_credentials(
     reveal: bool = Query(False, description="If true, return raw values for sensitive keys"),
 ) -> dict[str, object]:
-    """Return every variable in .env with sensitivity + editability metadata."""
     items: list[dict[str, object]] = []
     for _line_no, line in _iter_env_lines():
         stripped = line.strip()
@@ -179,36 +117,11 @@ class TestRequest(BaseModel):
     value: str = Field(..., description="The proposed new value to test BEFORE saving.")
 
 
-# ----------------------------------------------------------------------
-# Live connection tests for database-typed credentials.
-#
-# What the test does, key-by-key:
-#
-#   WAREHOUSE_DB_PASSWORD — open a PostgreSQL connection as
-#     WAREHOUSE_DB_USER against WAREHOUSE_DB_NAME on orchestack-postgres
-#     using the PROPOSED password. Close immediately. Success means the
-#     password is correct from postgres's perspective.
-#
-#   METABASE_DB_PASSWORD — same shape, against the `metabase` role and
-#     the `metabase` database.
-#
-#   PGADMIN_DEFAULT_PASSWORD — no test. pgAdmin's admin user lives in
-#     its own SQLite store, not in our postgres, and we don't read that
-#     store. Returns testable=False.
-#
-#   ORCHESTACK_DB_PASSWORD — never tested. This is the platform admin
-#     password and changing it requires a stack restart anyway; the test
-#     would only confirm the OLD password is still good. Returns
-#     testable=False.
-#
-#   Anything else — testable=False. Don't fake a green light by saying
-#     "all good" when there's actually nothing to verify.
-#
-# This is what the dashboard's per-service Edit-config form calls to
-# satisfy the docs' "live connection test before save" promise, and what
-# the global /app/credentials page calls when the operator hits Save on
-# a DB credential.
-# ----------------------------------------------------------------------
+# Live connection tests for DB-typed credentials. Only WAREHOUSE_DB_PASSWORD
+# and METABASE_DB_PASSWORD are testable; pgAdmin's admin lives in its own
+# SQLite store and ORCHESTACK_DB_PASSWORD would only confirm the OLD value
+# is still good (rotation requires a stack restart). Everything else returns
+# testable=False rather than faking a green light.
 _DB_TEST_TABLE: dict[str, tuple[str, str, str]] = {
     # key: (user_key, db_key, user_default — used if user_key is unset)
     "WAREHOUSE_DB_PASSWORD":  ("WAREHOUSE_DB_USER",  "WAREHOUSE_DB_NAME", ""),
@@ -218,15 +131,13 @@ _DB_TEST_TABLE: dict[str, tuple[str, str, str]] = {
 
 @router.post("/{key}/test")
 async def test_credential(key: str, req: TestRequest) -> dict[str, object]:
-    """Live-test a credential value before the operator persists it."""
     if key not in _DB_TEST_TABLE:
         return {"testable": False,
                  "reason": f"No live connection test available for {key}."}
 
     user_key, db_key, default_user = _DB_TEST_TABLE[key]
-    # Re-read .env every call — the operator may have updated other
-    # related vars in the same session and we want to test against the
-    # CURRENT linked-key values, not stale ones.
+    # Re-read .env every call so we test against the operator's CURRENT
+    # linked-key values, not values cached from a prior request.
     env_map: dict[str, str] = {}
     for _, line in _iter_env_lines():
         m = LINE_RE.match(line.strip())
@@ -234,8 +145,7 @@ async def test_credential(key: str, req: TestRequest) -> dict[str, object]:
             env_map[m.group(1)] = m.group(2)
 
     if user_key == "__literal_metabase__":
-        # Metabase uses fixed role + DB names (`metabase`); they're not
-        # in .env so we hardcode them here.
+        # Metabase's role + DB names are fixed (`metabase`) and not in .env.
         pg_user, pg_db = "metabase", "metabase"
     else:
         pg_user = env_map.get(user_key) or default_user
@@ -260,9 +170,8 @@ async def test_credential(key: str, req: TestRequest) -> dict[str, object]:
             await conn.close()
         return {"testable": True, "ok": True, "tested_as": pg_user, "tested_db": pg_db}
     except Exception as e:
-        # asyncpg.exceptions.InvalidPasswordError, ConnectionFailure,
-        # etc — surface the postgres-side error so the operator knows
-        # what's actually wrong.
+        # Surface the postgres-side error class + message so the operator
+        # can distinguish bad-password from unreachable-host etc.
         return {
             "testable": True,
             "ok": False,
@@ -275,12 +184,9 @@ async def test_credential(key: str, req: TestRequest) -> dict[str, object]:
 
 @router.put("/{key}")
 async def update_credential(key: str, req: UpdateRequest) -> dict[str, object]:
-    """Update a single variable in .env. Read-only keys are rejected.
-
-    Audit log captures the change with the key but NEVER the value — we
-    don't want secrets surfacing in the audit table. The presence of an
-    update is sufficient evidence.
-    """
+    """Update a single variable in .env. Read-only keys are rejected."""
+    # Audit log records the key but NEVER the value — keeps secrets out
+    # of the audit table.
     if not LINE_RE.match(f"{key}=x"):
         raise HTTPException(400, f"invalid key shape: {key!r}")
     if _is_readonly(key):
@@ -300,7 +206,6 @@ async def update_credential(key: str, req: UpdateRequest) -> dict[str, object]:
             break
 
     if not updated:
-        # Append at the end — new key.
         lines.append(f"{key}={req.value}")
 
     p.write_text("\n".join(lines) + "\n")

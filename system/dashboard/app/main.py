@@ -1,20 +1,4 @@
-"""OrcheStack dashboard — phases 3.1 → 3.6.
-
-Routes in this file are grouped by concern:
-    Container liveness           /healthz
-    Pages                        /, /sessions, /audit, /services/{name}, /login
-    HTMX fragment endpoints      /api/dashboard/<...>
-    Session lifecycle            /api/dashboard/services/<name>/open,
-                                 /api/dashboard/sessions/<token>/heartbeat
-                                 /api/dashboard/sessions/<token>/close
-    Auth                         /api/dashboard/auth/login, /logout
-
-URL handling: Traefik strips the `/app` prefix before forwarding to this
-container. We pass `root_path="/app"` to FastAPI so url_for() reconstructs
-the full external URL; internal routes stay at `/`, `/api/dashboard/*`.
-
-See OrcheStack/design/m3-dashboard.md for the architecture overview.
-"""
+"""OrcheStack dashboard. Traefik strips `/app` prefix before forwarding; root_path="/app" reconstructs external URLs while internal routes stay at `/`."""
 
 from __future__ import annotations
 
@@ -47,20 +31,6 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 
-# ----------------------------------------------------------------------
-# Build-info plumbing for the footer.
-#
-# Three sources of "which version is this?":
-#   1. DASHBOARD_BUILD_SHA — set by CI in the docker image build
-#      (workflow injects `--build-arg BUILD_SHA=$GITHUB_SHA`).
-#      "dev" when running a locally-built image.
-#   2. The runtime bundle's VERSION file — mounted into the dashboard
-#      container at /etc/orchestack/VERSION by docker-compose.yml.
-#      Read once at process start (it doesn't change between requests).
-#   3. The orchestrator's reported SHA — fetched lazily from
-#      /orchestrator/api/health and cached for 5 minutes so the footer
-#      doesn't add a round-trip to every page render.
-# ----------------------------------------------------------------------
 DASHBOARD_BUILD_SHA = os.environ.get("DASHBOARD_BUILD_SHA", "dev")
 
 def _read_bundle_version() -> str:
@@ -76,22 +46,18 @@ def _read_bundle_version() -> str:
 
 BUNDLE_VERSION = _read_bundle_version()
 
-# Made available to every template via Jinja2's env.globals so the
-# footer can render without each route having to thread it through.
-# The orchestrator's SHA isn't here on purpose — it would need a cross-
-# service call per render; operators can curl /orchestrator/api/health
-# directly when they need it.
+# orchestrator_sha intentionally omitted — would need a cross-service call per render.
 templates.env.globals["build_info"] = {
     "bundle_version":  BUNDLE_VERSION,
     "dashboard_sha":   DASHBOARD_BUILD_SHA,
-    "orchestrator_sha": "",  # populated below if the env var is set
+    "orchestrator_sha": "",
 }
 
 orchestrator = OrchestratorClient(ORCHESTRATOR_URL)
 
 app = FastAPI(
     title="OrcheStack dashboard",
-    description="Administrator UI. Phases 3.1–3.6.",
+    description="Administrator UI.",
     version="0.6.0",
     root_path=ROOT_PATH,
     docs_url=None,
@@ -101,20 +67,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def no_html_cache(request: Request, call_next):
-    """Set Cache-Control: no-store on every HTML response.
-
-    HTML output is dynamic — operators changing service state, opening
-    sessions, or saving credentials need the next page-load to reflect
-    those changes immediately. Browser heuristics had been caching
-    HTML for ~5 minutes, causing "I just refreshed but don't see the
-    update" reports. no-store is the strict opt-out: browser never
-    stores a copy, every navigation re-fetches.
-
-    Scoped to text/html (not JSON / images / CSS / JS) so static
-    asset caching stays efficient. HTMX fragments are also text/html
-    so they pick up the same header — same logic applies (they're
-    rendering live-data views).
-    """
+    """Set Cache-Control: no-store on HTML responses — browser heuristics cached dynamic dashboard HTML for ~5 minutes. Scoped to text/html so static assets stay cacheable."""
     response = await call_next(request)
     ct = response.headers.get("content-type", "")
     if ct.startswith("text/html"):
@@ -126,7 +79,7 @@ async def no_html_cache(request: Request, call_next):
 @app.on_event("startup")
 async def on_startup() -> None:
     log.info(
-        "orchestack-dashboard phase=3.6 root_path=%s orchestrator=%s — ready",
+        "orchestack-dashboard root_path=%s orchestrator=%s — ready",
         ROOT_PATH, ORCHESTRATOR_URL,
     )
 
@@ -135,12 +88,7 @@ async def on_startup() -> None:
 #  Auth — current user dependency
 # ===========================================================================
 async def current_user(request: Request) -> dict[str, object] | None:
-    """Resolve the current user from the session cookie, or None.
-
-    Doesn't 401 — that's `require_user`'s job. This helper is used by
-    page handlers that want to render different states for logged-in vs.
-    not-logged-in users (e.g. the header showing 'Signed in as X').
-    """
+    """Resolve current user from session cookie, or None. Does not 401 — see require_user."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     if not cookie:
         return None
@@ -154,9 +102,8 @@ async def require_user(request: Request) -> dict[str, object]:
     """Guard route dependency — 401-redirects to /app/login if not signed in."""
     user = await current_user(request)
     if user is None:
-        # We can't return a redirect directly from a Depends — raise an
-        # HTTPException that the global exception handler turns into a
-        # redirect. The path the user wanted is preserved via `next`.
+        # Can't return a redirect directly from a Depends — raise HTTPException that
+        # the global exception handler turns into a redirect, preserving `next`.
         raise HTTPException(
             status_code=307,
             detail="login_required",
@@ -166,13 +113,7 @@ async def require_user(request: Request) -> dict[str, object]:
 
 
 async def require_admin(request: Request) -> dict[str, object]:
-    """Guard route dependency — require Admin role. Same redirect for not-
-    signed-in users; 403 for signed-in users without the Admin role.
-
-    Used on /app/users + /app/roles routes (the admin surfaces). Non-admin
-    users see a 403 page rather than a redirect so they understand that
-    the page exists but isn't theirs to access.
-    """
+    """Guard route dependency — require Admin role. Redirects unauth'd; 403s non-admins so they understand the page exists but isn't theirs."""
     user = await require_user(request)
     if "Admin" not in user.get("roles", []):
         raise HTTPException(403, "Admin role required to access this page.")
@@ -180,21 +121,7 @@ async def require_admin(request: Request) -> dict[str, object]:
 
 
 def _extract_service_from_path(path: str) -> str | None:
-    """Best-effort: pull a service name out of a 404'd URL.
-
-    The most common 404 shape is `/app/<service>/<rest>` where the
-    operator clicked a bookmarked deep link (e.g.,
-    /app/metabase/browse/databases/2-pipeline-warehouse) but the
-    target service isn't running. Traefik's router for that prefix
-    only exists while the container is up — when it's stopped, the
-    request falls through to the dashboard's catchall and our
-    FastAPI returns a generic 404. We extract the service name so
-    the error page can name what the operator was trying to reach.
-
-    Returns None if the path doesn't match the /app/<service>/...
-    shape — caller renders a generic 404 in that case.
-    """
-    # Strip leading slash + the dashboard's root_path prefix.
+    """Pull service name from a 404'd URL of shape /app/<service>/<rest>. Traefik's per-service router only exists while the container is up; stopped services fall through to dashboard's catchall."""
     p = path.lstrip("/")
     prefix = (ROOT_PATH or "/app").strip("/")
     if prefix and p.startswith(prefix + "/"):
@@ -203,31 +130,15 @@ def _extract_service_from_path(path: str) -> str | None:
     if not parts or not parts[0]:
         return None
     candidate = parts[0]
-    # Don't claim service-not-found for dashboard's own routes (e.g.
-    # /app/sessions, /app/login). The catalogue lookup downstream
-    # confirms this is actually a real service.
+    # Catalogue lookup downstream confirms this is actually a real service
+    # (vs. dashboard's own routes like /app/sessions).
     return candidate
 
 
 async def _service_404_response(request: Request, exc):
-    """Render a friendly HTML 404 with diagnosis bullets + back button.
-
-    Used both for FastAPI HTTPException(404) and Starlette's routing
-    404 (no matched path). Detects if the URL was aimed at a
-    catalogue service and tailors the bullets accordingly.
-
-    SECURITY: request.url.path is user-controllable. The error template
-    renders message + bullets with `| safe` (so we can use <code> and
-    <strong> formatting), which means we MUST html-escape `path` before
-    interpolating it into the strings — otherwise a crafted URL like
-    /<script>alert(1)</script> would execute. We escape once here at
-    the boundary, then trust the resulting string in the f-strings.
-    """
+    """Render HTML 404 with diagnosis bullets. SECURITY: request.url.path is user-controllable and the template renders bullets with `| safe`, so we MUST html-escape `path` at this boundary to prevent XSS."""
     import html as _html
-    # FastAPI's request.url.path strips the ASGI root_path (Traefik
-    # subpath /app); we want to show what the operator actually typed
-    # in the address bar, so reattach the prefix for display purposes.
-    # Internal routing logic still uses the stripped path.
+    # FastAPI strips ASGI root_path; reattach so display matches the operator's address bar.
     internal_path = request.url.path
     display_path = (request.scope.get("root_path") or "") + internal_path
     path = _html.escape(display_path)
@@ -240,8 +151,6 @@ async def _service_404_response(request: Request, exc):
             svc = None
 
     if svc and svc.get("display_name"):
-        # Deep link to a known service — tailor the bullets to that
-        # service's specific state.
         display_name = svc["display_name"]
         state = svc.get("state", "unknown")
         title = f"{display_name} isn't reachable"
@@ -266,7 +175,6 @@ async def _service_404_response(request: Request, exc):
             "isn't on the share list.",
         ]
     else:
-        # Generic 404 — no service detected from path.
         title = "Page not found"
         message = (
             f"OrcheStack couldn't find a page at "
@@ -308,13 +216,7 @@ async def _service_404_response(request: Request, exc):
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
-    """Convert 307 login_required exceptions into real RedirectResponses.
-
-    For 403/404 raised on HTML page routes (everything NOT under /api/),
-    render an HTML error page rather than raw JSON — operators who typed
-    a URL directly should land on a readable page that tells them what's
-    wrong and how to get back, not a wall of {"detail": "..."}.
-    """
+    """Convert 307 login_required to RedirectResponse; render HTML error pages for 403/404 on non-API routes."""
     if exc.status_code == 307 and exc.detail == "login_required":
         return RedirectResponse(url=exc.headers["Location"], status_code=307)
     is_api = request.url.path.startswith("/api/")
@@ -335,7 +237,6 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
         )
     if exc.status_code == 404 and not is_api:
         return await _service_404_response(request, exc)
-    # Fall through to FastAPI's default JSON response for everything else.
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
@@ -343,10 +244,8 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-# Starlette's routing layer raises its own HTTPException when no route
-# matches. Register that exception class too so the path
-# /app/metabase/browse/... (no FastAPI route → Starlette 404) ends up
-# in the same helpful HTML handler instead of FastAPI's default JSON.
+# Starlette raises its own HTTPException for unmatched routes — register
+# the class too so /app/<svc>/... 404s route to our HTML handler, not FastAPI's JSON.
 try:
     from starlette.exceptions import HTTPException as _StarletteHTTPException
     @app.exception_handler(_StarletteHTTPException)
@@ -367,14 +266,7 @@ except ImportError:
 # ===========================================================================
 @app.get("/healthz", response_class=PlainTextResponse, include_in_schema=False)
 async def healthz() -> str:
-    """Liveness check for Docker's HEALTHCHECK directive.
-
-    Deliberately does NOT call the orchestrator — we want this to succeed
-    even when the orchestrator is unreachable, so the dashboard container
-    itself stays healthy and can display a useful "orchestrator
-    unreachable" UI to operators rather than being marked unhealthy and
-    cycled by Docker.
-    """
+    """Liveness check. Deliberately does NOT call the orchestrator — dashboard stays healthy to display "orchestrator unreachable" UI rather than getting cycled by Docker."""
     return "ok\n"
 
 
@@ -382,12 +274,7 @@ async def healthz() -> str:
 #  Pages
 # ===========================================================================
 async def _aggregate_kpis() -> dict:
-    """Aggregate the four KPI-strip metrics from the orchestrator.
-
-    Shared by /home (initial page render) AND the HTMX polling endpoint
-    /api/dashboard/kpi-strip (every 10s refresh) so the data shape stays
-    in sync across both code paths.
-    """
+    """Aggregate the four KPI-strip metrics from the orchestrator. Shared by /home and the HTMX polling endpoint so the data shape stays in sync."""
     services_running = 0
     services_total = 0
     try:
@@ -406,11 +293,6 @@ async def _aggregate_kpis() -> dict:
     except (httpx.HTTPError, ValueError) as e:
         log.warning("KPI list_sessions failed: %s", e)
 
-    # Last audit event — for the KPI card we need the relative duration
-    # ("14m ago") + the event_type + target/actor pair. The approved
-    # mock's pattern:
-    #   .value: 14m ago         (relative duration since the event)
-    #   .delta: user.login · ayoade@miva.edu.ng   (event_type · who)
     last_event_type   = None
     last_event_target = None
     last_event_actor  = None
@@ -463,13 +345,7 @@ async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
 async def kpi_strip_fragment(
     request: Request, user=Depends(require_user)
 ) -> HTMLResponse:
-    """KPI strip fragment — HTMX-polled every 10s from the home page.
-
-    Returns just the 4-card strip (no surrounding page chrome). The
-    home template wraps its KPI strip in a hx-get-this-endpoint div so
-    actions (start/stop/pin/open) reflect in the strip without a full
-    page reload.
-    """
+    """KPI strip fragment — HTMX-polled every 10s from the home page."""
     kpi = await _aggregate_kpis()
     return templates.TemplateResponse(
         "_kpi_strip_fragment.html", {"request": request, "kpi": kpi},
@@ -478,15 +354,9 @@ async def kpi_strip_fragment(
 
 @app.get("/sessions", response_class=HTMLResponse, name="sessions_page")
 async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """`/app/sessions` — KPI strip + Open sessions table + Keep-warm pins.
-
-    Server-renders the KPI strip and the pin table on first paint; the
-    Open sessions table loads via HTMX so it can poll every 10s without
-    re-running the per-service get_pin queries.
-    """
+    """`/app/sessions` — KPI strip + Open sessions table + Keep-warm pins."""
     from datetime import datetime, timezone
 
-    # Fetch active sessions.
     sessions: list[dict] = []
     try:
         sess_data = await orchestrator.list_sessions(limit=200, offset=0)
@@ -494,11 +364,9 @@ async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLRes
     except (httpx.HTTPError, ValueError) as e:
         log.warning("sessions_page list_sessions failed: %s", e)
 
-    # KPI 1: open sessions count + unique services they touch.
     open_count       = len(sessions)
     unique_services  = len({s.get("service") for s in sessions if s.get("service")})
 
-    # KPI 2: unique users + name of the most-active (most recent heartbeat).
     unique_users = len({s.get("user_id") for s in sessions if s.get("user_id")})
     sorted_by_recent = sorted(
         sessions,
@@ -510,7 +378,6 @@ async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLRes
         if sorted_by_recent else None
     )
 
-    # KPI 3: oldest session (longest-running, by opened_at) — and which.
     oldest_age   = None
     oldest_what  = None
     if sessions:
@@ -534,11 +401,8 @@ async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLRes
         except (ValueError, TypeError):
             pass
 
-    # KPI 4: idle > 10 minutes (within auto-expire window).
     idle_count = sum(1 for s in sessions if (s.get("idle_seconds") or 0) > 600)
 
-    # Active keep-warm pins. We derive from list_services (cheap) and
-    # call get_pin for each pinned service to fill in pinned_by/at.
     pins: list[dict] = []
     try:
         svc_data = await orchestrator.list_services()
@@ -580,15 +444,7 @@ async def sessions_page(request: Request, user=Depends(require_user)) -> HTMLRes
 
 @app.get("/audit", response_class=HTMLResponse, name="audit_page")
 async def audit_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
-    """`/app/audit` — paginated audit log with filters.
-
-    Populates two dropdowns at first paint:
-      - Event types — distinct event_type values seen in the last 500
-        audit rows (covers the catalogue's currently-active vocabulary
-        without forcing a hard-coded list to stay in sync).
-      - Target services — every catalogue display name (so the operator
-        can filter even for services that haven't fired an event yet).
-    """
+    """`/app/audit` — paginated audit log with filters. Event-types dropdown is derived from the last 500 audit rows so it tracks the catalogue without a hard-coded list."""
     event_types: list[str] = []
     try:
         recent = await orchestrator.list_audit(limit=500, offset=0)
@@ -625,13 +481,7 @@ async def credentials_page(
     reveal: bool = False, service: str = "All", search: str = "",
     user=Depends(require_admin),
 ) -> HTMLResponse:
-    """`/app/credentials` — admin view for reading + updating .env variables.
-
-    Server-renders the KPI strip + filter bar + table on first paint so
-    the operator sees real numbers immediately. Subsequent filter
-    changes hit `credentials_table_fragment` and only swap the table
-    body.
-    """
+    """`/app/credentials` — admin view for reading + updating .env variables."""
     context = await _build_credentials_context(reveal, service, search)
     return templates.TemplateResponse(
         "credentials.html",
@@ -639,27 +489,13 @@ async def credentials_page(
     )
 
 
-# ----------------------------------------------------------------------
-# Service grouping for the Credentials page
-#
-# Operators asked for a per-service view of credentials: pick the service
-# from a dropdown, see only its keys. This is purely a UX grouping —
-# under the hood every key still lives in a single flat .env file.
-#
-# Bucketing rule: longest matching prefix wins (so e.g. "MB_DB_USER"
-# resolves to "Metabase" rather than landing in "Other"). Keys with no
-# match fall into "Other". The order of CREDENTIAL_SERVICE_GROUPS is
-# both the prefix-match order AND the dropdown display order, so put
-# the platform group first.
-# ----------------------------------------------------------------------
+# Bucketing: longest matching prefix wins ("MB_DB_USER" → "Metabase"
+# not "Other"). List order is both prefix-match order AND dropdown order.
 CREDENTIAL_SERVICE_GROUPS: list[tuple[str, list[str]]] = [
     ("OrcheStack platform", ["ORCHESTACK_"]),
     ("Image tags",          ["_TAG"]),  # suffix-match handled specially
-    # "Warehouse" is the operator-facing label for the warehouse DB
-    # credentials. Env keys keep the WAREHOUSE_DB_ prefix for backward
-    # compat with existing .env files; only the display name changed
-    # to reduce confusion ("pipeline" sounded like data-pipeline software,
-    # not "the database holding pipeline output tables").
+    # Env keys keep WAREHOUSE_DB_ prefix for .env backward compat; only
+    # display name changed (avoid "pipeline" sounding like a pipeline tool).
     ("Warehouse",           ["WAREHOUSE_DB_"]),
     ("Airbyte",             ["AIRBYTE_"]),
     ("Apache Airflow",      ["AIRFLOW_"]),
@@ -682,12 +518,7 @@ CREDENTIAL_SERVICE_GROUPS: list[tuple[str, list[str]]] = [
 
 
 def _service_for_credential(key: str) -> str:
-    """Return the operator-facing service name for a given .env key.
-
-    Image-tag suffix has priority over prefix matches — every service
-    has a *_TAG variable that we want grouped together under one header
-    so operators see image versions in one place.
-    """
+    """Return operator-facing service name for a .env key. *_TAG suffix takes priority so image versions group together."""
     if key.endswith("_TAG"):
         return "Image tags"
     for group, prefixes in CREDENTIAL_SERVICE_GROUPS:
@@ -718,15 +549,7 @@ CREDENTIAL_SERVICE_TAG_MAP: dict[str, str] = {
 async def _build_credentials_context(
     reveal: bool, service: str, search: str,
 ) -> dict:
-    """Shared context-builder for the credentials page + table fragment.
-
-    Aggregates KPI metrics (total / sensitive / read-only / last edited)
-    over the FULL credential set (pre-filter), then applies the
-    operator's service + search filters before handing the rows to the
-    template. Used by both the initial GET /credentials and the HTMX
-    GET /api/dashboard/credentials/table so the data shape stays in
-    sync across both render paths.
-    """
+    """Shared context-builder for credentials page + table fragment. KPI metrics aggregate over the FULL set (pre-filter) before service+search filters apply."""
     try:
         data = await orchestrator.list_credentials(reveal=reveal)
         credentials = data.get("credentials", [])
@@ -814,20 +637,13 @@ async def credentials_update_action(
     service: str = Form("All"),
     user=Depends(require_admin),
 ) -> HTMLResponse:
-    """Update one .env variable + re-render its table row.
-
-    The service filter is threaded through the form so the operator
-    stays on the same filtered view after saving — otherwise an edit
-    on the Metabase filter would jump them back to All.
-    """
+    """Update one .env variable + re-render its table row. Service filter is threaded through the form so an edit doesn't snap the view back to All."""
     try:
         await orchestrator.update_credential(
             key, value, actor_user_id=user.get("user_id"),
         )
     except httpx.HTTPError as e:
         log.warning("update_credential(%s) failed: %s", key, e)
-    # Re-render the full table so the row shows its new state (masked
-    # again, with a brief "Updated" indicator handled in the template).
     try:
         data = await orchestrator.list_credentials(reveal=False)
         credentials = data.get("credentials", [])
@@ -891,18 +707,12 @@ async def profile_save_action(
     new_password:     str = Form(""),
     user=Depends(require_user),
 ) -> HTMLResponse:
-    """Save profile changes. Renders the page back with a success/error banner.
-
-    Only sends fields the operator actually changed — passing every form
-    field unconditionally would overwrite e.g. company_name with the empty
-    string when they only meant to update full_name.
-    """
+    """Save profile changes. Only sends fields the operator actually changed — passing every form field would overwrite e.g. company_name with empty when they only meant to update full_name."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     save_error = None
     saved = False
     try:
         current = await orchestrator.get_my_profile(cookie)
-        # Only send fields the operator actually changed.
         kwargs: dict = {}
         if full_name and full_name != current.get("full_name"):
             kwargs["full_name"] = full_name
@@ -925,7 +735,6 @@ async def profile_save_action(
     except httpx.HTTPError as e:
         save_error = str(e)
 
-    # Re-fetch the profile so the form shows the latest persisted state.
     try:
         profile = await orchestrator.get_my_profile(cookie)
         error = None
@@ -946,11 +755,7 @@ async def profile_save_action(
 # ===========================================================================
 @app.get("/users", response_class=HTMLResponse, name="users_page")
 async def users_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
-    """Users page — aggregates KPI metrics at first paint so the strip
-    isn't blank pre-HTMX-load. The table itself still loads via the
-    HTMX fragment so future updates after invite / role grant can
-    swap just the table without re-rendering the KPI strip.
-    """
+    """Users page — aggregates KPI metrics at first paint; table loads via HTMX fragment so invite/grant swaps the table without re-rendering the strip."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     total_users   = 0
     admin_count   = 0
@@ -962,7 +767,6 @@ async def users_page(request: Request, user=Depends(require_admin)) -> HTMLRespo
         users = users_data.get("users", [])
         total_users = len(users)
         admin_count = sum(1 for u in users if "Admin" in (u.get("roles") or []))
-        # Active in last 24h: last_login_at within 24h of now.
         from datetime import datetime, timedelta, timezone
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         for u in users:
@@ -1002,25 +806,12 @@ async def users_page(request: Request, user=Depends(require_admin)) -> HTMLRespo
 @app.get("/api/dashboard/users/table", response_class=HTMLResponse,
           name="users_table_fragment")
 async def users_table_fragment(request: Request, user=Depends(require_admin)) -> HTMLResponse:
-    """HTMX fragment for the Users table.
-
-    invite_result is intentionally None on plain loads — the only path
-    that carries an invite_result is the invite POST handler, which
-    renders this same template directly with the result in context. We
-    used to read request.session.get(...) here as a defensive cross-tab
-    handoff, but SessionMiddleware isn't installed (cookies + the
-    orchestrator are the source of truth, not server-side session state),
-    so the access raised AssertionError and the fragment 500'd. The
-    handler's catch was scoped to httpx.HTTPError, so the 500 surfaced as
-    "Loading users…" forever in the browser.
-    """
+    """HTMX fragment for the Users table. invite_result is None on plain loads — only the invite POST handler carries one. Do NOT read request.session here: SessionMiddleware isn't installed (cookies + orchestrator are the source of truth), and access raises AssertionError, hangs UI on "Loading users…"."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         users_data = await orchestrator.admin_list_users(cookie)
         roles_data = await orchestrator.admin_list_roles(cookie)
         users_list = users_data.get("users", [])
-        # Annotate each user with a humanised "last login" string —
-        # "12s ago", "3h ago", "2d ago", "—". Matches the mock pattern.
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         for u in users_list:
@@ -1047,12 +838,7 @@ async def users_table_fragment(request: Request, user=Depends(require_admin)) ->
 
 
 def _format_relative(iso_ts: str | None, now=None) -> str:
-    """Humanise a timestamp into 'Ns ago' / 'Nm ago' / 'Nh ago' / 'Nd ago'.
-
-    Returns '—' for None or unparseable input. Used by the users page
-    Last login column to match the approved mock's compact display
-    style instead of bare timestamps.
-    """
+    """Humanise a timestamp into 'Ns/Nm/Nh/Nd ago'. Returns '—' for None or unparseable input."""
     if not iso_ts:
         return "—"
     try:
@@ -1078,10 +864,8 @@ async def users_invite_action(
     request: Request,
     username: str = Form(...), email: str = Form(...),
     full_name: str = Form(...),
-    # Accept role_id as a str so the "No role yet" option (sends "")
-    # doesn't trigger FastAPI's int parser and 422 the request — that
-    # 422 was what was flipping the connection indicator to "disconnected"
-    # in red on every invite click that didn't pick a starter role.
+    # role_id is str (not int) so the "No role yet" option (sends "") doesn't
+    # trigger FastAPI's int parser and 422 the request.
     role_id: str = Form(""),
     user=Depends(require_admin),
 ) -> HTMLResponse:
@@ -1089,8 +873,6 @@ async def users_invite_action(
     invite_result = None
     invite_error = None
     role_names: list[str] = []
-    # Coerce role_id from string here so empty string becomes None
-    # without FastAPI rejecting the request.
     role_id_int: int | None = None
     if role_id.strip():
         try:
@@ -1098,7 +880,7 @@ async def users_invite_action(
         except ValueError:
             invite_error = f"Invalid role id: {role_id!r}"
     if role_id_int is not None:
-        # Resolve role_id → role name for the orchestrator API (which takes names).
+        # Orchestrator API takes role names, not IDs.
         try:
             roles_data = await orchestrator.admin_list_roles(cookie)
             for r in roles_data.get("roles", []):
@@ -1121,8 +903,7 @@ async def users_invite_action(
     except httpx.HTTPError as e:
         invite_error = str(e)
 
-    # Re-render the table fragment with the invite result for one-time
-    # display of the starter password.
+    # Re-render with invite_result so the template can one-time-display the starter password.
     try:
         users_data = await orchestrator.admin_list_users(cookie)
         roles_data = await orchestrator.admin_list_roles(cookie)
@@ -1202,18 +983,7 @@ async def _roles_render_context(
     request: Request, user: dict,
     selected_role_id: int | None = None,
 ) -> dict:
-    """Common context for roles fragment renders.
-
-    Builds three pieces beyond the raw orchestrator response:
-      1. perms_by_role  — { role_id: [permission rows] }
-      2. matrix_by_role — { role_id: { service_name: effective_perm } }
-         where effective_perm merges role-specific + wildcard (`*`)
-         grants. This is what the approved mock's capability matrix
-         renders per-service.
-      3. member_count_by_role — { role_id: int }, scanned from
-         admin_list_users by counting how many users carry each role
-         name in their `roles` array.
-    """
+    """Common context for roles fragment renders. matrix_by_role merges role-specific + wildcard (`*`) grants so a `*` row shows checks across all services."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         roles_data = await orchestrator.admin_list_roles(cookie)
@@ -1235,10 +1005,6 @@ async def _roles_render_context(
 
     services = services_data.get("services", [])
 
-    # Build per-role capability matrix over every catalogue service.
-    # Wildcard ('*') grant is merged into every per-service row so a
-    # role with just `*` shows checks across the whole matrix without
-    # needing one row per service in the permission table.
     matrix_by_role: dict[int, dict[str, dict]] = {}
     for role in roles_data.get("roles", []):
         role_perms = perms_by_role.get(role["id"], [])
@@ -1262,7 +1028,6 @@ async def _roles_render_context(
             }
         matrix_by_role[role["id"]] = by_service
 
-    # Member count per role — scan users + tally roles.
     member_count_by_role: dict[int, int] = {}
     for role in roles_data.get("roles", []):
         count = sum(
@@ -1273,11 +1038,7 @@ async def _roles_render_context(
 
     all_roles = roles_data.get("roles", [])
 
-    # Single-role filter: when selected_role_id is set, narrow the
-    # rendered list to that role. The selector dropdown above the
-    # fragment lists ALL roles regardless — that's the affordance the
-    # operator uses to switch. Without a selection, default to the
-    # first role so the page renders meaningfully on first paint.
+    # Default to first role on first paint so the page renders meaningfully.
     selected_role = None
     if selected_role_id is not None:
         selected_role = next(
@@ -1317,21 +1078,14 @@ async def roles_create_action(
     request: Request, name: str = Form(...),
     description: str = Form(""), user=Depends(require_admin),
 ) -> HTMLResponse:
-    """Create a role; on success select it as the visible role + fire
-    `roleCreated` HX-Trigger so the page-level JS can close the
-    create form, reset inputs, and surface a confirmation toast.
-
-    create_error is passed into the context so the fragment can show
-    an inline error banner if the orchestrator rejected the create.
-    """
+    """Create a role; on success select it + fire `roleCreated` HX-Trigger so page JS closes the form and toasts."""
     import json as _json
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     new_role_id: int | None = None
     create_error: str | None = None
     try:
         result = await orchestrator.admin_create_role(cookie, name, description or None)
-        # Orchestrator returns {"role_id": int, "name": str} — read the
-        # canonical key, falling back to "id" in case of future variant.
+        # Orchestrator returns {"role_id": int}; fall back to "id" for future variants.
         new_role_id = (result or {}).get("role_id") or (result or {}).get("id")
     except httpx.HTTPError as e:
         log.warning("create role failed: %s", e)
@@ -1344,9 +1098,6 @@ async def roles_create_action(
     ctx["just_created_name"] = name if new_role_id else None
     resp = templates.TemplateResponse("_roles_list_fragment.html", ctx)
     if new_role_id:
-        # Fire a custom event the page-level JS listens for to close +
-        # reset the create form. Payload carries the new role name +
-        # id so the toast can name what was created.
         resp.headers["HX-Trigger"] = _json.dumps({
             "roleCreated": {"role_id": new_role_id, "role_name": name},
         })
@@ -1372,25 +1123,10 @@ async def roles_delete_action(
 async def roles_bulk_set_permissions_action(
     request: Request, role_id: int, user=Depends(require_admin),
 ) -> HTMLResponse:
-    """Bulk replace the role's per-service permission set.
-
-    Receives form fields named `<service>__can_<perm>` (double
-    underscore separator) and processes ALL catalogue services in
-    one POST. For each (role, service) tuple:
-      - If any of the 4 perms is True → upsert the row with that set.
-      - If all 4 are False → revoke the row if present (keeps the
-        permission table semantically clean).
-
-    Used by the single "Save changes" button at the bottom of the
-    edit panel — operators tick whatever they want across all
-    rows and commit them together instead of clicking a Save
-    button per row.
-    """
+    """Bulk replace the role's per-service permission set. Form fields are `<svc>__can_<perm>` (double underscore). All-false revokes the row (keeps permission table semantically clean: "no row" == "no permissions")."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     form = await request.form()
 
-    # Pre-fetch existing permissions so we know which rows to delete
-    # vs which can stay unchanged. One read covers everything.
     try:
         perms_data = await orchestrator.admin_list_permissions(cookie)
         existing_by_service = {
@@ -1401,9 +1137,7 @@ async def roles_bulk_set_permissions_action(
     except (httpx.HTTPError, ValueError):
         existing_by_service = {}
 
-    # Iterate every catalogue service and apply the form's view of
-    # its permissions. Services with no form fields are treated as
-    # all-false (operators can revoke a row by un-ticking every box).
+    # Services with no form fields are treated as all-false so un-ticking every box revokes.
     try:
         svc_data = await orchestrator.list_services()
         all_services = svc_data.get("services", [])
@@ -1452,19 +1186,7 @@ async def roles_set_permissions_action(
     selected_role_id: int | None = Form(None),
     user=Depends(require_admin),
 ) -> HTMLResponse:
-    """Replace the per-service permission set for a role.
-
-    If all four flags are False, the grant row is revoked (deleted)
-    instead of stored as a no-op row — keeps the permission table
-    semantically clean ("no row" === "no permissions"). Otherwise the
-    upstream upsert overwrites or inserts.
-
-    Called by each row's checkbox-grid on every change; the operator
-    just clicks the four checkboxes for a service and the grant gets
-    saved without an explicit Submit. The selected_role_id form field
-    is threaded back through so the fragment re-renders with the same
-    role still selected (no snap-back to the first role on every click).
-    """
+    """Replace per-service permission set for a role. All-false revokes (keeps table clean). selected_role_id is threaded back so the fragment doesn't snap to the first role on every click."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     any_perm = can_start or can_use or can_force_stop or can_edit_config
     try:
@@ -1475,7 +1197,6 @@ async def roles_set_permissions_action(
                 can_force_stop=can_force_stop, can_edit_config=can_edit_config,
             )
         else:
-            # All false → revoke existing row if present.
             perms_data = await orchestrator.admin_list_permissions(cookie)
             existing = next(
                 (p for p in perms_data.get("permissions", [])
@@ -1532,20 +1253,8 @@ async def roles_revoke_permission_action(
     return templates.TemplateResponse("_roles_list_fragment.html", ctx)
 
 
-# ----------------------------------------------------------------------
-# Mapping from orchestrator service-catalogue keys to the operator-facing
-# group name used in CREDENTIAL_SERVICE_GROUPS. The catalogue uses short
-# slugs ("metabase", "pgadmin") while the credentials page groups by
-# display name ("Metabase", "pgAdmin"). This is the bridge for the
-# per-service Edit-config view: given a service slug, show ONLY that
-# service's keys plus the pipeline-warehouse keys (so Postgres-backed
-# services show the warehouse creds they actually use to connect).
-# ----------------------------------------------------------------------
-# Per-service credential groupings rendered on the service-config page.
-# Each tuple is (group_title, group_subtitle, key_substring_patterns).
-# Rules apply in order; the first match wins per credential. Variables
-# matching no rule fall into "Other". Subtitles match the approved
-# mock's tone ("auto-regenerated on every start from these values").
+# Per-service credential groupings: (title, subtitle, key_substring_patterns).
+# Rules apply in order; first match wins. Unmatched → "Other".
 CREDENTIAL_GROUP_RULES: list[tuple[str, str, list[str]]] = [
     ("Repository",
      "Where the project clones from on every start",
@@ -1566,13 +1275,7 @@ CREDENTIAL_GROUP_RULES: list[tuple[str, str, list[str]]] = [
 
 
 def _group_credentials(creds: list[dict]) -> list[dict]:
-    """Group a flat credential list by the rules above.
-
-    Returns a list of `{title, sub, creds}` dicts in the order defined
-    by CREDENTIAL_GROUP_RULES, skipping any empty groups. Unmatched
-    credentials are bundled into a trailing "Other" group so nothing
-    falls off the page.
-    """
+    """Group flat credential list by CREDENTIAL_GROUP_RULES. Returns ordered list of `{title, sub, creds}`, empty groups skipped, unmatched bucketed into trailing "Other"."""
     buckets: dict[str, list[dict]] = {t: [] for t, _, _ in CREDENTIAL_GROUP_RULES}
     other: list[dict] = []
     for c in creds:
@@ -1621,14 +1324,7 @@ SERVICE_CREDENTIAL_GROUPS: dict[str, list[str]] = {
 async def service_config_page(
     request: Request, name: str, user=Depends(require_user)
 ) -> HTMLResponse:
-    """`/app/services/{name}/config` — per-service credentials editor.
-
-    The docs' workflow says "click the service tile → Edit config." This
-    is the destination. Renders ONLY the .env keys grouped under this
-    service's CREDENTIAL_SERVICE_GROUPS bucket — no fishing through the
-    global flat list to find METABASE_*. Save writes back via the same
-    update_credential path the global page uses.
-    """
+    """`/app/services/{name}/config` — per-service credentials editor scoped to this service's CREDENTIAL_SERVICE_GROUPS bucket."""
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         svc = await orchestrator.get_service(name)
@@ -1641,18 +1337,13 @@ async def service_config_page(
         log.warning("service_config_page list_credentials failed: %s", e)
         all_creds = []
 
-    # Annotate, then filter to this service's group(s).
     groups_for_service = SERVICE_CREDENTIAL_GROUPS.get(name, [])
     for c in all_creds:
         c["service"] = _service_for_credential(c["key"])
     creds = [c for c in all_creds if c["service"] in groups_for_service]
     grouped = _group_credentials(creds)
 
-    # "Last edited" data — pulled from the audit log. We look for the
-    # most recent credential_updated event whose target falls inside
-    # this service's credential keys; that maps a credential edit back
-    # to which service-config page the operator was on. Falls back to
-    # None if no edits ever happened, so the template hides the line.
+    # Last edit on this service = most recent credential_updated audit event whose target is one of this service's keys.
     last_edited_at = None
     last_edited_by = None
     try:
@@ -1698,12 +1389,7 @@ async def service_config_page(
 async def service_config_save(
     request: Request, name: str, user=Depends(require_user)
 ) -> HTMLResponse:
-    """Save the per-service config form.
-
-    Form is keyed by ENV_VAR_NAME → new value. Skips read-only keys and
-    skips keys whose value didn't change (so the audit log doesn't see
-    spurious updates). Returns the same page with a summary banner.
-    """
+    """Save the per-service config form. Form is keyed ENV_VAR_NAME → new value. Skips read-only keys and unchanged values (no spurious audit entries)."""
     form = await request.form()
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
@@ -1716,24 +1402,21 @@ async def service_config_save(
 
     saved_keys: list[str] = []
     save_error: str | None = None
-    test_failures: list[dict] = []  # surfaced to the operator
+    test_failures: list[dict] = []
     for raw_key, raw_val in form.items():
         if not raw_key or raw_key.startswith("__"):
             continue
         if raw_key not in by_key:
-            continue                    # don't accept new keys from the form
+            continue
         cur = by_key[raw_key]
         if cur.get("is_readonly"):
             continue
         if cur.get("value", "") == raw_val:
-            continue                    # no change → no write
+            continue
 
-        # Live connection test for DB-typed credentials BEFORE we
-        # persist. The orchestrator returns {"testable": false, ...}
-        # for keys we can't verify in-band (image tags, secrets used
-        # only by tools we can't reach) — those just save without test.
-        # When the test runs AND fails, we DON'T save the value; we
-        # collect the error and surface it to the operator.
+        # Test BEFORE persist for DB-typed creds. Orchestrator returns testable=false
+        # for un-verifiable keys (image tags, etc.); a failed test skips the save
+        # so the operator can fix the value instead of bricking the service.
         try:
             tr = await orchestrator.test_credential(raw_key, raw_val)
             if tr.get("testable") and tr.get("ok") is False:
@@ -1744,11 +1427,9 @@ async def service_config_save(
                     "error": tr.get("error") or tr.get("error_class")
                               or "connection refused",
                 })
-                continue  # skip save for this key
+                continue
         except httpx.HTTPError as e:
-            # Test endpoint unreachable. Don't block the save — log
-            # and proceed (the post-save Stop/Start of the service is
-            # the operator's safety net).
+            # Test endpoint unreachable: don't block save — post-save Stop/Start is the safety net.
             log.warning("test_credential %s endpoint failed: %s", raw_key, e)
 
         try:
@@ -1761,15 +1442,12 @@ async def service_config_save(
             save_error = str(e)
             break
 
-    # If we collected test failures but no save error, surface the
-    # test failures as the user-visible error. They're the actionable
-    # signal — "your password is wrong" tells the operator what to fix.
+    # Surface test failures as user-visible error when no save error — they're the actionable signal.
     if test_failures and not save_error:
         save_error = "Live connection test failed for: " + ", ".join(
             f"{f['key']} (as {f['as']}: {f['error']})" for f in test_failures
         )
 
-    # Re-render with the latest values + summary banner.
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError:
@@ -1806,41 +1484,17 @@ async def service_config_save(
 async def service_detail(
     request: Request, name: str, user=Depends(require_user)
 ) -> HTMLResponse:
-    """`/app/services/{name}` — per-service detail page.
-
-    Server-side aggregates everything the approved mock shows above the
-    fold: service detail, open sessions for this service, and pin state.
-    The audit/activity list streams in via HTMX from the dedicated
-    service_activity_fragment endpoint (so the filter form can drive it).
-    """
+    """`/app/services/{name}` — per-service detail page. Activity list streams via HTMX from service_activity_fragment so the filter form can drive it."""
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError:
         svc = None
 
-    # Open sessions for THIS service. Filter client-side from the active
-    # list — orchestrator doesn't expose a per-service filter yet, but
-    # the active-session set is bounded (capped at MAX_PER_USER × users).
-    # NB: orchestrator returns `service`, not `service_name` — match
-    # exactly what its /api/sessions schema emits.
-    #
-    # We dedupe by user_id, keeping ONLY the most recent session per
-    # user. The session-lifecycle layer issues a fresh session token
-    # every time the operator opens a new tab against the same tool,
-    # so a single operator browsing dbt across two windows shows up
-    # as two rows even though they're one human. The Open sessions
-    # card answers "who is using this service?" — listing the same
-    # name twice obscures that. Most-recent-per-user keeps the answer
-    # crisp.
-    #
-    # Hard rule: if the service is stopped, we render the empty-state
-    # regardless of what the orchestrator returns. An "active" session
-    # against a stopped container is by definition stale — the operator's
-    # tab can't reach the tool anyway. Showing stale rows with an active
-    # Force-end button gave operators conflicting signals ("service is
-    # stopped, but there's a live session?"). Cleaner to treat stopped
-    # ⇒ no sessions in the UI; orphan rows get swept by the next stop_service
-    # call or by the backfill that ran with this fix.
+    # Orchestrator returns `service` not `service_name` — match its schema.
+    # Dedupe by user_id, keeping most-recent session per user: one human opening
+    # multiple tabs against the same tool shouldn't render as multiple rows.
+    # Stopped service ⇒ render empty: active session against stopped container
+    # is stale and conflicting signal ("service stopped but live session?").
     open_sessions = []
     is_running = (svc or {}).get("state") == "running"
     if is_running:
@@ -1854,7 +1508,6 @@ async def service_detail(
             for s in all_for_this_svc:
                 uid = s.get("user_id") or s.get("username") or s.get("token")
                 existing = latest_by_user.get(uid)
-                # Compare by last_heartbeat_at if present, else opened_at.
                 new_key = s.get("last_heartbeat_at") or s.get("opened_at") or ""
                 old_key = (
                     (existing.get("last_heartbeat_at") or existing.get("opened_at") or "")
@@ -1866,30 +1519,20 @@ async def service_detail(
         except (httpx.HTTPError, ValueError) as e:
             log.warning("service_detail(%s) list_sessions failed: %s", name, e)
 
-    # Compute a humanised uptime ("2h 14m", "3m", "1d 4h") from the
-    # orchestrator's started_at ISO string. None when the service isn't
-    # running OR docker ps didn't return started_at (e.g. control-plane
-    # services that don't carry the orchestack.service label).
     uptime_display = None
     if svc and svc.get("started_at"):
         try:
             from datetime import datetime, timezone
-            # Two Docker timestamp formats we need to handle:
-            #   docker ps CreatedAt:    "2026-06-18 23:56:55 +0000 UTC"
-            #   docker inspect .StartedAt: "2026-06-19T01:23:45.123456789Z"
-            # We switched the orchestrator to use StartedAt (accurate
-            # last-start) but defend against both here so dashboards
-            # against older orchestrators still parse.
+            # Defend against two Docker timestamp formats so dashboards against
+            # older orchestrators still parse:
+            #   docker ps CreatedAt:       "2026-06-18 23:56:55 +0000 UTC"
+            #   docker inspect StartedAt:  "2026-06-19T01:23:45.123456789Z"
             iso = svc["started_at"].strip()
-            # 1. Strip trailing " UTC" if present (CreatedAt format).
             iso = iso.replace(" UTC", "")
-            # 2. Trailing `Z` → `+00:00` (StartedAt format; Python's
-            #    fromisoformat before 3.11 doesn't accept Z directly).
+            # fromisoformat (pre-3.11) doesn't accept trailing Z.
             if iso.endswith("Z"):
                 iso = iso[:-1] + "+00:00"
-            # 3. Truncate fractional seconds to 6 digits — Docker's
-            #    StartedAt emits nanoseconds (9 digits) which Python
-            #    rejects. Slice from the dot to the next non-digit run.
+            # Docker emits nanoseconds (9 digits); Python rejects >6.
             if "." in iso:
                 dot = iso.index(".")
                 tail_start = dot + 1
@@ -1898,7 +1541,7 @@ async def service_detail(
                     tail_end += 1
                 if tail_end - tail_start > 6:
                     iso = iso[:tail_start + 6] + iso[tail_end:]
-            # 4. Handle "+0000" vs "+00:00" — fromisoformat needs the colon.
+            # fromisoformat needs the colon in "+00:00".
             if len(iso) >= 5 and (iso[-5] in "+-") and iso[-3] != ":":
                 iso = iso[:-2] + ":" + iso[-2:]
             started = datetime.fromisoformat(iso)
@@ -1940,14 +1583,7 @@ async def service_activity_fragment(
     event_type: str | None = None, since: str | None = None,
     until: str | None = None, limit: int = 10,
 ) -> HTMLResponse:
-    """Render activity rows scoped to a single service in the COMPACT
-    layout used by service_detail.html (90px when | event | who grid).
-
-    Distinct from audit_table_fragment because the visual treatment is
-    different — service_detail wants a list-style read, not a full
-    data-table. The filter form on service_detail posts here and the
-    response replaces the activity list in place.
-    """
+    """Render activity rows scoped to a single service in compact layout (distinct from audit_table_fragment's data-table treatment)."""
     events = []
     error = None
     try:
@@ -1985,15 +1621,7 @@ async def login_page(request: Request, next: str = "/") -> HTMLResponse:
 @app.get("/api/dashboard/health", response_class=HTMLResponse,
           name="health_fragment")
 async def health_fragment(request: Request) -> HTMLResponse:
-    """Proxy to the orchestrator's /api/health, render as an HTML fragment.
-
-    Failure handling: if the orchestrator is unreachable, we still return
-    200 with a fragment that says "orchestrator unreachable" — that way
-    HTMX's afterRequest fires successfully and the connection indicator
-    stays green for the dashboard itself, but the operator sees the
-    accurate state of the orchestrator. (The orchestrator's reachability
-    is a different signal from the dashboard's reachability.)
-    """
+    """Proxy to orchestrator's /api/health as HTML fragment. Returns 200 even on orchestrator failure so HTMX afterRequest fires and the dashboard's connection indicator stays green — orchestrator-reachability is a distinct signal."""
     try:
         health = await orchestrator.health()
         reachable = True
@@ -2016,20 +1644,7 @@ async def health_fragment(request: Request) -> HTMLResponse:
 async def services_grid_fragment(
     request: Request, user=Depends(require_user),
 ) -> HTMLResponse:
-    """Render the full service grid (called every 10s by HTMX).
-
-    Visibility rules:
-      - Only services the operator CONFIGURED at wizard time are shown
-        on the main grid. Services they didn't pick are hidden so the
-        dashboard reflects their actual stack, not the catalogue of
-        everything OrcheStack could deploy.
-      - A "Configure another service" link below the grid takes them
-        back into the wizard scoped to add one of the unconfigured
-        layers — that's how they grow the stack later.
-      - For non-Admin users, services are further filtered by per-role
-        permission (see admin's role-permissions table). Admins see
-        everything that's configured.
-    """
+    """Render the full service grid (polled every 10s). Shows only configured services; non-admins are further filtered by per-role can_use permission."""
     try:
         data = await orchestrator.list_services()
         all_services = data.get("services", [])
@@ -2039,15 +1654,8 @@ async def services_grid_fragment(
         all_services = []
         error = str(e)
 
-    # 1. Hide unconfigured services from the main grid. Operators who
-    # skipped (say) Airflow during setup don't see an Airflow tile —
-    # they reach Airflow's onboarding via the "Configure another
-    # service" link below the grid.
     services = [s for s in all_services if s.get("configured")]
 
-    # 2. Role-based filtering. Admins see everything; for everyone else
-    # we ask the orchestrator's role-permission table which services
-    # this user's roles grant `can_use` on, then keep only those.
     is_admin = "Admin" in (user.get("roles") or [])
     if not is_admin:
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
@@ -2056,8 +1664,7 @@ async def services_grid_fragment(
             allowed = set(perms_data.get("allowed_services", []))
             services = [s for s in services if s["name"] in allowed]
         except (httpx.HTTPError, ValueError) as e:
-            # Fail-closed for non-admin users: if we can't determine
-            # their permissions, show nothing rather than over-grant.
+            # Fail-closed for non-admin: show nothing rather than over-grant on perm lookup error.
             log.warning(
                 "service permission lookup failed for non-admin user %s: %s",
                 user.get("user_id"), e,
@@ -2085,27 +1692,7 @@ async def services_grid_fragment(
 async def start_service_action(
     request: Request, name: str, user=Depends(require_user),
 ) -> HTMLResponse:
-    """Tell the orchestrator to start `name` AND open a session for the
-    operator, return the updated card.
-
-    Why both: pressing Start signals "I want to use this." A bare
-    docker-start with no session row left the dashboard's Open sessions
-    card empty for the operator who just started the service —
-    semantically wrong (they're the reason it's running) and
-    operationally bad (the reconciler's idle check would see "no
-    sessions" and try to stop the service right back down again after
-    the IDLE_THRESHOLD elapses).
-
-    We delegate to open_session because it does both jobs atomically:
-      1. INSERT a session row attributed to the operator (or reuse
-         the operator's existing open session — same dedup path as the
-         Open button).
-      2. auto_start=True → docker compose start if not already running.
-
-    Error path: if the orchestrator is unreachable we re-fetch the
-    service to render its actual current state — the visual cue of
-    the still-stopped dot is the error feedback.
-    """
+    """Start `name` AND open a session for the operator. A bare docker-start with no session row leaves Open-sessions empty for the operator who just started the service — and the reconciler's idle check then stops the service after IDLE_THRESHOLD."""
     try:
         await orchestrator.open_session(
             name, auto_start=True, user_id=user.get("user_id"),
@@ -2137,13 +1724,7 @@ async def stop_service_action(request: Request, name: str) -> HTMLResponse:
 async def pin_service_action(
     request: Request, name: str, ttl_seconds: int = Form(7200),
 ) -> HTMLResponse:
-    """Pin a service (or extend an existing pin) with a TTL from the form.
-
-    The approved mock's pin card has a select with values: +1h / +4h /
-    +1d / +7d / Never. The select posts here with ttl_seconds as the
-    submitted value; "Never" maps to None (orchestrator stores the pin
-    without an expiry).
-    """
+    """Pin a service (or extend an existing pin) with TTL. ttl_seconds=0 maps to None (no expiry — "Never" option)."""
     try:
         await orchestrator.pin_service(
             name, ttl_seconds=None if ttl_seconds == 0 else ttl_seconds,
@@ -2156,9 +1737,7 @@ async def pin_service_action(
 @app.get("/api/dashboard/services/{name}/pin-button", response_class=HTMLResponse,
           name="pin_initial_button")
 async def pin_initial_button(request: Request, name: str) -> HTMLResponse:
-    """Initial render of the pin button — used on the service detail page
-    when it first loads. The action endpoints (POST/DELETE) reuse the
-    same fragment template so subsequent state changes look identical."""
+    """Initial render of the pin button on service detail page first load."""
     return await _render_pin_button(request, name)
 
 
@@ -2180,28 +1759,7 @@ async def open_service_session(
     request: Request, name: str, action: str | None = None,
     user=Depends(require_user),
 ) -> JSONResponse:
-    """Open an orchestrator session against `name` and return the tool URL.
-
-    Returns JSON `{token, tool_url, service}`. The dashboard's client-side
-    JS stores `token` in localStorage so the heartbeat ticker can refresh
-    it, and opens `tool_url` in a new tab.
-
-    Forwards the authenticated user's user_id to the orchestrator so the
-    session row is attributed to the actual operator — without this the
-    orchestrator falls back to DEFAULT_USER_ID (the platform's system
-    user), which made every session show up as "OrcheStack system user"
-    on the service-detail Open sessions card. The fallback was meant
-    for batch/cron-style internal calls, not for operator-driven Open
-    clicks from the dashboard.
-
-    Tool URL resolution, in priority order:
-      1. If `?action=<key>` is given AND the service has actions[],
-         use that action's external_url (dbt has 'docs' + 'cli').
-      2. Else if the service has external_url, use that (MinIO,
-         Airbyte, PostgreSQL).
-      3. Else fall back to ROOT_PATH/<name> via Traefik subpath
-         (Metabase, pgAdmin).
-    """
+    """Open session against `name` and return tool URL. Forwards user_id so the row is attributed to the operator (otherwise orchestrator falls back to DEFAULT_USER_ID — system user). Tool URL priority: ?action=<key>.external_url → service.external_url → ROOT_PATH/<name>."""
     try:
         result = await orchestrator.open_session(
             name, auto_start=True, user_id=user.get("user_id"),
@@ -2239,9 +1797,7 @@ async def open_service_session(
     })
 
 
-# Services with extra-long first-run setup (Metabase's Liquibase migration
-# is the canonical case). The JS poller waits longer + shows specific copy
-# for these so the operator doesn't think the system is stuck.
+# Long first-run setup (Metabase's Liquibase migration). JS poller shows specific copy so operator doesn't think the system is stuck.
 SLOW_BOOTSTRAP_SERVICES = {"metabase"}
 
 
@@ -2249,19 +1805,7 @@ SLOW_BOOTSTRAP_SERVICES = {"metabase"}
 async def service_ready_probe(
     request: Request, name: str, action: str | None = None,
 ) -> JSONResponse:
-    """Service readiness check the dashboard's Open button polls.
-
-    Returns:
-      {"ready": true}                                   service serves requests
-      {"ready": false, "phase": "starting"}             container not yet healthy
-      {"ready": false, "phase": "bootstrapping"}        container healthy, app still setting up
-      {"ready": false, "phase": "unknown"}              we can't tell — operator should refresh
-
-    The dashboard's open flow polls this endpoint instead of trying to
-    hit the tool URL directly because cross-origin redirects from the
-    tools (Metabase's first-run wizard 302s to /setup) confuse browser
-    fetch readiness checks.
-    """
+    """Readiness probe polled by the Open button. Used instead of hitting the tool URL directly because cross-origin redirects (e.g. Metabase /setup 302) confuse browser fetch readiness checks."""
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError as e:
@@ -2271,27 +1815,15 @@ async def service_ready_probe(
     if not svc or svc.get("state") != "running":
         return JSONResponse({"ready": False, "phase": "starting"})
 
-    # Container is running. For Metabase, additionally check setup
-    # completion. Three distinct sub-phases reported up to the JS so the
-    # operator sees what's actually happening during the long first boot:
-    #
-    #   "migrating"     — /api/health returns 503 {"status": "initializing"}.
-    #                     Liquibase is running its 420 changesets against
-    #                     the empty `metabase` database. 4-5 minutes on
-    #                     Docker Desktop for macOS.
-    #   "bootstrapping" — /api/health is 200, /api/session/properties has
-    #                     setup-token. Migration done; orchestrator's
-    #                     post-start hook is about to POST /api/setup.
-    #                     Brief — usually under 5 seconds.
-    #   ready=true      — setup-token is null. Operator can sign in.
+    # Metabase first-boot sub-phases ("migrating" → "bootstrapping" → ready)
+    # surfaced to JS so operator sees what's happening during the long Liquibase
+    # migration (4-5 min on Docker Desktop for macOS).
     if name == "metabase":
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 h = await client.get("http://orchestack-metabase:3000/api/health")
                 if h.status_code != 200:
-                    # 503 during init; surface as "migrating" so the JS
-                    # can show the long-wait copy instead of the short
-                    # "starting" copy.
+                    # 503 during init → "migrating" so JS shows the long-wait copy.
                     return JSONResponse(
                         {"ready": False, "phase": "migrating"},
                     )
@@ -2302,14 +1834,8 @@ async def service_ready_probe(
                     return JSONResponse(
                         {"ready": False, "phase": "starting"},
                     )
-                # Metabase's `setup-token` field persists in the in-memory
-                # store even after /api/setup completes — the real signal
-                # for "setup is done" is `has-user-setup: true`. M3 testing
-                # discovered the orchestrator's bootstrap was finishing
-                # successfully (POST /api/setup returned 200, audit log
-                # had metabase_bootstrapped) but the dashboard kept polling
-                # "bootstrapping" forever because we were watching the
-                # wrong field.
+                # `setup-token` persists in Metabase's in-memory store even after
+                # /api/setup completes — the real "setup done" signal is `has-user-setup`.
                 props = r.json()
                 if not props.get("has-user-setup"):
                     return JSONResponse(
@@ -2319,19 +1845,12 @@ async def service_ready_probe(
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
-    # pgAdmin: same pattern as Metabase. The Docker container healthcheck
-    # already gates state==running on /misc/ping returning 200, but
-    # there's a 5-10s window between gunicorn starting and the first
-    # successful ping where the container reports "starting" health
-    # status — and Traefik happily routes during that window, the user
-    # sees a 502 Bad Gateway or the dashboard's FastAPI 404 in the new
-    # tab. Probe /misc/ping ourselves so the dashboard waits until
-    # pgAdmin can actually serve requests before opening the tab.
+    # pgAdmin: 5-10s window between gunicorn start and first /misc/ping success
+    # where Traefik routes a "starting" container, surfacing 502 in the new tab.
     if name == "pgadmin":
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                # /misc/ping must include the SCRIPT_NAME prefix because
-                # pgAdmin rejects any path that doesn't start with it.
+                # /misc/ping MUST include the SCRIPT_NAME prefix — pgAdmin rejects any path that doesn't start with it.
                 r = await client.get(
                     "http://orchestack-pgadmin:80/app/pgadmin/misc/ping",
                 )
@@ -2341,61 +1860,34 @@ async def service_ready_probe(
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
-    # M4 services — each tool's "I'm actually serving" signal differs.
-    # Add a branch per service so the operator's Open click waits for
-    # the real readiness instead of just container=running.
-    _M4_READY_PROBES = {
+    _SERVICE_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
-        # Airflow's webserver enforces AIRFLOW__WEBSERVER__BASE_URL —
-        # /health (no prefix) returns 404 when BASE_URL is set to a
-        # subpath; the actual health endpoint is BASE_URL + /health.
-        # Match the Traefik subpath we set in services/airflow.yml.
+        # Airflow webserver enforces BASE_URL — /health returns 404 when
+        # AIRFLOW__WEBSERVER__BASE_URL is a subpath; actual endpoint is BASE_URL+/health.
         "airflow":      ("orchestack-airflow",      8080, "/app/airflow/health"),
-        # Airbyte's multi-container deployment exposes the API on
-        # orchestack-airbyte-server:8001 (not a single 'airbyte'
-        # container). The server is the right gate for "the whole
-        # stack is ready" — the webapp's nginx returns 200 before the
-        # API is up, so probing the webapp would race.
+        # Multi-container deployment; airbyte-server is the right gate — webapp's
+        # nginx returns 200 before the API is up, so probing the webapp would race.
         "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),
-        # dbt's default probe (no ?action= specified) hits the docs
-        # server — that's the older single-action behaviour. The
-        # action-specific probes below kick in when the dashboard JS
-        # passes ?action=docs or ?action=cli (matching the catalogue
-        # actions: list).
         "dbt":          ("orchestack-dbt",          8080, "/"),
-        # OpenMetadata serves /healthcheck on its ADMIN port (8586) not
-        # the operator-facing API port (8585). On 8585 the path is
-        # unknown to the React router → 404 → the dashboard's ready loop
-        # never gets a 200 → Open click never fires window.open(). The
-        # /api/v1/system/version endpoint is the right gate for "the
-        # actual API is serving" on port 8585 (returns version JSON in
-        # ~30ms once the SPA + API are both up).
+        # /healthcheck is on ADMIN port 8586, not operator-facing 8585. On 8585
+        # the React router 404s the path → ready loop never gets 200.
         "openmetadata": ("orchestack-openmetadata", 8585, "/api/v1/system/version"),
     }
-    # Per-action probes for multi-action services. dbt-docs takes
-    # 30-90s to come up (runs `dbt deps + dbt run + dbt docs generate`
-    # in the entrypoint); ttyd is up in ~2s. Probing them separately
-    # means the Open Terminal button is usable as soon as ttyd is
-    # listening, even while docs is still generating — exactly the
-    # case where an analytics engineer needs to drop in fast to debug.
-    _M4_ACTION_PROBES = {
+    # Per-action probes: dbt-docs takes 30-90s (runs deps + run + docs generate);
+    # ttyd is up in ~2s. Probing separately lets Open Terminal work while docs build.
+    _SERVICE_ACTION_PROBES = {
         ("dbt", "docs"): ("orchestack-dbt", 8080, "/index.html"),
-        # ttyd serves at its --base-path, NOT at /. Probing /
-        # returns 404 because ttyd's router only matches the
-        # configured prefix. Match the Traefik subpath we set in
-        # services/dbt.yml: --base-path /app/dbt-terminal.
+        # ttyd serves at its --base-path, NOT at /; probing / returns 404
+        # because ttyd's router only matches the configured prefix.
         ("dbt", "cli"):  ("orchestack-dbt", 7681, "/app/dbt-terminal/"),
-        # Great Expectations follows dbt's pattern exactly: Python
-        # http.server serving generated data docs on 8080, ttyd on
-        # 7681 with --base-path /app/ge-terminal.
         ("ge", "docs"):  ("orchestack-ge", 8080, "/index.html"),
         ("ge", "cli"):   ("orchestack-ge", 7681, "/app/ge-terminal/"),
     }
     probe = None
-    if action is not None and (name, action) in _M4_ACTION_PROBES:
-        probe = _M4_ACTION_PROBES[(name, action)]
-    elif name in _M4_READY_PROBES:
-        probe = _M4_READY_PROBES[name]
+    if action is not None and (name, action) in _SERVICE_ACTION_PROBES:
+        probe = _SERVICE_ACTION_PROBES[(name, action)]
+    elif name in _SERVICE_READY_PROBES:
+        probe = _SERVICE_READY_PROBES[name]
     if probe is not None:
         host, port, path = probe
         try:
@@ -2407,13 +1899,7 @@ async def service_ready_probe(
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
-    # dbt + GE are CLI tool containers (no HTTP UI). state==running is
-    # the right signal for them — `docker exec` is the operator's entry
-    # point. Fall through to the default ready=true below.
-
-    # Default for any other managed service: state==running is the signal.
-    # When M4 lands more managed services, each should add its own probe
-    # branch above with a service-specific readiness check.
+    # Default: state==running is the signal for services with no probe.
     return JSONResponse({"ready": True})
 
 
@@ -2434,13 +1920,7 @@ async def session_heartbeat(token: str) -> JSONResponse:
 
 @app.post("/api/dashboard/sessions/{token}/close", name="session_close")
 async def session_close(token: str) -> Response:
-    """Close a session — proxies to the orchestrator's DELETE.
-
-    Note: POST (not DELETE) because this endpoint is the target of
-    `navigator.sendBeacon()` calls from beforeunload handlers, and
-    sendBeacon doesn't support DELETE. The forwarded orchestrator call
-    is the real DELETE.
-    """
+    """Close a session — proxies to the orchestrator's DELETE. Endpoint is POST (not DELETE) because navigator.sendBeacon() in beforeunload doesn't support DELETE."""
     try:
         await orchestrator.close_session(token)
     except httpx.HTTPError as e:
@@ -2456,12 +1936,7 @@ async def session_close(token: str) -> Response:
 async def sessions_active_fragment(
     request: Request, limit: int = 10, offset: int = 0,
 ) -> HTMLResponse:
-    """Render the active-sessions table fragment (polled every 10s).
-
-    Page size defaults to 10 to keep the polled response small + the
-    table compact. Operator can bump via the page-size selector on the
-    sessions page.
-    """
+    """Render the active-sessions table fragment (polled every 10s)."""
     try:
         data = await orchestrator.list_sessions(active=True, limit=limit, offset=offset)
         sessions = data.get("sessions", [])
@@ -2473,8 +1948,6 @@ async def sessions_active_fragment(
         total = 0
         error = str(e)
 
-    # Annotate each session with display-friendly fields the template
-    # needs: service display_name, layer, and humanised "heartbeat 12s ago".
     SERVICE_META = {
         s["name"]: s for s in (await _safe_list_services()).get("services", [])
     }
@@ -2482,7 +1955,7 @@ async def sessions_active_fragment(
         meta = SERVICE_META.get(s.get("service"), {})
         s["display_name"] = meta.get("display_name") or s.get("service")
         s["layer"]        = meta.get("layer")
-        s["state"]        = meta.get("state")  # so we can show the status dot
+        s["state"]        = meta.get("state")
         s["heartbeat_relative"] = _format_relative(s.get("last_heartbeat_at"))
 
     return templates.TemplateResponse(
@@ -2499,10 +1972,7 @@ async def sessions_active_fragment(
 
 
 async def _safe_list_services() -> dict:
-    """Wrap orchestrator.list_services in a try/except — returns
-    `{"services": []}` on any orchestrator error. Used by handlers
-    that need service metadata for annotation but don't want the
-    page to break if the orchestrator hiccups."""
+    """Wrap orchestrator.list_services in try/except, returning `{"services": []}` on error so annotation handlers don't break the page."""
     try:
         return await orchestrator.list_services()
     except (httpx.HTTPError, ValueError):
@@ -2557,15 +2027,7 @@ async def login_action(
     password: str = Form(...),
     next: str = Form("/"),
 ) -> Response:
-    """Forward credentials to the orchestrator's login endpoint and
-    propagate the Set-Cookie response back to the browser.
-
-    Returns a 303 redirect to `next` on success (or `/`); falls back to
-    re-rendering the login page with an error on failure. 303 (not 302)
-    is the canonical "post-redirect-get" status that turns a form POST
-    into a GET — prevents the browser from double-submitting if the user
-    refreshes the page after login.
-    """
+    """Forward credentials to orchestrator and propagate Set-Cookie. Uses 303 (not 302) so the browser doesn't double-submit the POST on refresh."""
     try:
         body, set_cookie = await orchestrator.auth_login(username_or_email, password)
     except httpx.HTTPStatusError as e:
@@ -2589,14 +2051,10 @@ async def login_action(
             status_code=502,
         )
 
-    # Construct the response — redirect to `next` (validated to start with
-    # `/` to prevent open-redirect attacks against external URLs).
+    # `next` validated to start with `/` (not `//`) to prevent open-redirect to external URLs.
     safe_next = next if next.startswith("/") and not next.startswith("//") else "/"
     response = RedirectResponse(url=f"{ROOT_PATH}{safe_next}", status_code=303)
     if set_cookie:
-        # Forward the orchestrator's Set-Cookie header verbatim. The cookie's
-        # Path is set by the orchestrator (typically Path=/); HttpOnly +
-        # SameSite=Lax are set there too.
         response.headers["set-cookie"] = set_cookie
     return response
 
@@ -2617,12 +2075,7 @@ async def logout_action(request: Request) -> Response:
 #  Helpers
 # ===========================================================================
 async def _render_card(request: Request, name: str) -> HTMLResponse:
-    """Look up a single service by name and render its card fragment.
-
-    If the service has vanished from the catalogue (shouldn't happen) we
-    render an inert stopped+unmanaged card so HTMX still gets valid HTML
-    to swap in.
-    """
+    """Look up a service and render its card fragment. Renders inert stopped+unmanaged card if service vanished, so HTMX still gets valid HTML to swap."""
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError as e:

@@ -1,20 +1,4 @@
-"""User-management endpoints — signup and (later) admin user listing.
-
-For M3.5 only the signup endpoint matters: signup.html posts here, the
-orchestrator bcrypts the password and inserts a row into platform.users,
-then auto-assigns Admin if this is the first user.
-
-The signup endpoint is intentionally unauthenticated — it has to be, to
-bootstrap the first user. Phase 3.6 may add a "signup locked" toggle so
-deployments past initial setup can disable further signups, but for M3
-any unauthenticated POST creates an account.
-
-After signup we DO NOT auto-login. The client (signup.html) is expected
-to redirect to /app/login afterwards so the user signs in via the
-normal flow — keeping signup and login as separate state transitions
-makes the audit trail clearer (`user_created` vs `user_logged_in`
-events both exist for the same user).
-"""
+"""User-management endpoints: signup, self-service profile, service permissions."""
 
 from __future__ import annotations
 
@@ -43,8 +27,7 @@ BCRYPT_COST = 12
 
 
 class SignupRequest(BaseModel):
-    """Signup form payload. Validation here mirrors the schema CHECKs:
-    username regex, email shape, full_name non-empty, password length."""
+    """Signup form payload; validation mirrors the schema CHECKs."""
     username: str = Field(..., min_length=3, max_length=32,
                            pattern=r"^[a-zA-Z0-9_.\-]+$")
     email: str = Field(..., min_length=3, max_length=320, pattern=EMAIL_PATTERN)
@@ -64,26 +47,11 @@ async def _hash_password(plain: str) -> str:
 
 @router.post("", status_code=201)
 async def signup(req: SignupRequest) -> dict:
-    """Create the FIRST platform user. Gated to first-install only.
-
-    After the first user is created, this endpoint returns 403 to prevent
-    strangers from registering when an OrcheStack instance is exposed
-    publicly. Subsequent users are invited by an Admin via the dashboard
-    Users page (POST /api/users/invite).
-
-    First user gets auto-assigned the built-in Admin role; the invite flow
-    grants other roles explicitly.
-
-    Duplicate username/email returns 409, NOT 400 — the schema's UNIQUE
-    constraints make this a real conflict, not a validation error.
-    """
-    # Block self-signup once a REAL user already exists. The platform DB
-    # is seeded with a non-loginable system row (id=1, username='system')
-    # at init time so FK constraints on audit/sessions/etc are satisfied
-    # before the first real user signs up — see
-    # postgres-init/20-seed-default-user.sql for the rationale. Counting
-    # that row would make the gate fire on every fresh install. Filter
-    # it out by username so this stays robust if id=1 ever shifts.
+    """Create the first platform user; returns 403 once any real user exists."""
+    # Filter out the seeded non-loginable system row (id=1, username='system')
+    # which exists so FK constraints on audit/sessions are satisfied before
+    # the first real user signs up — see postgres-init/20-seed-default-user.sql.
+    # Filter by username, not id, so this stays robust if id=1 ever shifts.
     pre_count = await db.fetchrow(
         "SELECT count(*) AS n FROM platform.users WHERE username != 'system'"
     )
@@ -108,8 +76,6 @@ async def signup(req: SignupRequest) -> dict:
             password_hash, req.company_name,
         )
     except UniqueViolationError as e:
-        # Don't leak which field clashed — return a generic 409 with a
-        # short hint that helps the form display a useful message.
         detail = "Username or email is already registered."
         if "users_username_key" in str(e):
             detail = "That username is taken."
@@ -117,8 +83,7 @@ async def signup(req: SignupRequest) -> dict:
             detail = "That email is already registered."
         raise HTTPException(409, detail)
 
-    # Is this the first REAL user? Auto-promote to Admin. Same filter as
-    # the gate above — the seeded system row doesn't count as a real user.
+    # Same 'system' filter as the gate above — seeded row isn't a real user.
     count_row = await db.fetchrow(
         "SELECT count(*) AS n FROM platform.users WHERE username != 'system'"
     )
@@ -147,15 +112,8 @@ async def signup(req: SignupRequest) -> dict:
     }
 
 
-# ===========================================================================
-#  Profile — self-service updates for the current user
-#
-# Distinct from the admin /api/admin/users/{id} endpoints, which require
-# the Admin role. /api/users/me lets any signed-in user read + update
-# their own profile (full name, email, company, password). Username is
-# read-only on this endpoint — username changes are an Admin operation
-# because they affect references in audit logs and Git authorship.
-# ===========================================================================
+# Self-service profile. Username is intentionally read-only here — username
+# changes are an Admin operation because they affect audit logs and Git authorship.
 
 class ProfileUpdateRequest(BaseModel):
     """Partial update — any field omitted is left untouched."""
@@ -163,9 +121,8 @@ class ProfileUpdateRequest(BaseModel):
     email:        str | None = Field(default=None, min_length=3, max_length=320,
                                        pattern=EMAIL_PATTERN)
     company_name: str | None = Field(default=None, max_length=120)
-    # Current password is required when changing the password — same
-    # pattern Stripe, GitHub, etc. use to defend against session hijack
-    # leading to credential takeover.
+    # Require current_password on password change to defend against session
+    # hijack leading to credential takeover.
     current_password: str | None = None
     new_password:     str | None = Field(default=None, min_length=12)
 
@@ -207,7 +164,6 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
         raise HTTPException(401, "not authenticated")
     user_id = user["user_id"]
 
-    # Password change requires the current password.
     if req.new_password and not req.current_password:
         raise HTTPException(
             400,
@@ -216,9 +172,7 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
 
     new_hash = None
     if req.new_password:
-        # Verify the current password first. Pull the existing hash and
-        # compare against what the user typed. Done off-event-loop via
-        # asyncio.to_thread because bcrypt is CPU-heavy.
+        # bcrypt check runs via asyncio.to_thread to keep the event loop free.
         row = await db.fetchrow(
             "SELECT password_hash FROM platform.users WHERE id = $1",
             user_id,
@@ -233,8 +187,7 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
             raise HTTPException(403, "Current password is incorrect.")
         new_hash = await _hash_password(req.new_password)
 
-    # Build the SET clause dynamically — only fields the operator actually
-    # sent. Pydantic v2: req.model_fields_set tells us which were provided.
+    # Pydantic v2: model_fields_set distinguishes "omitted" from "explicit None".
     sets:   list[str] = []
     values: list = []
     next_idx = 1
@@ -249,7 +202,6 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
         sets.append(f"password_hash = ${next_idx}"); values.append(new_hash);        next_idx += 1
 
     if not sets:
-        # Nothing to update — return current state without writing.
         return await get_my_profile(request)
 
     values.append(user_id)
@@ -265,7 +217,7 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
                   else "That value is already taken."
         raise HTTPException(409, detail)
 
-    # Log keys, not values. Same convention as the credentials endpoint.
+    # Log keys, not values — never leak PII or password material into audit.
     await audit.write(
         "profile_updated", user_id=user_id,
         details={"updated_keys": [s.split(" = ")[0] for s in sets]},
@@ -279,18 +231,6 @@ async def update_my_profile(req: ProfileUpdateRequest, request: Request) -> dict
     }
 
 
-# ===========================================================================
-#  /api/users/me/services — what services can the signed-in user OPEN?
-#
-# Admins implicitly get everything. For non-admin roles, the dashboard
-# filters its main services grid by this list. The implementation walks
-# platform.role_permissions joined to platform.user_roles and returns
-# the distinct set of service_name values where can_use=true OR
-# can_start=true is granted to any of the user's roles. A NULL
-# service_name in role_permissions means "every service" (operator
-# wildcard) — that resolves to the full SERVICE_CATALOGUE here.
-# ===========================================================================
-
 @router.get("/me/services")
 async def list_my_service_permissions(request: Request) -> dict:
     """Return {allowed_services: [...]} for the signed-in user."""
@@ -298,13 +238,10 @@ async def list_my_service_permissions(request: Request) -> dict:
     if user is None:
         raise HTTPException(401, "not authenticated")
 
-    # Admin shortcut: every configured catalogue entry. The dashboard
-    # already filters down to configured, so we don't have to here.
     from .. import config as _cfg
     if "Admin" in user.get("roles", []):
         return {"allowed_services": list(_cfg.SERVICE_CATALOGUE.keys())}
 
-    # Pull every role_permissions row for the user's roles.
     rows = await db.fetch(
         """
         SELECT DISTINCT rp.service_name
@@ -315,9 +252,7 @@ async def list_my_service_permissions(request: Request) -> dict:
         """,
         user["user_id"],
     )
-    # A NULL service_name is the wildcard grant — resolve to every
-    # catalogue key so the dashboard's filter degrades to "show all
-    # configured" for that role.
+    # NULL service_name in role_permissions is the operator wildcard grant.
     names: set[str] = set()
     saw_wildcard = False
     for r in rows:

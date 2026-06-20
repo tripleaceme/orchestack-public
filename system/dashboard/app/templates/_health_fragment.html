@@ -1,10 +1,3 @@
-{#
-  HTMX fragment returned by /api/dashboard/health.
-  Swapped into the home page's #orchestrator-health div every 10 seconds.
-  Underscore-prefix on the filename signals "partial template" — never
-  rendered standalone, only via include or as a fragment response.
-#}
-
 {% if not reachable %}
   <div class="flex items-start gap-3 p-3 rounded border border-amber-200 bg-amber-50 text-sm">
     <span class="text-amber-700 font-semibold mt-0.5">!</span>

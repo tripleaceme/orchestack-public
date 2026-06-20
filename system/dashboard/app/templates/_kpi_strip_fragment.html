@@ -1,5 +1,4 @@
-{# KPI strip fragment — 4 cards across the top of /home.
-   Rendered both server-side at page load AND HTMX-polled every 10s. #}
+{# KPI strip fragment — rendered on home page and on /kpi_strip. #}
 <div class="kpi-strip">
   <div class="kpi">
     <div class="label">Services running</div>
@@ -39,8 +38,6 @@
   <div class="kpi">
     <div class="label">Last audit event</div>
     {% if kpi.last_event_type %}
-      {# Approved mock pattern: relative duration as the headline value,
-         event_type · who as the delta line. #}
       <div class="value" style="font-size: 22px; line-height: 1.2;">{{ kpi.last_event_ago or '—' }}</div>
       <div class="delta font-mono" style="font-size: 11px;">
         {{ kpi.last_event_type }}{% if kpi.last_event_target %}

@@ -1,17 +1,4 @@
-{#
-  Single-role view fragment. Renders just the SELECTED role's card
-  (filterable via the role-selector dropdown on the page). All admin
-  actions (grant/revoke/edit/delete) re-render this fragment with the
-  selected_role_id preserved, so clicking a checkbox doesn't snap back
-  to the first role.
-
-  Two visual modes per card:
-    - Read mode: capability matrix (✓ / —) across all catalogue services
-    - Edit mode: same matrix but with checkboxes; each row is a tiny form
-                 that submits via HTMX on any checkbox change, calling
-                 roles_set_permissions_action which upserts-or-deletes
-                 the (role, service) row.
-#}
+{# Single-role view fragment; admin actions re-render with selected_role_id preserved. #}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b; margin-bottom: 16px;">
@@ -26,11 +13,8 @@
   </div>
 {% endif %}
 
-{# Role selector lives INSIDE the fragment so it re-renders fresh with
-   every swap — keeping HTMX's change listener correctly bound. (We
-   tried OOB-swapping it on the page level; OOB swap replaces the
-   element but doesn't re-attach the form's `change from:select`
-   listener, so the dropdown stopped firing requests.) #}
+{# Role selector lives INSIDE the fragment: HTMX OOB swap replaces the element but
+   doesn't re-attach the form's `change from:select` listener, so the dropdown stops firing. #}
 <form hx-get="{{ url_for('roles_list_fragment') }}"
       hx-target="#roles-list"
       hx-swap="innerHTML"
@@ -84,7 +68,6 @@
   .check { color: var(--success); font-size: 14px; font-weight: 700; }
   .deny  { color: #cbd5e1; font-size: 14px; }
 
-  /* Edit mode: checkboxes instead of icons. */
   .matrix input[type="checkbox"] {
     width: 16px; height: 16px; accent-color: var(--navy); margin: 0; cursor: pointer;
   }
@@ -147,7 +130,6 @@
       {% endif %}
     </p>
 
-    {# Read-mode matrix — visible by default. #}
     <table class="matrix" id="role-matrix-{{ role.id }}">
       <thead>
         <tr>
@@ -172,21 +154,9 @@
       </tbody>
     </table>
 
-    {# Edit-mode panel — hidden by default; replaces the matrix when
-       Edit is toggled.
-
-       Single Save button at the bottom: operator ticks the boxes
-       they want across ALL service rows, then clicks Save once.
-       Checkboxes are plain inputs; the Save button HTMX-collects
-       every checkbox under .role-edit via hx-include and POSTs them
-       all to a bulk endpoint that processes each (service, perm-set)
-       in turn.
-
-       Field naming: each checkbox is `<svc>__can_<perm>` (double
-       underscore separator) so the backend can demux which service
-       each value belongs to. Unchecked checkboxes don't send their
-       name (HTML form convention), which the bulk handler reads as
-       "all false → delete the row." #}
+    {# Field naming `<svc>__can_<perm>` (double-underscore) lets the bulk handler demux
+       which service each value belongs to; unchecked boxes omit their name (HTML form
+       convention) which the handler reads as "all false → delete the row." #}
     <div class="role-edit" id="role-edit-{{ role.id }}">
       <p class="hint">
         Tick the boxes for the permissions this role should have for each

@@ -1,13 +1,10 @@
-# OrcheStack — Docker Compose specification (M1)
+# OrcheStack — Docker Compose specification
 
 This folder contains the base Docker Compose specification for OrcheStack's
 control plane. Running `docker compose up -d` from this directory brings up
 five containers that together form the platform's foundation: a reverse proxy,
-a PostgreSQL instance, an auth/setup nginx container, and stubs for the
-dashboard and the service orchestrator.
-
-This is the M1 deliverable. The stubs (dashboard, orchestrator) are placeholders
-that get replaced with real implementations at M2 and M3 respectively.
+a PostgreSQL instance, an auth/setup nginx container, the dashboard, and the
+service orchestrator.
 
 ## Quick start
 
@@ -47,20 +44,19 @@ docker compose down --volumes
 | `.env.example` | Template for environment variables (ORCHESTACK_DB_*, image tags). OrcheStack's bootstrap credentials only — pipeline DB credentials are collected in the wizard |
 | `.env` | Your actual secrets (gitignored — never commit) |
 | `traefik/traefik.yml` | Traefik static configuration (entry points, providers, dashboard) |
-| `traefik/dynamic/` | Dynamic Traefik config files (empty at M1, populated at M4 if needed) |
+| `traefik/dynamic/` | Dynamic Traefik config files |
 | `postgres-init/00-init.sql` | Creates the platform/raw/marts schemas on first boot |
 | `postgres-init/10-platform-schema.sql` | 10 platform.* tables, indexes, triggers, and seeded Admin/Engineer/Analyst roles |
-| `stubs/(removed in M3 — dashboard image replaces it)` | Static placeholder served at /app until M3 |
 
 ## The five base services
 
-| Service | Image | Role | Replaced at |
-|---|---|---|---|
-| `proxy` | `traefik:v3.2` | Reverse proxy on :80 / :443 | — (Traefik stays) |
-| `postgres` | `postgres:16-alpine` | Platform metadata + warehouse | — (PostgreSQL stays) |
-| `auth` | `tripleaceme/orchestack-auth` | nginx serving signup/login/setup | — (this is the real image already) |
-| `dashboard` | `tripleaceme/orchestack-dashboard` | HTMX + FastAPI admin UI at `/app` | shipped at M3 |
-| `orchestrator` | `tripleaceme/orchestack-orchestrator` | Service-lifecycle daemon | shipped at M2 |
+| Service | Image | Role |
+|---|---|---|
+| `proxy` | `traefik:v3.2` | Reverse proxy on :80 / :443 |
+| `postgres` | `postgres:16-alpine` | Platform metadata + warehouse |
+| `auth` | `tripleaceme/orchestack-auth` | nginx serving signup/login/setup |
+| `dashboard` | `tripleaceme/orchestack-dashboard` | HTMX + FastAPI admin UI at `/app` |
+| `orchestrator` | `tripleaceme/orchestack-orchestrator` | Service-lifecycle daemon |
 
 ## Routing — how requests reach each service
 
@@ -72,8 +68,8 @@ Traefik routes by URL path. The rules live as `labels:` on each service in
 | `/signup`, `/login` | `orchestack-auth` | Exact match |
 | `/setup/*` | `orchestack-auth` | Prefix match (welcome, select, configure, deploying) |
 | `/assets/*` | `orchestack-auth` | Prefix match (CSS, fonts, etc.) |
-| `/app/*` | `orchestack-dashboard` | Prefix stripped before forwarding (M1 stub only; M3 removes the stripping) |
-| everything else | (404 — unrouted) | M4 adds routes for optional tools like `/app/metabase`, `/app/airflow`, etc. |
+| `/app/*` | `orchestack-dashboard` | Forwarded as-is |
+| everything else | (404 — unrouted) | Optional tools (e.g. `/app/metabase`, `/app/airflow`) add their own routes when installed |
 
 The `postgres` and `orchestrator` services have no Traefik labels — they are
 not HTTP-routable. `postgres` is reached by service name (`orchestack-postgres`)
@@ -82,8 +78,7 @@ and controls containers via the Docker socket, but exposes no HTTP surface).
 
 ## Troubleshooting
 
-**The auth container fails to pull.** The `tripleaceme/orchestack-auth:latest`
-image has not been pushed yet (that's M1 step 1.7). For now, uncomment the
+**The auth container fails to pull.** Uncomment the
 `build:` block in the `auth` service definition to build from the local
 Dockerfile at `OrcheStack/system/auth/`. The build context is the OrcheStack
 repo root because the Dockerfile pulls in the shared `assets/css/` from there
@@ -118,8 +113,8 @@ happen unless the compose file has been edited.
 ## The `platform.*` schema
 
 After PostgreSQL finishes its first boot, the platform schema contains 10
-tables that the orchestrator (M2), the dashboard (M3), and the
-in-package auth pages will read and write. Quick reference:
+tables that the orchestrator, the dashboard, and the in-package auth pages
+will read and write. Quick reference:
 
 | Table | What it holds | Owners (read/write) |
 |---|---|---|
@@ -156,9 +151,9 @@ docker compose exec postgres psql -U orchestack -d orchestack \
 ### What is NOT in the schema yet
 
 - **Database roles** (separate PostgreSQL users for the orchestrator,
-  dashboard, and dbt). M1 uses the superuser everywhere for simplicity;
-  M5 polish adds least-privilege role separation.
+  dashboard, and dbt). The base stack uses the superuser everywhere;
+  least-privilege role separation is a follow-up.
 - **Row-level security policies.** Not needed for the single-tenant
   single-operator design.
 - **`raw.*` and `marts.*` tables.** Those are owned by Airbyte (raw) and dbt
-  (marts) and only appear when M4 integrates those services.
+  (marts) and only appear once those services are integrated.

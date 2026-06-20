@@ -19,13 +19,13 @@ uvicorn[standard]==0.32.1
 # the reconciler loop and the request handlers.
 asyncpg==0.30.0
 
-# Password hashing for M3.5's auth flow (signup + login). bcrypt is the
+# Password hashing for the auth flow (signup + login). bcrypt is the
 # canonical choice; we run the CPU-bound hash/verify calls under
 # asyncio.to_thread so they don't block the event loop.
 bcrypt==4.2.0
 
 # HTTP client for the post-start hooks that call out to managed services'
-# own APIs (Metabase's /api/setup, Airflow's REST API later in M4, etc).
+# own APIs (Metabase's /api/setup, Airflow's REST API, etc).
 # Local imports inside docker_ops.PRE/POST_START_HOOKS pull from this.
 # Pinned to match the dashboard's version.
 httpx==0.27.2

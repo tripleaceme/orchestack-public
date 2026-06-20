@@ -6,4 +6,4 @@
 # — for example: routing to an external upstream, global middlewares, or
 # TLS certificate definitions before Let's Encrypt is wired in.
 #
-# Empty at M1. Populated at M4 if needed for the integrated data services.
+# Empty by default. Add files here as needed for integrated data services.

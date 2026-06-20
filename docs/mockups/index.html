@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OrcheStack Dashboard — 3 Design Directions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_tokens.css">
+<style>
+  body { background: var(--bg); }
+
+  .head {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 32px 32px;
+  }
+  .head .inner { max-width: 1280px; margin: 0 auto; display: flex; align-items: end; justify-content: space-between; gap: 32px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 6px; color: var(--text); }
+  .head p { color: var(--text-2); margin: 0; font-size: 14px; max-width: 720px; line-height: 1.6; }
+  .meta { font-size: 12px; color: var(--text-2); font-family: 'JetBrains Mono', monospace; }
+
+  main { max-width: 1280px; margin: 48px auto; padding: 0 32px 96px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .card .badge {
+    font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 4px 10px; border-radius: 999px; display: inline-block; width: fit-content;
+  }
+  .card .badge.a { background: #ecfdf5; color: #047857; }
+  .card .badge.b { background: #fffbeb; color: #b45309; }
+  .card .badge.c { background: #eff6ff; color: #1d4ed8; }
+  .card h2 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.3px; }
+  .card .tagline { font-size: 13px; color: var(--text-2); font-style: italic; }
+  .card .ref { font-size: 12px; color: var(--text-2); }
+  .card .ref strong { color: var(--text); font-weight: 500; }
+  .card .feels {
+    font-size: 13px; color: var(--text);
+    border-top: 1px solid var(--border); padding-top: 16px; margin-top: 6px;
+  }
+  .card .feels ul { margin: 6px 0 0; padding-left: 18px; }
+  .card .feels li { margin-bottom: 4px; color: var(--text-2); }
+  .card .feels li strong { color: var(--text); font-weight: 500; }
+  .card .answer {
+    background: var(--bg); border-radius: 8px; padding: 12px 14px;
+    font-size: 13px; color: var(--text); font-style: italic; line-height: 1.5;
+  }
+  .card .answer:before { content: "Best for the operator who asks "; color: var(--text-2); font-style: normal; }
+  .card .links {
+    margin-top: auto; padding-top: 18px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+  }
+  .card .links a {
+    flex: 1; text-align: center;
+    padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    border: 1px solid var(--border); color: var(--text); transition: all 0.15s;
+  }
+  .card .links a:hover { border-color: var(--navy); color: var(--navy); }
+  .card .links a.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .card .links a.primary:hover { background: var(--navy-2); }
+
+  .compare {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px;
+  }
+  .compare h3 { font-size: 16px; font-weight: 600; margin: 0 0 16px; }
+  .compare table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .compare th, .compare td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .compare th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-2);
+                 font-weight: 600; background: var(--bg); }
+  .compare td { color: var(--text); }
+  .compare td:first-child { font-weight: 500; }
+  .compare tr:last-child td { border-bottom: none; }
+
+  .note {
+    margin-top: 32px; background: var(--info-bg); border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 18px 22px; font-size: 13px; color: #1e3a8a; line-height: 1.6;
+  }
+  .note strong { color: #1e40af; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="inner">
+    <div>
+      <h1>Dashboard redesign — 3 directions</h1>
+      <p>Each direction reimagines the Services + Credentials pages while keeping the existing colour tokens (<code style="font-family: 'JetBrains Mono', monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px;">--navy</code>, <code style="font-family: 'JetBrains Mono', monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px;">--accent</code>, <code style="font-family: 'JetBrains Mono', monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px;">--surface</code>, <code style="font-family: 'JetBrains Mono', monospace; background: var(--bg); padding: 1px 5px; border-radius: 3px;">--border</code>). Click through each, then tell me which feel wins.</p>
+    </div>
+    <div class="meta">OrcheStack mockups · phase 3.7-explore</div>
+  </div>
+</div>
+
+<main>
+
+  <div class="grid">
+
+    <!-- DIRECTION A -->
+    <div class="card">
+      <span class="badge a">Direction A</span>
+      <h2>Deployment Board</h2>
+      <div class="tagline">"The calm scan"</div>
+      <div class="ref"><strong>Inspired by:</strong> Vercel deployment list, GitHub Actions runs</div>
+      <div class="feels">
+        Visual feel:
+        <ul>
+          <li><strong>Vertical rhythm</strong> — each service is a single row, lots of whitespace</li>
+          <li><strong>Binary status</strong> — green dot or grey; nothing else competes</li>
+          <li><strong>Single column</strong> at max ~920px, never feels noisy</li>
+          <li><strong>Type-driven hierarchy</strong> — service name large, metadata small</li>
+        </ul>
+      </div>
+      <div class="answer">"what's running right now?"</div>
+      <div class="links">
+        <a href="a-deploy/home.html" class="primary">View Home →</a>
+        <a href="a-deploy/credentials.html">View Credentials →</a>
+      </div>
+    </div>
+
+    <!-- DIRECTION B -->
+    <div class="card">
+      <span class="badge b">Direction B</span>
+      <h2>Operations Cockpit</h2>
+      <div class="tagline">"The KPI-first overview"</div>
+      <div class="ref"><strong>Inspired by:</strong> Stripe overview, Mercury, Datadog (lite)</div>
+      <div class="feels">
+        Visual feel:
+        <ul>
+          <li><strong>KPI strip</strong> — 4 large numbers up top answer "is everything healthy?"</li>
+          <li><strong>Sparklines</strong> for trending values (postgres connections, etc.)</li>
+          <li><strong>3-column grid</strong> for services — compact cards with state + actions</li>
+          <li><strong>Grouped by state</strong> — Running first, Stopped below</li>
+        </ul>
+      </div>
+      <div class="answer">"is the platform healthy?"</div>
+      <div class="links">
+        <a href="b-cockpit/home.html" class="primary">View Home →</a>
+        <a href="b-cockpit/credentials.html">View Credentials →</a>
+      </div>
+    </div>
+
+    <!-- DIRECTION C -->
+    <div class="card">
+      <span class="badge c">Direction C</span>
+      <h2>Power-User Console</h2>
+      <div class="tagline">"Get to the thing fast"</div>
+      <div class="ref"><strong>Inspired by:</strong> Linear, Plane, Notion</div>
+      <div class="feels">
+        Visual feel:
+        <ul>
+          <li><strong>Sidebar nav</strong> — keyboard shortcut hints inline</li>
+          <li><strong>Dense table rows</strong> grouped by tier (Hot / Cold)</li>
+          <li><strong>Keyboard-first</strong> — ⌘K command palette + J/K navigation</li>
+          <li><strong>Maximum info density</strong> — everything visible without scroll</li>
+        </ul>
+      </div>
+      <div class="answer">"how do I get there in two keystrokes?"</div>
+      <div class="links">
+        <a href="c-console/home.html" class="primary">View Home →</a>
+        <a href="c-console/credentials.html">View Credentials →</a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="compare">
+    <h3>Side-by-side comparison</h3>
+    <table>
+      <tr>
+        <th></th>
+        <th>A — Deployment Board</th>
+        <th>B — Operations Cockpit</th>
+        <th>C — Power-User Console</th>
+      </tr>
+      <tr>
+        <td>Navigation</td>
+        <td>Top nav</td>
+        <td>Top nav</td>
+        <td>Left sidebar</td>
+      </tr>
+      <tr>
+        <td>Service layout</td>
+        <td>Vertical list, 1 column</td>
+        <td>Grid of cards, 3 columns</td>
+        <td>Dense table rows, grouped by tier</td>
+      </tr>
+      <tr>
+        <td>Density</td>
+        <td>Low (1 svc / ~80px)</td>
+        <td>Medium (1 svc / ~140px card)</td>
+        <td>High (1 svc / ~36px row)</td>
+      </tr>
+      <tr>
+        <td>Top of screen</td>
+        <td>Page title + filter chips</td>
+        <td>4 KPI cards</td>
+        <td>Counts in the header</td>
+      </tr>
+      <tr>
+        <td>Charts / metrics</td>
+        <td>None</td>
+        <td>1 sparkline (postgres connections)</td>
+        <td>None</td>
+      </tr>
+      <tr>
+        <td>Keyboard hints</td>
+        <td>None</td>
+        <td>None</td>
+        <td>Visible in sidebar + footer</td>
+      </tr>
+      <tr>
+        <td>Credentials view</td>
+        <td>Row cards</td>
+        <td>KPI strip + table</td>
+        <td>Grouped tables (per-service)</td>
+      </tr>
+      <tr>
+        <td>Production translation cost</td>
+        <td>Low — mostly CSS tweaks to current HTMX</td>
+        <td>Medium — new KPI fragments + sparkline</td>
+        <td>Medium-High — sidebar layout + keyboard wiring</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>How to decide:</strong> open each direction's home page in a tab, click through to its credentials view, then come back and tell me which one feels right. Things to weigh: <em>(a)</em> would I want to see this every time I open the dashboard? <em>(b)</em> does it match the academic project's tone? <em>(c)</em> how much daily-use vs occasional-use is the dashboard? Once you pick one, the next session is ~4-6 hours to apply the chosen direction to the remaining 7 templates (sessions, audit, users, roles, profile, service detail, config edit) + shared components.
+  </div>
+
+</main>
+
+</body>
+</html>

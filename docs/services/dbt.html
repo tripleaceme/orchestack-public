@@ -154,7 +154,7 @@
 <p>From the OrcheStack admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
 
 <h2 id="observability">Observability</h2>
-<p><strong>OpenMetadata</strong> is OrcheStack's observability layer. When you select it during setup (M4.6 onward), it captures dbt run history, table lineage, column-level provenance, and surfaces anomalies via <code class="inline">/app/openmetadata</code>. Until M4.6 ships, observability is via dbt's own test results in PostgreSQL and Metabase queries against the run-history tables.</p>
+<p><strong>OpenMetadata</strong> is OrcheStack's observability layer. When you select it during setup, it captures dbt run history, table lineage, column-level provenance, and surfaces anomalies via <code class="inline">/app/openmetadata</code>. Without it, observability is via dbt's own test results in PostgreSQL and Metabase queries against the run-history tables.</p>
 <div class="callout">
   <p><strong>Tip.</strong> dbt plays best when combined with Great Expectations for assertion-based quality checks on the <code class="inline">marts</code> schema. Configure both during setup and OrcheStack wires them into the Airflow DAG automatically.</p>
 </div>

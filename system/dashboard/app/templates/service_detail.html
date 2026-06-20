@@ -1,5 +1,5 @@
+{# Service detail page rendered by service_detail() in routes.py. #}
 {% extends "base.html" %}
-
 {% block content %}
 <style>
   .svc-head {
@@ -78,8 +78,7 @@
     / {{ service.display_name if service else service_name }}
   </div>
 
-  {# When the orchestrator returns no service object we still want the
-     layout to render (per user directive). Use safe fallbacks. #}
+  {# Render layout even when orchestrator returns no service object — use safe fallbacks. #}
   {% set svc = service or {} %}
   {% set is_running = svc.get('state') == 'running' %}
   {% set is_pinned  = svc.get('pinned') %}
@@ -89,9 +88,6 @@
   {% set _tool_url = (svc.get('external_url') or '')|replace('{host}', _host)
                      or ('http://' ~ _host ~ (request.scope.root_path or '/app') ~ '/' ~ service_name) %}
   {% set admin_email = svc.get('admin_email') or 'admin@' ~ service_name ~ '.local' %}
-  {# `uptime_display` comes from the route handler — formatted like
-     "2h 14m" or "3m" so it reads naturally next to "2h 14m" in the mock.
-     `image_display` is None when docker ps didn't return an image. #}
   {% set uptime_display = uptime_display if uptime_display is defined else svc.get('uptime') %}
   {% set image_display  = svc.get('image') %}
 
@@ -155,7 +151,6 @@
     </div>
   </div>
 
-  {# === Two-column body (twocol — verbatim approved layout) === #}
   <div class="twocol">
 
     <!-- Left column: Recent activity + Open sessions -->

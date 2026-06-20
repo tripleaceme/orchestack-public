@@ -1,8 +1,5 @@
 {#
-  Pin card body — exact translation of docs/mockups/approved/service_detail.html
-  lines 184-201 (pin card). Rendered into #pin-container on service_detail
-  via HTMX. When pinned, shows current state + Extend pin form. When not
-  pinned, shows the same form but the button says "Pin" instead of "Extend".
+  Pin button fragment. Rendered on service details page and re-rendered on pin/unpin actions.
 #}
 {% if pin %}
   <div id="pin-container-inner">

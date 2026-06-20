@@ -1,20 +1,4 @@
-"""Thin async HTTP wrapper around the orchestrator's REST API.
-
-Why a dedicated module:
-    - Centralised timeout policy (different per operation type).
-    - Single place to wire session-cookie headers when phase 3.5 lands.
-    - Tests can substitute a fake implementation without monkeypatching httpx.
-
-Timeout policy:
-    list_services()  →  3s   (UI read; should be sub-second normally)
-    start_service()  →  180s (compose up may pull images on first run)
-    stop_service()   →  60s  (compose stop is fast but allow for slow shutdown)
-    list_health()    →  3s   (UI read)
-
-All methods raise httpx exceptions on transport failure and
-`httpx.HTTPStatusError` on a non-2xx response. Callers in the dashboard
-catch these and render an error fragment — we don't swallow errors here.
-"""
+"""Thin async HTTP wrapper around the orchestrator's REST API."""
 
 from __future__ import annotations
 
@@ -22,12 +6,7 @@ import httpx
 
 
 class OrchestratorClient:
-    """Async client for the OrcheStack orchestrator's HTTP API.
-
-    Constructed once at module import in `main.py`. Stateless other than
-    its base URL, so per-request `AsyncClient`s are safe — see module
-    docstring for the rationale.
-    """
+    """Async client for the OrcheStack orchestrator's HTTP API."""
 
     def __init__(self, base_url: str) -> None:
         # Strip a trailing slash so we can always concatenate "/api/..."
@@ -40,12 +19,7 @@ class OrchestratorClient:
             return resp.json()
 
     async def get_service(self, name: str) -> dict[str, object] | None:
-        """Return one service's dict from the catalogue list, or None.
-
-        The orchestrator doesn't currently expose a per-service GET — we
-        list and filter client-side. That's fine while the catalogue is
-        small (~9 entries); add a server-side route if it grows.
-        """
+        """Return one service's dict from the catalogue list, or None."""
         data = await self.list_services()
         for svc in data.get("services", []):
             if svc.get("name") == name:
@@ -74,11 +48,7 @@ class OrchestratorClient:
     async def open_session(
         self, service: str, *, auto_start: bool = True, user_id: int | None = None
     ) -> dict[str, object]:
-        """Open a service session against the orchestrator.
-
-        Long timeout because auto_start may trigger a compose-up that pulls
-        an image. Same number as start_service() for consistency.
-        """
+        # Long timeout because auto_start may trigger a compose-up that pulls an image.
         async with httpx.AsyncClient(timeout=180.0) as client:
             resp = await client.post(
                 f"{self.base_url}/api/sessions",
@@ -127,12 +97,7 @@ class OrchestratorClient:
             resp.raise_for_status()
 
     async def get_pin(self, name: str) -> dict[str, object] | None:
-        """Return the current pin record for `name`, or None if not pinned.
-
-        Relies on the orchestrator's GET /api/services/{name}/pin endpoint
-        (added in M3.4) — 404 means not pinned, 200 means pinned with
-        details.
-        """
+        """Return the current pin record for `name`, or None if not pinned."""
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{self.base_url}/api/services/{name}/pin")
             if resp.status_code == 404:
@@ -160,7 +125,7 @@ class OrchestratorClient:
             resp.raise_for_status()
             return resp.json()
 
-    # ---- Auth (M3.5) ------------------------------------------------------
+    # ---- Auth -------------------------------------------------------------
     async def auth_login(
         self, username_or_email: str, password: str
     ) -> tuple[dict[str, object], str | None]:
@@ -193,7 +158,7 @@ class OrchestratorClient:
             resp.raise_for_status()
             return resp.json()
 
-    # ---- Credentials (M3.6 polish) ----------------------------------------
+    # ---- Credentials ------------------------------------------------------
     async def list_credentials(self, reveal: bool = False) -> dict[str, object]:
         """Return every variable in the operator's `.env` with metadata."""
         async with httpx.AsyncClient(timeout=3.0) as client:
@@ -217,10 +182,7 @@ class OrchestratorClient:
             return resp.json()
 
     async def test_credential(self, key: str, value: str) -> dict[str, object]:
-        """Live-test a credential before saving. For DB-typed keys this
-        attempts a live connection with the proposed value; non-DB keys
-        return testable=False with a reason and the caller should save
-        without further verification."""
+        """Live-test a credential before saving; non-DB keys return testable=False."""
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{self.base_url}/api/credentials/{key}/test",
@@ -356,9 +318,7 @@ class OrchestratorClient:
             r.raise_for_status()
             return r.json()
 
-    # ------------------------------------------------------------------
     # Self-service profile (works for any signed-in user, not just Admin).
-    # ------------------------------------------------------------------
     async def get_my_profile(self, session_cookie: str | None) -> dict:
         async with httpx.AsyncClient(timeout=5.0,
                                        cookies=self._admin_cookies(session_cookie)) as c:
@@ -374,10 +334,8 @@ class OrchestratorClient:
         current_password: str | None = None,
         new_password: str | None = None,
     ) -> dict:
-        # Build the payload to only include keys the operator wants to
-        # change — the backend treats missing keys as "no change," and
-        # we don't want to overwrite (e.g.) email with empty string just
-        # because the form left it blank.
+        # Only include keys the operator wants to change — backend treats
+        # missing keys as "no change," so blank form fields must not be sent.
         payload: dict[str, str] = {}
         if full_name is not None:    payload["full_name"]    = full_name
         if email is not None:        payload["email"]        = email
@@ -391,11 +349,8 @@ class OrchestratorClient:
             r.raise_for_status()
             return r.json()
 
-    # ------------------------------------------------------------------
-    # Role-based service permissions — what tools can the signed-in user
-    # actually open? Admins always see everything; this endpoint is the
-    # gating signal for non-admin users.
-    # ------------------------------------------------------------------
+    # Role-based service permissions — gating signal for non-admin users
+    # (admins always see everything).
     async def list_my_service_permissions(self, session_cookie: str | None) -> dict:
         async with httpx.AsyncClient(timeout=5.0,
                                        cookies=self._admin_cookies(session_cookie)) as c:

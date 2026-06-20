@@ -1,5 +1,5 @@
+{# Sessions page: live session list, KPIs, and keep-warm pins. #}
 {% extends "base.html" %}
-
 {% block content %}
   <div class="breadcrumb">Workspace / Sessions</div>
   <h1>Active sessions</h1>
@@ -9,8 +9,6 @@
     30 minutes without a heartbeat.
   </p>
 
-  {# KPI strip — server-rendered at page load. Refreshes on the
-     fragment poll cycle (every 10s). #}
   <div class="kpi-strip">
     <div class="kpi">
       <div class="label">Open sessions</div>
@@ -40,8 +38,6 @@
     </div>
   </div>
 
-  {# Open sessions table — HTMX-polled every 10s. The fragment
-     renders the .surface + .data-table. #}
   <div id="sessions-table"
        hx-get="{{ url_for('sessions_active_fragment') }}"
        hx-trigger="load delay:50ms, every 10s"
@@ -50,10 +46,7 @@
     <p class="muted" style="font-style: italic; font-size: 13px;">Loading sessions…</p>
   </div>
 
-  {# Keep-warm pins — server-rendered single-shot. Pins change infrequently
-     (operator action), so we don't poll this. The pin/unpin actions on
-     the service-detail page swap themselves; this surface refreshes on
-     full page navigation. #}
+  {# Keep-warm pins: not polled — pins change only via operator action on the service-detail page. #}
   <div class="surface">
     <div class="surface-head">
       <h2>Keep-warm pins</h2>

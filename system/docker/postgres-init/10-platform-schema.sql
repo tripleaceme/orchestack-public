@@ -1,8 +1,8 @@
 -- OrcheStack — Platform metadata schema.
 --
 -- Runs once on first container creation, after 00-init.sql has created the
--- schemas. Defines the 10 tables the orchestrator (M2), the Streamlit
--- dashboard (M3), and the in-package auth pages will read and write.
+-- schemas. Defines the 10 tables the orchestrator, the dashboard, and the
+-- in-package auth pages will read and write.
 --
 -- Design conventions used throughout this file:
 --   - BIGSERIAL primary keys (simpler than UUIDs for single-host deployment).

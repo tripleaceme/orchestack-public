@@ -86,6 +86,6 @@ EXPOSE 8000
 # --workers=1 because the reconciler loop must own its database connection
 # pool. Multiple workers would duplicate the reconciler — services would
 # get stopped twice over, audit log would double-log every action. Scale
-# horizontally by running a second orchestrator container if needed (not
-# planned for M2), not by adding workers inside one.
+# horizontally by running a second orchestrator container, not by adding
+# workers inside one.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

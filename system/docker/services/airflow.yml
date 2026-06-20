@@ -55,7 +55,7 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
       _AIRFLOW_WWW_USER_EMAIL:    ${AIRFLOW_ADMIN_EMAIL:?AIRFLOW_ADMIN_EMAIL must be set in .env}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?AIRFLOW_ADMIN_PASSWORD must be set in .env}
-      # DAGs git repo (optional) — synced by a sidecar pattern in M4.5+
+      # DAGs git repo (optional) — synced by a git-sync sidecar
       AIRFLOW_DAGS_REPO_URL:    ${AIRFLOW_DAGS_REPO_URL:-}
       AIRFLOW_DAGS_REPO_BRANCH: ${AIRFLOW_DAGS_REPO_BRANCH:-main}
     command: >

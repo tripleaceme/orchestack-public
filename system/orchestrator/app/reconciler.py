@@ -1,27 +1,4 @@
-"""Reconciler loop — the hot/cold tier engine.
-
-Single async task that runs every ORCHESTRATOR_RECONCILE_INTERVAL seconds.
-Reads three sources of truth and decides which services should be stopped:
-
-    1. platform.service_sessions  — who's actively using what?
-    2. platform.service_pinning   — what's protected from idle sweeps?
-    3. `docker ps --filter=label`  — what's actually running right now?
-
-Every running service that has zero active sessions AND isn't pinned AND
-has been up past the start-grace window gets stopped. Hot-tier services
-(per SERVICE_CATALOGUE) are exempt from the sweep — they stay running.
-
-The loop is shutdown-only by design. Services start via explicit POST
-calls (from /api/sessions when a user opens a tool, or from
-/api/services/{name}/start). The reconciler never starts anything. This
-one-directional design keeps the algorithm simple and means a buggy
-reconciler can at worst stop things — it can never fight an operator
-who's trying to keep something stopped.
-
-Failure handling: the loop catches all exceptions per-tick. A failed tick
-logs and waits for the next interval. The orchestrator never crashes
-because reconciliation hit a temporary error.
-"""
+"""Reconciler loop — shutdown-only hot/cold tier sweeper."""
 
 from __future__ import annotations
 
@@ -38,7 +15,6 @@ async def reconcile_once() -> dict[str, int]:
     """One tick. Returns a count summary suitable for the health endpoint."""
     summary = {"running": 0, "active": 0, "pinned": 0, "stopped": 0}
 
-    # ---- 1. Read sources of truth -------------------------------------
     try:
         running = await docker_ops.list_running_services()
     except Exception as e:
@@ -47,16 +23,14 @@ async def reconcile_once() -> dict[str, int]:
     summary["running"] = len(running)
 
     if not running:
-        return summary  # nothing to sweep
+        return summary
 
     try:
-        # Sessions are "active" if their last_heartbeat_at is recent enough
-        # AND they haven't been closed by an explicit DELETE. We compute the
-        # cutoff in Python rather than as a SQL interval expression for two
-        # reasons: (a) asyncpg's binary protocol doesn't auto-cast int→text
-        # so `$1 || ' seconds'` would error; (b) passing a precomputed
-        # TIMESTAMPTZ matches the column type, so postgres can use the
-        # partial index on last_heartbeat_at directly.
+        # Compute cutoff in Python rather than as a SQL interval: asyncpg's
+        # binary protocol doesn't auto-cast int→text so `$1 || ' seconds'`
+        # would error; passing a precomputed TIMESTAMPTZ also matches the
+        # column type so postgres can use the partial index on
+        # last_heartbeat_at directly.
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=config.SESSION_ACTIVE_WINDOW)
         rows = await db.fetch(
             """
@@ -83,40 +57,35 @@ async def reconcile_once() -> dict[str, int]:
         log.warning("reconciler DB read failed: %s", e)
         return summary
 
-    # ---- 2. Decide + act per running service --------------------------
     for entry in running:
         svc = entry["service"]
         meta = config.SERVICE_CATALOGUE.get(svc)
 
         if meta is None:
-            # Container has the orchestack.service label but isn't in our
-            # catalogue. Could be a leftover from an older snippet that's
-            # since been removed. Skip — don't touch what we don't own.
+            # Skip containers labelled orchestack.service but not in our
+            # catalogue — don't touch what we don't own.
             continue
 
         if meta["tier"] == "hot":
-            continue  # hot-tier services never get swept
+            continue
 
         if svc in pinned:
-            continue  # operator wants this kept warm
+            continue
 
         if active_by_service.get(svc, 0) > 0:
-            continue  # someone's using it
+            continue
 
-        # Start-grace: don't kill a service that's < 60s old, the session
-        # POST might just be in flight.
+        # Start-grace: a session POST may still be in flight just after start.
         uptime = await docker_ops.container_uptime_seconds(svc)
         if uptime is not None and uptime < config.START_GRACE:
             log.debug("skipping %s — uptime %ds within grace window", svc, uptime)
             continue
 
-        # Idle-threshold: only stop if uptime > IDLE_THRESHOLD. (If we
-        # didn't have this, the reconciler would stop services almost
-        # immediately after start when no session has opened yet.)
+        # Without IDLE_THRESHOLD the reconciler would stop services almost
+        # immediately after start, before any session has opened.
         if uptime is not None and uptime < config.IDLE_THRESHOLD:
             continue
 
-        # All checks pass — stop the service.
         log.info("reconciler stopping idle service: %s (uptime=%ss)", svc, uptime)
         result = await docker_ops.stop_service(svc)
         await audit.write(
@@ -131,11 +100,10 @@ async def reconcile_once() -> dict[str, int]:
         )
         if result.ok:
             summary["stopped"] += 1
-            # Race-defence: between the active_by_service count check
-            # at the top of this loop and the docker stop landing
-            # here, a session could have opened. Closing on stop
-            # unconditionally is harmless if there are zero rows and
-            # load-bearing if there's one.
+            # Race-defence: a session could have opened between the
+            # active_by_service check above and the docker stop landing here.
+            # Closing unconditionally is harmless at zero rows and
+            # load-bearing if one slipped in.
             closed = await db.fetch(
                 "UPDATE platform.service_sessions SET closed_at = now() "
                 "WHERE service_name = $1 AND closed_at IS NULL "
@@ -153,13 +121,12 @@ async def reconcile_once() -> dict[str, int]:
 
 
 async def run_loop(stop_event: asyncio.Event) -> None:
-    """Background task — ticks until the stop_event is set on shutdown."""
+    """Background task — ticks until stop_event is set on shutdown."""
     log.info(
         "reconciler starting interval=%ss idle_threshold=%ss",
         config.RECONCILE_INTERVAL, config.IDLE_THRESHOLD,
     )
-    # First tick fires immediately so the operator sees activity at startup,
-    # then every RECONCILE_INTERVAL after that.
+    # First tick fires immediately so the operator sees activity at startup.
     while not stop_event.is_set():
         try:
             summary = await reconcile_once()
@@ -174,6 +141,6 @@ async def run_loop(stop_event: asyncio.Event) -> None:
         try:
             await asyncio.wait_for(stop_event.wait(), config.RECONCILE_INTERVAL)
         except asyncio.TimeoutError:
-            pass  # normal — interval elapsed, time for next tick
+            pass
 
     log.info("reconciler stopped")

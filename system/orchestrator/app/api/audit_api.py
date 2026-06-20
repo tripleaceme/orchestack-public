@@ -1,17 +1,4 @@
-"""Audit log read API — `GET /api/audit`.
-
-The audit log is append-only (writes happen via `audit.write()` from every
-state-changing endpoint). This module exposes the read side for the
-dashboard's `/app/audit` page: paginated, filterable by event_type,
-target, and date range.
-
-Why a separate file from `audit.py`:
-    audit.py    — the WRITE side, used internally by every endpoint
-    audit_api.py — the READ side, public HTTP API
-
-The write side stays simple and untouched; the read side has all the
-filter/pagination plumbing without cluttering it.
-"""
+"""Audit log read API — `GET /api/audit`."""
 
 from __future__ import annotations
 
@@ -30,8 +17,7 @@ def _parse_iso(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
-        # Accept both "2026-06-03T10:00:00Z" and "2026-06-03T10:00:00+00:00".
-        # datetime.fromisoformat handles +00:00 natively; we normalise Z→+00:00.
+        # datetime.fromisoformat handles +00:00 natively; normalise Z→+00:00 so trailing-Z ISO strings parse.
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
         return None
@@ -46,13 +32,7 @@ async def list_audit(
     limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
-    """Paginated audit-log query.
-
-    The `details` JSONB column is returned as a dict so the dashboard
-    can render specific keys (e.g. `details.returncode` for failed
-    compose runs). asyncpg auto-decodes JSONB if pgjsonb codec is
-    registered; otherwise we json.loads() it here.
-    """
+    """Paginated audit-log query."""
     where: list[str] = []
     params: list[object] = []
 
@@ -74,14 +54,12 @@ async def list_audit(
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
-    # Total count for pagination, with the same WHERE.
     count_row = await db.fetchrow(
         f"SELECT count(*) AS n FROM platform.audit_log al{where_sql}",
         *params,
     )
     total = count_row["n"] if count_row else 0
 
-    # Page query.
     params.append(limit)
     params.append(offset)
     rows = await db.fetch(
@@ -107,8 +85,7 @@ async def list_audit(
 
     events = []
     for r in rows:
-        # asyncpg may return JSONB as str OR dict depending on codec
-        # registration — handle both for robustness.
+        # asyncpg may return JSONB as str OR dict depending on codec registration — handle both.
         details = r["details"]
         if isinstance(details, str):
             try:

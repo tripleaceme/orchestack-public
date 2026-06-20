@@ -1,6 +1,6 @@
-{#
-  Audit-log table fragment. Re-rendered on filter changes + pagination.
-#}
+{# Audit events table fragment. Rendered on /audit and re-rendered on filter changes + pagination.
+   Underscore-prefix on the filename signals "partial template" — never rendered standalone, only via include or as a fragment response.
+ #}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b;">

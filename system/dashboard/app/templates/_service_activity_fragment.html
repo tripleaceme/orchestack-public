@@ -1,15 +1,5 @@
-{#
-  Compact activity rows for the service detail page. Word-for-word
-  layout match with docs/mockups/approved/service_detail.html lines
-  118-154. Uses `.badge` classes + an actor·context "who" column.
+{# Service activity feed fragment. #}
 
-  Event-type → badge color mapping:
-    - .start / .pin / .deploy_complete / .create_role / .bootstrapped
-      → badge-success
-    - .pin / .migration.applied → badge-info
-    - .stop / .force_stop / .unpin / .revoked / .deleted → badge-warn
-    - else → badge-neutral
-#}
 {% if error %}
   <div class="activity-row">
     <div class="when">—</div>
@@ -17,9 +7,6 @@
     <div class="who muted">{{ error }}</div>
   </div>
 {% elif events|length == 0 %}
-  {# Empty-state row matches the .activity-row shape so the section is
-     visually consistent with the approved mock even when there's no
-     real data. #}
   <div class="activity-row">
     <div class="when">—</div>
     <div class="event"><span class="badge badge-neutral">no_events_yet</span></div>
@@ -39,17 +26,11 @@
       {% set _badge = 'badge-neutral' %}
     {% endif %}
 
-    {# Always show full YYYY-MM-DD HH:MM:SS — the previous "same-day
-       shows just time, older shows full" split made the column look
-       half-populated and operators had to mentally fill in the missing
-       date. Consistency wins over compactness here. Replace the ISO
-       `T` separator with a space so 2026-06-18T02:02:57 reads as
-       2026-06-18 02:02:57. #}
+    {# Replace ISO `T` separator with a space so timestamp reads as "YYYY-MM-DD HH:MM:SS". #}
     {% set _ts = (ev.created_at or '') | replace('T', ' ') %}
     {% set _display_when = _ts[:19] if _ts else '—' %}
 
-    {# The approved mock signals "system actor" via class="muted" + bare
-       text (no <strong>); human actors get <strong>username</strong>. #}
+    {# System actor: class="muted" + bare text (no <strong>); human actors get <strong>username</strong>. #}
     {% set _is_system = not ev.actor_username or ev.actor_username == 'system' %}
 
     <div class="activity-row">
@@ -68,8 +49,6 @@
 
 {% endif %}
 
-{# Footer link — always rendered (per the user directive that NOTHING
-   should be omitted from the approved layout). #}
 <div style="padding: 12px 20px; border-top: 1px solid var(--border); text-align: center;">
   <a href="{{ url_for('audit_page') }}?target={{ service_name }}"
      style="font-size: 12px; color: var(--navy); font-weight: 500; text-decoration: none;">

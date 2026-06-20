@@ -54,13 +54,10 @@
 
 <script>
   // ============================================================
-  // Real deploy flow (M2.5+): POST the wizard state to the orchestrator,
-  // show the rotating status/jokes while waiting, then redirect.
-  //
-  // Previous behaviour (pre-M2): a pure simulated deploy with timers.
-  // We kept the status carousel and joke cycler because they're a
-  // genuinely good "this is happening" UX — but they now overlay a
-  // real network call rather than fake one.
+  // Real deploy flow: POST the wizard state to the orchestrator, show
+  // the rotating status/jokes while waiting, then redirect. The status
+  // carousel + joke cycler overlay a real network call to make the
+  // wait feel intentional rather than suspicious.
   // ============================================================
   const STORAGE_KEY = 'OrcheStack.setup';
   const REDIRECT_TO = "/app/";

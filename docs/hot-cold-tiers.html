@@ -140,7 +140,7 @@
 <ol>
   <li><strong>Airflow DAG schedule</strong>: e.g. the nightly ETL at 02:00 starts Airbyte + workers + dbt + Great Expectations in sequence.</li>
   <li><strong>Dashboard manual button</strong>: e.g. "Run dbt now" or "Open pgAdmin".</li>
-  <li><strong>Upstream dependency</strong>: e.g. when dbt finishes, Great Expectations auto-starts to assert quality contracts on the new marts. From M4.6 onward, OpenMetadata will also auto-start to ingest dbt run history and lineage.</li>
+  <li><strong>Upstream dependency</strong>: e.g. when dbt finishes, Great Expectations auto-starts to assert quality contracts on the new marts. OpenMetadata also auto-starts to ingest dbt run history and lineage when its workflow is scheduled.</li>
 </ol>
 <p>A cold service only stops when its <em>reference-counted session count</em> hits zero AND the idle timeout has elapsed. See <a href="sessions.html">Service sessions</a> for the multi-user safety this provides.</p>
 

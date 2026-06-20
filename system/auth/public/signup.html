@@ -62,8 +62,7 @@
       method="POST" prevents the browser's fallback submission from putting
       the password in the URL if JS is disabled. The JS handler below
       intercepts before any navigation, saves the profile (minus password)
-      to localStorage, then routes the user to the wizard. At M3 this form
-      will POST to /app/api/signup against the real backend.
+      to localStorage, then routes the user to the wizard.
     -->
     <form id="signup-form" action="setup/welcome.html" method="POST">
       <div class="form-group">
@@ -108,7 +107,7 @@
 
 <script>
   // ============================================================
-  // M3.5 — real signup. POST to /orchestrator/api/users, which:
+  // Real signup. POST to /orchestrator/api/users, which:
   //   1. bcrypts the password
   //   2. INSERTs into platform.users
   //   3. auto-assigns the Admin role if this is the first user

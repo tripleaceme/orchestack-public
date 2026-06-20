@@ -1,42 +1,4 @@
-"""Auth endpoints — login, logout, and current-user lookup.
-
-Three endpoints back the M3.5 session-cookie flow:
-
-    POST /api/auth/login    body: { username_or_email, password }
-                            → 200 { user_id, username, full_name, email, roles[] }
-                              + Set-Cookie: orchestack_session=<uuid>; HttpOnly;
-                                            SameSite=Lax; Path=/
-
-    POST /api/auth/logout   reads cookie; revokes the session row; returns 204
-                            + Set-Cookie with Max-Age=0 to clear the cookie
-
-    GET  /api/auth/me       reads cookie; returns the user's identity + roles
-                            or 401 if the cookie is missing/expired/revoked
-
-bcrypt verification runs under `asyncio.to_thread` so the CPU-bound work
-(~100ms with bcrypt cost 12) doesn't block the event loop. The single-
-host scale of OrcheStack means we don't need a verification pool; one
-thread per request is fine.
-
-Session row lifecycle:
-    INSERT     on successful login
-    UPDATE     last_seen_at on /api/auth/me (refresh the timestamp)
-    UPDATE     revoked_at on logout
-    DELETE     never — we keep history for the audit log
-
-Cookie security:
-    HttpOnly       — JS cannot read the cookie (XSS mitigation)
-    SameSite=Lax   — Sent on same-site nav + top-level cross-site GET, NOT
-                     on cross-site POST/XHR. Right tradeoff for an admin UI.
-    Secure         — Only set when running behind HTTPS (controlled by the
-                     SECURE_COOKIES env var; defaults to False for dev).
-    Path=/         — All paths under the same host (dashboard + orchestrator
-                     + auth all share the cookie).
-
-The 12-hour TTL is set on the session row's `expires_at` column. The
-cookie has matching `Max-Age` so the browser drops it automatically when
-the server-side row expires.
-"""
+"""Auth endpoints: session-cookie login, logout, and current-user lookup."""
 
 from __future__ import annotations
 
@@ -59,13 +21,10 @@ COOKIE_NAME = "orchestack_session"
 SESSION_TTL = timedelta(hours=12)
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
-# Pre-computed at module load so the login endpoint's constant-time-ish
-# bcrypt-verify path has a REAL bcrypt hash to verify against when the
-# operator types an unknown username (timing-attack mitigation). Using a
-# hardcoded string here previously triggered ValueError: Invalid salt
-# inside bcrypt.checkpw — the dummy needs to be a real bcrypt encoding,
-# just one that won't match any password an attacker might supply.
-# Cost factor matches the real-user path so the timing matches.
+# Real bcrypt hash used for unknown-username login attempts so verify timing
+# matches the real-user path (timing-attack mitigation). Must be a valid bcrypt
+# encoding — a hardcoded string triggers ValueError: Invalid salt in checkpw.
+# Cost factor matches the real-user path so timings align.
 _DUMMY_HASH = bcrypt.hashpw(
     b"\x00not-a-real-user-password\x00", bcrypt.gensalt(rounds=12),
 ).decode("utf-8")
@@ -73,16 +32,8 @@ _DUMMY_HASH = bcrypt.hashpw(
 
 # ---------- Helpers --------------------------------------------------------
 def _checkpw(plain: bytes, hashed: bytes) -> bool:
-    """bcrypt.checkpw wrapped to swallow ValueError ('Invalid salt').
-
-    The dummy hash we use for unknown-username timing-attack mitigation
-    needs to be a valid bcrypt encoding, but at any point in the future a
-    malformed value could land in platform.users.password_hash (corrupted
-    row, manual SQL edit, etc.). A ValueError there would otherwise 500
-    the login request rather than just rejecting credentials. Both the
-    real-user-with-bad-hash case and the dummy-hash case resolve to "this
-    is not a valid login" — which is exactly what `return False` means.
-    """
+    # Swallow ValueError/TypeError so a malformed password_hash row (corrupted /
+    # manually edited) rejects credentials instead of 500-ing the login request.
     try:
         return bcrypt.checkpw(plain, hashed)
     except (ValueError, TypeError):
@@ -97,7 +48,6 @@ async def _verify_password(plain: str, hashed: str) -> bool:
 
 
 async def _load_user_by_login(username_or_email: str) -> dict | None:
-    """Fetch the user row by username OR email (single query, OR'd)."""
     row = await db.fetchrow(
         """
         SELECT id, username, email, full_name, password_hash, is_active
@@ -133,13 +83,7 @@ def _set_session_cookie(response: Response, token: str, max_age_seconds: int) ->
 
 
 async def resolve_session(request: Request) -> dict | None:
-    """Look up the user behind the session cookie, or None.
-
-    Public helper for other API modules (signup-followup, future
-    permission checks). Returns the user dict + roles, or None for
-    "no cookie / expired / revoked". Refreshes last_seen_at as a
-    side effect on success.
-    """
+    """Resolve the session cookie to a user dict + roles, or None; refreshes last_seen_at."""
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
@@ -181,27 +125,18 @@ class LoginRequest(BaseModel):
 # ---------- Endpoints ------------------------------------------------------
 @router.post("/login")
 async def login(req: LoginRequest, request: Request, response: Response) -> dict:
-    """Verify credentials + set the session cookie.
-
-    Returns 401 for any failure (unknown user, wrong password, inactive
-    account) — we deliberately don't differentiate, to avoid leaking
-    which usernames exist.
-    """
+    """Verify credentials + set the session cookie; 401 on any failure (no user-existence leak)."""
     user = await _load_user_by_login(req.username_or_email)
 
-    # Constant-time-ish failure paths: bcrypt the password against a dummy
-    # hash even when the user doesn't exist, so the response time doesn't
-    # leak username existence. (A real attacker can still distinguish by
-    # other means, but this removes the cheap timing oracle.)
+    # Verify against a dummy hash for unknown users so response time doesn't
+    # leak username existence.
     target_hash = user["password_hash"] if user else _DUMMY_HASH
     valid = await _verify_password(req.password, target_hash)
 
     if not user or not valid or not user["is_active"]:
-        # Don't audit per-failed-login (would flood the table); only audit
-        # successes here.
+        # Deliberately no audit row on failure — would flood the table.
         raise HTTPException(401, "invalid credentials")
 
-    # Insert session row. expires_at = now() + 12h.
     now = datetime.now(timezone.utc)
     expires_at = now + SESSION_TTL
     sess = await db.fetchrow(
@@ -216,7 +151,6 @@ async def login(req: LoginRequest, request: Request, response: Response) -> dict
     )
     token = sess["token"]
 
-    # Update users.last_login_at (best-effort; if it fails, log doesn't matter).
     await db.execute(
         "UPDATE platform.users SET last_login_at = now() WHERE id = $1",
         user["id"],
@@ -255,7 +189,7 @@ async def logout(request: Request, response: Response) -> Response:
         )
         if row is not None:
             await audit.write("user_logged_out", user_id=row["user_id"])
-    # Clear the cookie regardless of whether the session existed.
+    # Clear cookie even if no session row existed (idempotent logout).
     response.delete_cookie(COOKIE_NAME, path="/")
     return Response(status_code=204)
 

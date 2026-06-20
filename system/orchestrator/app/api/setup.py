@@ -1,37 +1,4 @@
-"""Wizard handoff — POST /api/setup/deploy.
-
-Called once when the operator clicks "Create services" on deploying.html.
-This is the moment localStorage state becomes real database state.
-
-What this does:
-  1. Validate request body shape (Pydantic) + warehouse DB inputs (regex).
-  2. Create the warehouse database + scoped role inside postgres.
-  3. Upsert platform.setup_state for the actor user (current_step='completed').
-  4. Upsert one platform.installed_services row per selected, catalogued tool.
-  5. Persist wizard-collected credentials to the operator's .env file
-     (mounted into the orchestrator container at config.ENV_FILE) so
-     per-service compose snippets can interpolate ${METABASE_ADMIN_PASSWORD},
-     ${MINIO_ROOT_PASSWORD}, ${AIRBYTE_DB_PASSWORD} etc. when the
-     reconciler later brings a service up.
-  6. Return 200 OK with the deploy summary the client can render
-     (including the list of credential keys written, never the values).
-
-What this does NOT do (deferred):
-  - Image pulls. The operator can let the next session-open trigger that.
-  - Starting any service. Services start lazily on first session.
-
-Schema notes
-------------
-platform.setup_state is keyed on user_id and tracks wizard progress
-(current_step + selections). It is NOT keyed on a deploy_id. Each user
-has exactly one row that the wizard updates as they move through steps.
-M3 will redirect users with current_step='completed' away from the wizard.
-
-platform.installed_services is the registry of *what's been chosen* —
-the orchestrator reads it on startup to know which compose snippets to
-make available. tier/layer must satisfy CHECK constraints; we look those
-up from SERVICE_CATALOGUE.
-"""
+"""Wizard handoff — POST /api/setup/deploy."""
 
 from __future__ import annotations
 
@@ -52,8 +19,7 @@ router = APIRouter(prefix="/api/setup", tags=["setup"])
 
 # Warehouse DB identifier regex — restrictive because these get interpolated
 # into CREATE DATABASE / CREATE ROLE statements (asyncpg won't parameterise
-# identifiers). The wizard's client-side validation enforces this already;
-# re-validating here is defence in depth — never trust the network.
+# identifiers). Defence in depth — never trust the network.
 _SAFE_IDENT = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,30}$")
 
 
@@ -76,7 +42,7 @@ class DeployRequest(BaseModel):
     )
     user_id: int | None = Field(
         None,
-        description="Actor user id. Defaults to system user during M2.",
+        description="Actor user id. Defaults to system user.",
     )
 
 
@@ -105,22 +71,13 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         details={"selections": req.selections},
     )
 
-    # ---- 1. Create the warehouse database + scoped role ----------------
     # PostgreSQL DDL statements DO NOT accept $N parameter placeholders —
-    # the parameterized-query protocol works only on DML grammar slots.
     # CREATE ROLE ... PASSWORD $1 fails with "syntax error at or near $1".
-    # We have to inject the password as a quoted literal at the SQL level.
-    #
-    # Safety: the user/name are regex-validated upstream to match
-    # ^[a-zA-Z][a-zA-Z0-9_]{2,30}$ so they're safe as double-quoted
-    # identifiers. The password is wrapped in PostgreSQL's standard single-
-    # quote literal form: surround with ' and double any internal '. This
-    # is what pg_catalog.quote_literal() produces; we just do it in Python
-    # because asyncpg won't expose it through parameter substitution.
-    #
+    # We inject the password as a quoted literal. user/name are regex-validated
+    # to be safe as double-quoted identifiers; password is wrapped in PostgreSQL's
+    # standard single-quote literal form (surround with ' and double internal ').
     # CREATE DATABASE additionally cannot run inside a transaction.
     def _quote_literal(s: str) -> str:
-        """PostgreSQL string literal escape — see comments above."""
         return "'" + s.replace("'", "''") + "'"
 
     try:
@@ -132,22 +89,11 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
                 "SELECT 1 FROM pg_roles WHERE rolname = $1", user,
             )
 
-            # IDEMPOTENT semantics — if the warehouse DB + role already exist
-            # from a previous successful deploy, skip the CREATE statements.
-            # This is what makes "+ Configure" on a NEW service card from
-            # the dashboard (re-entering the wizard to add a service) work
-            # without forcing the operator to drop and recreate their
-            # warehouse. Without this, deploy 409s on the existing DB and
-            # the operator can never add a service post-initial-setup.
+            # Idempotent: if DB + role already exist, skip CREATE so re-entering
+            # the wizard to add a service doesn't 409 on the existing DB.
             if role_exists and db_exists:
-                # The happy path for adding a service later. We trust that
-                # the operator hasn't manually broken the DB/role state
-                # outside the wizard. If they have, they'll find out on
-                # the next pipeline run; not the wizard's job to detect.
                 pass
             elif db_exists and not role_exists:
-                # Pathological: someone manually dropped the role but left
-                # the database. Recreate the role and grant ownership.
                 await conn.execute(
                     f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {_quote_literal(password)}'
                 )
@@ -155,11 +101,8 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
                     f'ALTER DATABASE "{name}" OWNER TO "{user}"'
                 )
             elif role_exists and not db_exists:
-                # Pathological inverse: role exists but no DB. Create the
-                # DB owned by the existing role.
                 await conn.execute(f'CREATE DATABASE "{name}" OWNER "{user}"')
             else:
-                # Fresh install: create role + database.
                 await conn.execute(
                     f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {_quote_literal(password)}'
                 )
@@ -173,10 +116,6 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         )
         raise HTTPException(500, f"warehouse DB creation failed: {e}") from e
 
-    # ---- 2. Mark this user's wizard as completed ---------------------
-    # setup_state has user_id as primary key — UPSERT semantics. We store
-    # the selections in the JSONB column so M3 can render "what they
-    # picked" without re-querying installed_services.
     await db.execute(
         """
         INSERT INTO platform.setup_state
@@ -191,7 +130,6 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         user_id, json.dumps(req.selections),
     )
 
-    # ---- 3. Register each selected, catalogued tool ------------------
     registered: list[str] = []
     skipped: list[dict[str, str]] = []
     async with db.transaction() as conn:
@@ -231,32 +169,10 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             )
             registered.append(catalogue_key)
 
-    # ---- 4. Persist wizard credentials to .env ------------------------
-    # Until M3.6 this step was a TODO — credentials lived in the wizard's
-    # localStorage and were silently dropped by the orchestrator on deploy.
-    # Compose snippets that referenced ${METABASE_ADMIN_PASSWORD},
-    # ${MINIO_ROOT_PASSWORD}, ${AIRBYTE_DB_PASSWORD}, etc. would then fail
-    # to interpolate at `docker compose up -d` time, and the operator
-    # would see "service_start_failed" in the audit log with a "missing
-    # value" stderr.
-    #
-    # Approach:
-    #   1. Read current .env (preserving comments and blank lines).
-    #   2. Update or append each wizard credential.
-    #   3. Back up the previous .env to .env.bak.<unix-ts> so the
-    #      operator can recover if the deploy needs to be re-run.
-    #   4. Write atomically (tmpfile + rename) so a partial write can't
-    #      leave .env half-rewritten.
-    #
-    # WAREHOUSE_DB_PASSWORD is already validated above; everything else
-    # in req.credentials is operator-typed and we trust the wizard's
-    # client-side validation (#2 from M3 testing feedback).
-    # Wrapped in try/except because credential persistence is a "best
-    # effort" — if the env-file write fails (permissions, missing mount,
-    # filesystem-readonly etc.) we still want the deploy to succeed.
-    # The DB role and installed_services rows are already committed; an
-    # operator with a half-deployed install is worse than one whose
-    # credentials need re-entering via the Credentials page later.
+    # Credential persistence is best-effort — if the env-file write fails
+    # (permissions, missing mount, read-only fs) the deploy still succeeds.
+    # DB role and installed_services rows are already committed; a
+    # half-deployed install is worse than re-entering credentials later.
     credentials_written: list[str] = []
     credentials_error: str | None = None
     try:
@@ -276,7 +192,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             "pipeline_user": user,
             "registered": registered,
             "skipped": skipped,
-            # Audit log records the KEYS we wrote, never the values.
+            # Record only the KEYS, never the values.
             "credentials_written": credentials_written,
             "credentials_error": credentials_error,
         },
@@ -296,27 +212,12 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
 # .env file persistence — line-preserving update with backup
 # ---------------------------------------------------------------------------
 def _persist_credentials_to_env(credentials: dict) -> list[str]:
-    """Append/update each credential key in the operator's .env.
-
-    Returns the list of keys actually written. Returns an empty list if the
-    env file isn't accessible (development edge case where the orchestrator
-    runs without the canonical bind-mount).
-
-    Line-preservation semantics:
-      - Comments and blank lines are kept verbatim.
-      - Existing KEY=value lines for keys we're updating are REPLACED in
-        place (preserving line number / position relative to comments).
-      - New keys are appended to the end of the file.
-      - The previous file is backed up to .env.bak.<unix-ts>.
-    """
+    """Append/update each credential key in the operator's .env; returns keys written."""
     if not credentials:
         return []
 
     env_path = Path(config.ENV_FILE)
     if not env_path.exists():
-        # Dev edge case — orchestrator running without bind-mount. Log
-        # loudly but don't fail the deploy; the operator can re-run the
-        # wizard once the mount is in place.
         log.warning(
             "credentials persist skipped — env file not found at %s. "
             "Was system/docker/.env bind-mounted into the orchestrator?",
@@ -324,9 +225,6 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
         )
         return []
 
-    # Filter: only keys with a well-formed name AND a non-empty value.
-    # Wizard fields with blank input or stripped-out names (e.g. browser
-    # form quirks that send "") are silently dropped.
     KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
     incoming = {
         k: v for k, v in credentials.items()
@@ -338,7 +236,6 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
     lines = env_path.read_text().splitlines()
     written: list[str] = []
 
-    # Pass 1 — update existing keys in place.
     matched: set[str] = set()
     for i, line in enumerate(lines):
         stripped = line.strip()
@@ -352,18 +249,14 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
             matched.add(key)
             written.append(key)
 
-    # Pass 2 — append keys that didn't exist before.
     appended_keys = [k for k in incoming.keys() if k not in matched]
     if appended_keys:
-        # One blank line + a header so the operator can tell which block
-        # came from the wizard, not a manual edit.
         lines.append("")
         lines.append("# Added by the setup wizard")
         for k in appended_keys:
             lines.append(f"{k}={incoming[k]}")
             written.append(k)
 
-    # Backup previous file (best-effort — never block the deploy on this).
     try:
         backup_path = env_path.parent / f"{env_path.name}.bak.{int(env_path.stat().st_mtime)}"
         if not backup_path.exists():
@@ -371,14 +264,9 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
     except OSError as e:
         log.warning("env backup write failed (continuing): %s", e)
 
-    # Direct write — we can NOT use the "tmpfile + os.replace" atomic
-    # pattern because .env is bind-mounted from the host as a SINGLE FILE.
-    # Renaming over a bind-mounted file fails with EBUSY ("Device or
-    # resource busy") on Linux because the mount locks the inode. Direct
-    # write to the bind-mounted file works because the kernel allows
-    # truncating and writing to the existing inode through the mount.
-    # The backup we just took is the recovery path if a partial write
-    # ever corrupts the file (a few KB of text, never seen in practice).
+    # Direct write — cannot use "tmpfile + os.replace" because .env is
+    # bind-mounted from the host as a SINGLE FILE; renaming over a
+    # bind-mounted file fails with EBUSY on Linux (mount locks the inode).
     env_path.write_text("\n".join(lines) + "\n")
 
     log.info("persisted %d credentials to %s", len(written), env_path)
@@ -387,11 +275,7 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
 
 @router.get("/state")
 async def get_setup_state(user_id: int | None = None) -> dict[str, object]:
-    """Return the wizard state for a user. Defaults to system user.
-
-    Used by route guards (M3) to decide whether to bounce a user to /setup/*
-    or to /app/. current_step='completed' means onboarding done.
-    """
+    """Return the wizard state for a user; defaults to system user."""
     uid = user_id if user_id is not None else config.DEFAULT_USER_ID
     row = await db.fetchrow(
         """

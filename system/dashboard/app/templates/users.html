@@ -1,5 +1,5 @@
+{# Users management page. #}
 {% extends "base.html" %}
-
 {% block content %}
 <style>
   .invite-form-grid {
@@ -26,8 +26,6 @@
     shown to the inviter once. Roles control which services each operator can Start, Use, Force-stop, and edit config for.
   </p>
 
-  {# KPI strip — server-rendered. Static across HTMX swaps; refreshes
-     on full page navigation. #}
   <div class="kpi-strip">
     <div class="kpi">
       <div class="label">Total users</div>
@@ -51,8 +49,6 @@
     </div>
   </div>
 
-  {# Users table + invite form. HTMX-swapped on invite/role/disable
-     actions so the operator sees the new state without full reload. #}
   <div id="users-table"
        hx-get="{{ url_for('users_table_fragment') }}"
        hx-trigger="load delay:50ms"

@@ -1,15 +1,4 @@
-{#
-  Open sessions table fragment — word-for-word translation of
-  docs/mockups/approved/sessions.html lines 51-88.
-
-  Columns:
-    Service        — status dot + display_name + · layer
-    User           — full_name + @username · email
-    Opened         — absolute YYYY-MM-DD HH:MM:SS
-    Last heartbeat — relative ("12s ago")
-    Idle           — active / idle / at-risk badge
-    Actions        — Force-end button
-#}
+{# Sessions table fragment for the dashboard, re-rendered on session state changes. #}
 {% if error %}
   <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
               padding: 14px 18px; font-size: 13px; color: #991b1b;">

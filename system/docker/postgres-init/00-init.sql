@@ -15,7 +15,7 @@
 --
 -- NOTE: The customer PIPELINE database (with schemas raw, marts, airflow,
 -- openmetadata) is NOT created here. That's a wizard-driven step the
--- orchestrator (M2) performs after the operator submits the setup wizard.
+-- orchestrator performs after the operator submits the setup wizard.
 -- Keeping pipeline schemas out of this file maintains the two-database split:
 -- OrcheStack metadata stays small and bootstrap-controlled; customer data
 -- lives in a separately-named DB with its own user.
@@ -30,8 +30,8 @@ COMMENT ON SCHEMA platform IS 'OrcheStack internal metadata: users, roles, sessi
 
 -- ============================================================================
 -- Bootstrap log — proves the init scripts ran. Useful smoke test before the
--- full schema lands. The orchestrator and Streamlit can read this to display
--- "Platform initialised at <timestamp>" in the dashboard header at M3.
+-- full schema lands. The orchestrator and dashboard can read this to display
+-- "Platform initialised at <timestamp>" in the dashboard header.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS platform.bootstrap_log (

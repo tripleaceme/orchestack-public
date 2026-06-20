@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OrcheStack — Users</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../_tokens.css">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .invite-form {
+    display: grid; grid-template-columns: 1.4fr 1fr 1.4fr auto;
+    gap: 12px; padding: 18px 20px;
+  }
+  .invite-form input, .invite-form select {
+    padding: 8px 12px; border: 1px solid var(--border); background: var(--bg);
+    border-radius: 6px; font-size: 13px; color: var(--text); font-family: inherit;
+  }
+  .invite-form label { display: block; font-size: 11px; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 5px; }
+  .role-pill {
+    display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: var(--info-bg); color: #1d4ed8; margin-right: 4px; font-weight: 500;
+  }
+  .role-pill.admin { background: #fef2f2; color: #b91c1c; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 999px;
+    background: var(--navy); color: #fff; display: inline-grid; place-items: center;
+    font-weight: 600; font-size: 13px; margin-right: 10px;
+    vertical-align: middle;
+  }
+  .avatar.alt { background: var(--accent); }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span class="brand-mark">O</span><span class="brand-name">OrcheStack</span></div>
+  <div class="group">
+    <div class="group-label">Workspace</div>
+    <a href="home.html" class="item"><span>Services</span><span class="kbd">G S</span></a>
+    <a href="sessions.html" class="item"><span>Sessions</span><span class="kbd">G E</span></a>
+    <a href="audit.html" class="item"><span>Audit</span><span class="kbd">G A</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Configuration</div>
+    <a href="credentials.html" class="item"><span>Credentials</span><span class="kbd">G C</span></a>
+    <a href="users.html" class="item active"><span>● Users</span><span class="kbd">G U</span></a>
+    <a href="roles.html" class="item"><span>Roles</span><span class="kbd">G R</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Account</div>
+    <a href="profile.html" class="item"><span>Profile</span></a>
+    <a href="#" class="item"><span>Sign out</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Catalogue</div>
+    <a href="#" class="item"><span>+ Add another service</span><span class="kbd">9 / 9</span></a>
+  </div>
+  <div class="footer-pill"><span class="conn-dot"></span><span>Connected · Ayoade</span></div>
+</aside>
+
+<main>
+  <div class="breadcrumb">Configuration / Users</div>
+  <h1>Users</h1>
+  <p class="lede">Operators who can sign into OrcheStack. Adding a user generates a one-time starter password shown to the inviter once. Roles control which services each operator can Start, Use, Force-stop, and edit config for.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Total users</div><div class="value">2</div></div>
+    <div class="kpi"><div class="label">Admins</div><div class="value">1</div><div class="delta">full platform access</div></div>
+    <div class="kpi"><div class="label">Active last 24h</div><div class="value">1</div><div class="delta">Ayoade</div></div>
+    <div class="kpi"><div class="label">Invited, not signed in</div><div class="value">0</div></div>
+  </div>
+
+  <div class="surface">
+    <div class="surface-head">
+      <h2>Invite a new user</h2>
+      <span class="sub">Invitee gets a one-time starter password revealed here</span>
+    </div>
+    <div class="surface-body tight">
+      <div class="invite-form">
+        <div>
+          <label>Email</label>
+          <input type="email" placeholder="teammate@orchestack.local" required>
+        </div>
+        <div>
+          <label>Full name</label>
+          <input type="text" placeholder="Their name" required>
+        </div>
+        <div>
+          <label>Roles</label>
+          <select>
+            <option>Operator (default)</option>
+            <option>Admin</option>
+            <option>Read-only</option>
+            <option>Analyst</option>
+          </select>
+        </div>
+        <div style="align-self: end;">
+          <button class="btn btn-primary">Invite</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="surface">
+    <div class="surface-head">
+      <h2>All users</h2>
+      <span class="sub">2 users · 1 admin</span>
+    </div>
+    <div class="surface-body tight">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Roles</th>
+            <th>Status</th>
+            <th>Last login</th>
+            <th class="right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <span class="avatar">A</span>
+              <div style="display: inline-block; vertical-align: middle;">
+                <div><strong>Ayoade Adegbite</strong> <span class="muted font-mono" style="font-size: 12px;">· you</span></div>
+                <div class="muted font-mono" style="font-size: 12px;">@ayoade · ayoade@miva.edu.ng</div>
+              </div>
+            </td>
+            <td><span class="role-pill admin">Admin</span></td>
+            <td><span class="badge badge-success">active</span></td>
+            <td class="font-mono" style="font-size: 12px;">12s ago</td>
+            <td class="right">
+              <button class="btn btn-sm">Edit roles</button>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <span class="avatar alt">S</span>
+              <div style="display: inline-block; vertical-align: middle;">
+                <div><strong>System</strong></div>
+                <div class="muted font-mono" style="font-size: 12px;">@system · platform-internal</div>
+              </div>
+            </td>
+            <td><span class="role-pill admin">Admin</span></td>
+            <td><span class="badge badge-neutral">internal</span></td>
+            <td class="muted">—</td>
+            <td class="right">
+              <button class="btn btn-sm btn-ghost" disabled>Locked</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<footer>OrcheStack dashboard · phase 3.7 · v0.6.0 · bundle dev-bd8f81c · approved layout</footer>
+
+</body>
+</html>

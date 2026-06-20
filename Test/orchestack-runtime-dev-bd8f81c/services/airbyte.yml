@@ -46,16 +46,19 @@ x-airbyte-common-logging: &airbyte-logging
 x-airbyte-db-env: &airbyte-db-env
   DATABASE_HOST: orchestack-postgres
   DATABASE_PORT: "5432"
-  DATABASE_DB: airbyte
-  DATABASE_USER: airbyte
+  DATABASE_DB: airbyte_db
+  # User comes from .env so the operator can see/edit it under the
+  # convention. Default is airbyte_admin (the pre-start hook creates
+  # the role with that name).
+  DATABASE_USER: ${AIRBYTE_DB_USER:-airbyte_admin}
   DATABASE_PASSWORD: ${AIRBYTE_DB_PASSWORD:?AIRBYTE_DB_PASSWORD must be set}
-  DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte
+  DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte_db
   CONFIG_DATABASE_HOST: orchestack-postgres
   CONFIG_DATABASE_PORT: "5432"
-  CONFIG_DATABASE_DB: airbyte
-  CONFIG_DATABASE_USER: airbyte
+  CONFIG_DATABASE_DB: airbyte_db
+  CONFIG_DATABASE_USER: ${AIRBYTE_DB_USER:-airbyte_admin}
   CONFIG_DATABASE_PASSWORD: ${AIRBYTE_DB_PASSWORD:?}
-  CONFIG_DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte
+  CONFIG_DATABASE_URL: jdbc:postgresql://orchestack-postgres:5432/airbyte_db
 
 services:
   airbyte-init:
@@ -106,7 +109,7 @@ services:
       DB_PORT: "5432"
       POSTGRES_PWD: ${AIRBYTE_DB_PASSWORD:?}
       POSTGRES_SEEDS: orchestack-postgres
-      POSTGRES_USER: airbyte
+      POSTGRES_USER: ${AIRBYTE_DB_USER:-airbyte_admin}
       LOG_LEVEL: INFO
       # NOTE: DYNAMIC_CONFIG_FILE_PATH must NOT be set to empty string —
       # Temporal stat()s the path and crashes with "no such file or
@@ -251,7 +254,7 @@ services:
       - orchestack.service=airbyte
       - orchestack.tier=hot
       - traefik.enable=true
-      # Airbyte's webapp expects to live at root (/). We strip /app/airbyte
+      # Airbyte's webapp expects to live at root (/). We strip /app/airbyte_db
       # via Traefik middleware; the SPA reads paths relative to its own
       # mounted location. Some asset URLs may still break — known
       # limitation, similar to MinIO's subpath issue. If the operator
@@ -261,7 +264,7 @@ services:
       - traefik.http.routers.airbyte.rule=PathPrefix(`/app/airbyte`)
       - traefik.http.routers.airbyte.entrypoints=web
       - traefik.http.routers.airbyte.priority=200
-      - traefik.http.middlewares.airbyte-strip.stripprefix.prefixes=/app/airbyte
+      - traefik.http.middlewares.airbyte-strip.stripprefix.prefixes=/app/airbyte_db
       - traefik.http.routers.airbyte.middlewares=airbyte-strip@docker
       - traefik.http.services.airbyte.loadbalancer.server.port=80
     # Direct-port exposure on host — same pattern as MinIO. Airbyte's

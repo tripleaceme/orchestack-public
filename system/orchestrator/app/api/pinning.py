@@ -1,18 +1,4 @@
-"""Pin/unpin endpoints — the keep-warm mechanism.
-
-A pinned service is exempt from the reconciler's idle sweep — even if no
-sessions are open, the orchestrator won't stop it. Pins can be permanent
-(NULL expires_at) or time-bounded (expires_at in the future). Default TTL
-when the wizard doesn't specify is 2 hours, which matches the typical
-"open a tool, switch context for an hour, come back" pattern operators
-have during active development.
-
-Schema mapping
---------------
-platform.service_pinning's columns are pinned_by_user_id, pinned_at,
-expires_at, reason. Our API parameter `user_id` maps to pinned_by_user_id;
-`ttl_seconds` becomes expires_at via Python timedelta arithmetic.
-"""
+"""Pin/unpin endpoints for the keep-warm mechanism."""
 
 from __future__ import annotations
 
@@ -43,14 +29,7 @@ class PinRequest(BaseModel):
 
 @router.get("/{name}/pin")
 async def get_pin(name: str) -> dict[str, object]:
-    """Return the current pin record for `name`, or 404 if not pinned.
-
-    Used by the dashboard's service detail page to render the toggle in
-    the correct state on first load. The active-pin check matches the
-    reconciler's: pin row exists AND (expires_at IS NULL OR expires_at > now()).
-    Expired-but-still-present pins return 404 — they're effectively
-    unpinned from the reconciler's perspective.
-    """
+    """Return the current pin record for `name`, or 404 if not pinned."""
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
 
@@ -97,9 +76,7 @@ async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
         else None
     )
 
-    # Upsert: one pin per service. If you re-pin, you extend the TTL.
-    # Note: ON CONFLICT requires the unique constraint on service_name,
-    # which the schema has (TEXT NOT NULL UNIQUE).
+    # ON CONFLICT requires the unique constraint on service_name (schema: TEXT NOT NULL UNIQUE).
     await db.execute(
         """
         INSERT INTO platform.service_pinning
@@ -130,22 +107,14 @@ async def pin_service(name: str, req: PinRequest) -> dict[str, object]:
 
 @router.delete("/{name}/pin")
 async def unpin_service(name: str) -> Response:
-    """Remove the pin from a service. Reconciler can stop it again at next idle.
-
-    Note on the 204 dance: FastAPI 0.115's APIRoute assertion fires for
-    `status_code=204` on the decorator regardless of `response_class`. The
-    only working pattern is to set NO `status_code` on the decorator and
-    return a `Response(status_code=204)` object explicitly — FastAPI passes
-    it through as-is, the client sees the 204 with no body, RFC 7230 is
-    honoured, and the assertion is sidestepped because the decorator's
-    status_code stays at its default (allowed by is_body_allowed_for_status_code).
-    """
+    # FastAPI 0.115's APIRoute assertion fires for `status_code=204` on the decorator
+    # regardless of `response_class`; instead, leave the decorator's status_code at its
+    # default and return Response(status_code=204) explicitly so the client sees 204 no-body.
     if name not in config.SERVICE_CATALOGUE:
         raise HTTPException(404, f"unknown service: {name}")
 
-    # Use RETURNING to tell whether a row was actually pinned vs. already
-    # absent — asyncpg execute() command-tag parsing is fragile for
-    # multi-digit row counts.
+    # RETURNING distinguishes pinned vs already-absent; asyncpg execute() command-tag parsing
+    # is fragile for multi-digit row counts.
     row = await db.fetchrow(
         "DELETE FROM platform.service_pinning WHERE service_name = $1 RETURNING service_name",
         name,

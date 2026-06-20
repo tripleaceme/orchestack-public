@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OrcheStack — Profile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../_tokens.css">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .form-grid { max-width: 720px; padding: 26px 28px; }
+  .avatar-row { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; padding-bottom: 22px;
+    border-bottom: 1px solid var(--border); }
+  .avatar-lg {
+    width: 56px; height: 56px; border-radius: 999px;
+    background: var(--navy); color: #fff; display: grid; place-items: center;
+    font-weight: 600; font-size: 22px;
+  }
+  .avatar-meta { font-size: 13px; color: var(--text-2); }
+  .avatar-meta .username { color: var(--text); font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+  .session-bits { display: flex; gap: 24px; padding: 18px 20px; }
+  .session-bits .bit { flex: 1; }
+  .session-bits .label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px; }
+  .session-bits .value { font-size: 14px; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+  input[disabled] { background: var(--bg) !important; color: var(--text-2); cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span class="brand-mark">O</span><span class="brand-name">OrcheStack</span></div>
+  <div class="group">
+    <div class="group-label">Workspace</div>
+    <a href="home.html" class="item"><span>Services</span><span class="kbd">G S</span></a>
+    <a href="sessions.html" class="item"><span>Sessions</span><span class="kbd">G E</span></a>
+    <a href="audit.html" class="item"><span>Audit</span><span class="kbd">G A</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Configuration</div>
+    <a href="credentials.html" class="item"><span>Credentials</span><span class="kbd">G C</span></a>
+    <a href="users.html" class="item"><span>Users</span><span class="kbd">G U</span></a>
+    <a href="roles.html" class="item"><span>Roles</span><span class="kbd">G R</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Account</div>
+    <a href="profile.html" class="item active"><span>● Profile</span></a>
+    <a href="#" class="item"><span>Sign out</span></a>
+  </div>
+  <div class="group">
+    <div class="group-label">Catalogue</div>
+    <a href="#" class="item"><span>+ Add another service</span><span class="kbd">9 / 9</span></a>
+  </div>
+  <div class="footer-pill"><span class="conn-dot"></span><span>Connected · Ayoade</span></div>
+</aside>
+
+<main>
+  <div class="breadcrumb">Account / Profile</div>
+  <h1>Your profile</h1>
+  <p class="lede">Manage your name, email, company, and password. Username is fixed once set. So pick something you'll be happy with on the audit log.</p>
+
+  <!-- Profile details -->
+  <div class="surface">
+    <div class="surface-head">
+      <h2>Profile details</h2>
+      <span class="sub">Changes are written to platform.users immediately</span>
+    </div>
+    <div class="form-grid">
+      <div class="avatar-row">
+        <div class="avatar-lg">A</div>
+        <div class="avatar-meta">
+          <div class="username">Ayoade Adegbite</div>
+          <div>@ayoade · ayoade@miva.edu.ng · joined 2026-06-12</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Username
+          <span class="opt">Fixed: used in audit log</span>
+        </label>
+        <input type="text" value="ayoade" disabled>
+      </div>
+
+      <div class="form-row">
+        <label>Full name</label>
+        <div>
+          <input type="text" value="Ayoade Adegbite">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Email</label>
+        <div>
+          <input type="email" value="ayoade@miva.edu.ng">
+          <div class="input-hint">Used for password reset and OM/Airflow admin login default.</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Company name
+          <span class="opt">Optional</span>
+        </label>
+        <input type="text" value="Miva University" placeholder="Acme Co.">
+      </div>
+
+      <div class="form-actions">
+        <button class="btn">Cancel</button>
+        <button class="btn btn-primary">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Change password -->
+  <div class="surface">
+    <div class="surface-head">
+      <h2>Change password</h2>
+      <span class="sub">Min 8 characters · use a passphrase</span>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Current password</label>
+        <input type="password" placeholder="Your current password">
+      </div>
+      <div class="form-row">
+        <label>New password</label>
+        <div>
+          <input type="password" placeholder="Min 8 chars">
+          <div class="input-hint">Min 12 chars recommended. Sign-out everywhere is automatic on save.</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Confirm new password</label>
+        <input type="password" placeholder="Type it again">
+      </div>
+      <div class="form-actions">
+        <button class="btn">Cancel</button>
+        <button class="btn btn-primary">Update password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session info -->
+  <div class="surface">
+    <div class="surface-head">
+      <h2>This session</h2>
+      <span class="sub">Sign out everywhere from the actions menu</span>
+    </div>
+    <div class="session-bits">
+      <div class="bit">
+        <div class="label">Signed in</div>
+        <div class="value">2026-06-17 04:55:32</div>
+      </div>
+      <div class="bit">
+        <div class="label">IP</div>
+        <div class="value">172.18.0.1</div>
+      </div>
+      <div class="bit">
+        <div class="label">User agent</div>
+        <div class="value" style="font-size: 12px;">Mozilla/5.0 (Mac OS X)</div>
+      </div>
+      <div class="bit">
+        <div class="label">Roles</div>
+        <div class="value">Admin</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>OrcheStack dashboard · phase 3.7 · v0.6.0 · bundle dev-bd8f81c · approved layout</footer>
+
+</body>
+</html>

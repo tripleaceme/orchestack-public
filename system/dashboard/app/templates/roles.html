@@ -1,11 +1,9 @@
 {% extends "base.html" %}
-
 {% block content %}
 <style>
   .new-role-toolbar {
     display: flex; justify-content: end; margin-bottom: 18px; gap: 10px; align-items: center;
   }
-  /* Hidden create form revealed by the + New role button. */
   .create-role-row { display: none; }
   .create-role-row.open { display: block; }
   .create-role-row form {
@@ -65,8 +63,7 @@
     </form>
   </div>
 
-  {# Role cards — HTMX-loaded so create/edit/delete actions swap just
-     this section. The 200px min-height prevents page-jump while loading. #}
+  {# 200px min-height prevents page-jump while loading. #}
   <div id="roles-list"
        hx-get="{{ url_for('roles_list_fragment') }}"
        hx-trigger="load delay:50ms"
@@ -76,9 +73,6 @@
   </div>
 
   <script>
-    // Reset + close the create form when the backend fires
-    // HX-Trigger: roleCreated after a successful create. Also surfaces
-    // a brief toast via the existing #toast-tray (set up in base.html).
     document.body.addEventListener('roleCreated', function(e) {
       var row = document.getElementById('create-role-row');
       if (row) row.classList.remove('open');

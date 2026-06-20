@@ -1,4 +1,4 @@
-# system/dbt/ — dbt starter template (M4)
+# system/dbt/ — dbt starter template
 
 **This folder is NOT where the customer's dbt code lives.** The customer's
 actual dbt project lives in their own Git repository. They point OrcheStack
@@ -7,11 +7,11 @@ that repo into the dbt container at runtime.
 
 This folder will eventually contain a **starter dbt project skeleton** that
 OrcheStack can scaffold for new operators who don't have an existing dbt
-project. M4 work; currently empty.
+project. Currently empty.
 
 ---
 
-## What lands here at M4
+## What lands here
 
 A minimal but production-shaped dbt project an operator can fork:
 
@@ -35,9 +35,9 @@ system/dbt/
 └── README.md                "How to fork this for your project" guide
 ```
 
-The orchestrator's wizard handoff (M2.5) writes a copy of this skeleton
-to the customer's `./config/dbt-starter/` directory if they don't supply
-a DBT_REPO_URL. They can then `git init` it and push to their own repo,
+The orchestrator's wizard handoff writes a copy of this skeleton to the
+customer's `./config/dbt-starter/` directory if they don't supply a
+DBT_REPO_URL. They can then `git init` it and push to their own repo,
 returning to the dashboard to paste the URL in.
 
 ---
@@ -74,7 +74,7 @@ start from scratch), push to GitHub, and OrcheStack pulls from there.
 
 ## How OrcheStack uses this folder at runtime
 
-When Airflow's `dbt run` task fires, the dbt container (M4) does:
+When Airflow's `dbt run` task fires, the dbt container does:
 
 1. Read `DBT_REPO_URL` from the operator's `.env`
 2. If empty → use the starter project from this folder (mounted into the
@@ -85,11 +85,3 @@ When Airflow's `dbt run` task fires, the dbt container (M4) does:
 
 The starter project exists so operators can use OrcheStack on day one
 without having to write a dbt project from scratch.
-
----
-
-## Why this isn't M3 work
-
-M3 is the dashboard. M4 is when dbt + Airflow actually run real jobs.
-This folder gets populated when M4 lands — currently a placeholder so
-future contributors see that "the folder exists for a reason."

@@ -9,7 +9,7 @@
 --
 -- Why this seed exists
 -- --------------------
--- During M2 the OrcheStack signup form writes profile data to localStorage
+-- The OrcheStack signup form writes profile data to localStorage
 -- only — it does NOT create a row in platform.users. But every operation
 -- the orchestrator does (session open, service start, audit log write,
 -- pin) has a FK constraint requiring a valid user_id. Without a seeded
@@ -18,9 +18,8 @@
 --
 -- The seed creates id=1 as a system-owned admin account. The orchestrator
 -- uses this id as the default actor for any operation where a real user
--- isn't available. M3 introduces real session cookies + per-request auth,
--- and the orchestrator's DEFAULT_USER_ID becomes the fallback for
--- background tasks (like the reconciler's audit-log writes) only.
+-- isn't available — the fallback for background tasks (like the
+-- reconciler's audit-log writes).
 --
 -- DO NOT log in as this account in production. The password hash below is
 -- intentionally a value that bcrypt cannot have produced — an invalid hash

@@ -1,4 +1,4 @@
-# system/dags/ — Airflow DAGs starter template (M4)
+# system/dags/ — Airflow DAGs starter template
 
 **This folder is NOT where the customer's DAGs live.** The customer's
 actual DAGs live in their own Git repository. They point OrcheStack at
@@ -7,11 +7,11 @@ clones that repo into the Airflow container at runtime.
 
 This folder will eventually contain a **starter DAG set** that OrcheStack
 ships pre-installed for new operators who don't have an Airflow repo yet.
-M4 work; currently empty.
+Currently empty.
 
 ---
 
-## What lands here at M4
+## What lands here
 
 A small set of starter DAGs an operator can fork:
 
@@ -55,7 +55,7 @@ acme-airflow-dags/                   Their Git repo
 
 OrcheStack's wizard takes the repo URL + branch + subdirectory
 (default `dags/`), and the Airflow container's git-sync sidecar
-(M4) keeps it in sync.
+keeps it in sync.
 
 ---
 
@@ -74,10 +74,3 @@ When the Airflow container starts, it follows this resolution:
 The split between OrcheStack-shipped starter DAGs and customer DAGs is
 explicit: the wizard's repo field is optional precisely so a new operator
 can see things working before they need to set up their own Git repo.
-
----
-
-## Why this isn't M3 work
-
-M3 is the dashboard. M4 is when Airflow + dbt actually run real jobs.
-This folder gets populated when M4 lands — currently a placeholder.

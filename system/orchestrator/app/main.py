@@ -1,18 +1,4 @@
-"""OrcheStack orchestrator — FastAPI control-plane service.
-
-Wires together:
-  - The four API routers (services, sessions, pinning, setup)
-  - The asyncpg connection pool (lifespan-managed)
-  - The reconciler background task (lifespan-managed)
-  - The /api/health endpoint
-
-The lifespan handler is the canonical FastAPI pattern for managing
-resources whose lifetime tracks the app's: open them on startup, close
-them on shutdown, expose them through app.state if route handlers need
-direct access (we use module-level singletons instead — db.get_pool()).
-
-See design/m2-orchestrator.md for the architecture overview.
-"""
+"""OrcheStack orchestrator — FastAPI control-plane service."""
 
 from __future__ import annotations
 
@@ -26,7 +12,6 @@ from fastapi import FastAPI
 from . import config, db, docker_ops, reconciler
 from .api import admin, audit_api, auth, credentials, pinning, services, sessions, setup as setup_api, users
 
-# ---------- Logging --------------------------------------------------------
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
@@ -34,15 +19,12 @@ logging.basicConfig(
 log = logging.getLogger("orchestrator")
 
 
-# ---------- Lifespan -------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the DB pool + launch the reconciler at startup; close on shutdown.
 
-    Exception handling here is intentional: if the DB can't be reached at
-    startup, we log loudly and continue — the orchestrator can still serve
-    /api/health (reporting postgres: false) so an operator can see what's
-    wrong. Better than crash-loop, which gives no useful feedback.
+    If the DB can't be reached at startup, log and continue in degraded mode
+    so /api/health remains available (better than crash-loop).
     """
     pool_ready = False
     try:
@@ -51,22 +33,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         log.error("startup: DB pool init failed — running in degraded mode: %s", e)
 
-    # .env readability check.
-    #
-    # The bind-mount-as-empty-directory trap has bitten three subsystems
-    # so far (stop_service, /api/credentials, the Metabase bootstrap
-    # hook). Catch the trap ONCE at startup and surface it as an audit
-    # event so the operator sees the cause on /app/audit rather than
-    # being puzzled by silently-broken downstream features.
+    # .env readability check — the bind-mount-as-empty-directory trap silently
+    # breaks stop_service env interpolation, /api/credentials writes, and the
+    # Metabase bootstrap hook. Surface it once at startup as an audit event.
     if pool_ready:
         try:
             import os as _os
             env_path = config.ENV_FILE
             env_ok = _os.path.isfile(env_path) and _os.access(env_path, _os.R_OK)
             if not env_ok:
-                # Treat this as an audit event (visible on /app/audit)
-                # and a loud log line. Don't fail startup — degraded
-                # mode is more useful than a crash loop.
                 from . import audit
                 kind = (
                     "directory" if _os.path.isdir(env_path)
@@ -89,19 +64,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             log.warning("startup: env-file check raised: %s", e)
 
-    # Auto-heal orphaned first-admin assignment.
-    #
-    # Earlier signups (commits before 601b06f) counted the seeded system
-    # row when deciding whether the new user was the "first" user, so
-    # is_first was always False and the Admin role was never granted.
-    # Operators on those installs end up locked out of /app/users and
-    # /app/roles even though they ARE the only real user. On startup,
-    # detect "exactly one non-system user with zero roles" and grant
-    # them Admin so they recover without losing data.
-    #
-    # Guarded by user-count == 1: we never silently elevate a user in a
-    # multi-user install. Idempotent ON CONFLICT DO NOTHING so repeat
-    # startups don't double-grant.
+    # Auto-heal orphaned first-admin assignment: if exactly one non-system user
+    # exists with zero roles, grant Admin. Guarded by user-count == 1 so we
+    # never silently elevate a user in a multi-user install; ON CONFLICT
+    # DO NOTHING keeps repeat startups idempotent.
     if pool_ready:
         try:
             row = await db.fetchrow(
@@ -150,7 +116,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        # Shutdown: stop the reconciler, then close the pool.
         if reconciler_task is not None:
             log.info("shutdown: signalling reconciler to stop")
             stop_event.set()
@@ -163,7 +128,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.info("shutdown complete")
 
 
-# ---------- App ------------------------------------------------------------
 app = FastAPI(
     title="OrcheStack orchestrator",
     description=(
@@ -175,7 +139,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Mount the API routers.
 app.include_router(services.router)
 app.include_router(sessions.router)
 app.include_router(pinning.router)
@@ -189,12 +152,7 @@ app.include_router(admin.router)
 
 @app.get("/api/health")
 async def health() -> dict[str, object]:
-    """Readiness state, including subsystem checks.
-
-    Schema is additive — new keys may appear over time. Clients should
-    treat the absence of a key as "not yet checked" rather than "failed".
-    The top-level `ok` is True only when ALL critical subsystems are ok.
-    """
+    """Readiness state — additive schema; `ok` is True only when ALL critical subsystems are ok."""
     postgres_ok = await db.ping()
     docker_ok = await docker_ops.ping()
     return {

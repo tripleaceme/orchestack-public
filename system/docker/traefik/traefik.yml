@@ -12,18 +12,8 @@
 entryPoints:
   web:
     address: ":80"
-    # M5 enhancement: redirect HTTP → HTTPS once Let's Encrypt is wired in.
-    # http:
-    #   redirections:
-    #     entryPoint:
-    #       to: websecure
-    #       scheme: https
   websecure:
     address: ":443"
-    # M5 enhancement: enable TLS via Let's Encrypt resolver.
-    # http:
-    #   tls:
-    #     certResolver: letsencrypt
 
 # ============================================================================
 # Providers — where Traefik discovers routing configuration.

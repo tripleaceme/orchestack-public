@@ -469,14 +469,14 @@
   ];
 
   // ============================================================
-  // Deep-link selection injection (M3.6 polish)
+  // Deep-link selection injection
   //
   // When the dashboard sends an operator here with ?service=X&layer=Y on a
-  // service card click (#7 from M3 testing feedback), the operator may
-  // have skipped that service during the initial wizard — in which case
-  // `selections[layer]` is "None" or absent and the configure page would
-  // render with no tab for X. Patch this BEFORE we read state so the
-  // injected selection persists across reloads.
+  // service card click, the operator may have skipped that service during
+  // the initial wizard — in which case `selections[layer]` is "None" or
+  // absent and the configure page would render with no tab for X. Patch
+  // this BEFORE we read state so the injected selection persists across
+  // reloads.
   // ============================================================
   (function injectDeepLinkSelection() {
     const params = new URLSearchParams(window.location.search);
@@ -547,7 +547,7 @@
 
   function renderWizard(selections, credentials) {
     // ==========================================================
-    // Add-mode detection (M3 post-defense polish)
+    // Add-mode detection
     //
     // The dashboard's "+ Configure" badge on UNCONFIGURED service cards
     // links here with ?service=X&layer=Y. In that case the operator has
@@ -659,10 +659,10 @@
     nextBtn.addEventListener('click', () => show(current + 1));
 
     // Deep-link support — when an operator clicks a service card on the
-    // dashboard (#7 from M3 testing feedback), the dashboard sends them
-    // here with ?service=<name> in the URL. Match against the tool name
-    // (case-insensitive, fuzzy on spaces) and pre-select that tab so the
-    // operator lands directly on the relevant credentials form.
+    // dashboard, the dashboard sends them here with ?service=<name> in the
+    // URL. Match against the tool name (case-insensitive, fuzzy on
+    // spaces) and pre-select that tab so the operator lands directly on
+    // the relevant credentials form.
     (function deepLinkToTab() {
       const requested = new URLSearchParams(window.location.search).get('service');
       if (!requested) return;

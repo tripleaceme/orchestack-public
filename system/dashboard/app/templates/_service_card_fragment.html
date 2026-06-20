@@ -1,17 +1,5 @@
-{#
-  One service card. Phase 3.7 layout: surface card with name + tier pill
-  in the header, status dot + container name, primary action(s), and
-  a footer link row with Edit config / Details · pin · activity.
+{# Service card fragment, re-rendered when a service's state changes. #}
 
-  Contract for `service`:
-    .name          str   catalogue key, used in URLs
-    .display_name  str   human-readable name
-    .tier          str   "hot" or "cold"
-    .layer         str   pipeline layer (bi, ingestion, etc.)
-    .state         str   "running" or "stopped"
-    .container     str?  container name if running
-    .managed       bool  whether the orchestrator can actually start/stop it
-#}
 {% set is_running = service.state == "running" %}
 {% set is_pinned  = service.pinned %}
 
@@ -74,7 +62,6 @@
     }
   </style>
 
-  {# Header row: name + pin icon (if pinned) + tier pill. #}
   <div class="head">
     <div style="min-width: 0;">
       <div class="name">
@@ -91,7 +78,6 @@
     </span>
   </div>
 
-  {# State row: status dot + label #}
   <div class="status-row {{ 'running' if is_running else 'stopped' }}">
     <span class="status-dot {{ 'running' if is_running else 'stopped' }}"></span>
     <strong>{{ "Running" if is_running else "Stopped" }}</strong>
@@ -100,30 +86,24 @@
     {% endif %}
   </div>
 
-  {# Container name / configuration-state line #}
   {% if service.container %}
     <div class="container-line">{{ service.container }}</div>
   {% elif not service.configured %}
     <div class="container-line">Not yet configured</div>
   {% elif not service.managed %}
-    <div class="container-line">Not yet shipped — lands in M4</div>
+    <div class="container-line">Not yet shipped</div>
   {% endif %}
 
-  {# Action buttons. Three modes:
-       1. Not configured       → "+ Configure" link to the wizard
-       2. Configured + unmanaged → "Unavailable" (M4 will ship the compose snippet)
-       3. Configured + managed  → Open / Start / Stop (the existing flow) #}
   <div class="btns">
     {% if not service.configured %}
       <a href="/setup/configure?service={{ service.display_name }}&layer={{ service.layer }}"
          class="svc-btn svc-btn-primary">+ Configure</a>
     {% elif not service.managed %}
       <button type="button" disabled
-              title="This service is configured but its compose snippet ships in M4."
+              title="This service is configured but its compose snippet is not yet shipped."
               class="svc-btn" style="cursor: not-allowed;">Unavailable</button>
     {% elif service.control_plane %}
-      {# Control-plane service (PostgreSQL): always-on, no Start/Stop.
-         Open routes to pgAdmin via orchestackOpenService. #}
+      {# Control-plane service (PostgreSQL): always-on, no Start/Stop. #}
       {% set _host = request.url.hostname or 'localhost' %}
       {% set _tool_url = service.external_url|replace('{host}', _host)
                          if service.external_url
@@ -134,11 +114,8 @@
     {% elif is_running %}
       {% set _host = request.url.hostname or 'localhost' %}
       {% if service.actions %}
-        {# Multi-action service (dbt, GE): one button per action.
-           Renders side-by-side in a .btn-row so the card height matches
-           single-action cards on the same row of the grid — stacking
-           them vertically pushed the card ~40px taller than its
-           neighbours and broke the grid's visual rhythm. #}
+        {# Render side-by-side in a .btn-row so card height matches single-action cards
+           on the same grid row — stacking vertically broke the grid's visual rhythm. #}
         <div class="btn-row">
           {% for action in service.actions %}
             {% set _action_url = action.external_url|replace('{host}', _host)
@@ -167,7 +144,6 @@
         </div>
       {% endif %}
       {% if service.actions %}
-        {# Multi-action services still get a Stop button beneath the action buttons. #}
         <button hx-post="{{ url_for('stop_service_action', name=service.name) }}"
                 hx-target="#service-card-{{ service.name }}"
                 hx-swap="outerHTML swap:500ms"
@@ -186,8 +162,7 @@
     {% endif %}
   </div>
 
-  {# Tertiary link row — Edit config (left) + Details · pin · activity (right).
-     Hidden for unconfigured services (nothing to edit yet). #}
+  {# Hidden for unconfigured services (nothing to edit yet). #}
   {% if service.configured %}
   <div class="card-links">
     <a href="{{ url_for('service_config_page', name=service.name) }}"

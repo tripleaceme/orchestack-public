@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Direction B — Operations Cockpit · OrcheStack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../_tokens.css">
+<style>
+  /* === B — Operations Cockpit ===
+     Reference: Stripe overview, Mercury, Datadog (lite).
+     KPI strip up top — "is the platform healthy?" answered first.
+     Service grid below — then the details. */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--navy); }
+  header .brand-mark { width: 28px; height: 28px; background: var(--navy); color: #fff; border-radius: 6px;
+                        display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+  header nav { display: flex; gap: 22px; font-size: 13px; }
+  header nav a { color: var(--text-2); }
+  header nav a.active { color: var(--text); border-bottom: 2px solid var(--navy); padding-bottom: 16px; margin-bottom: -16px; }
+  header .user { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text-2); }
+  header .dot { width: 7px; height: 7px; background: var(--success); border-radius: 999px; }
+
+  main { max-width: 1200px; margin: 36px auto; padding: 0 32px 96px; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin: 0 0 4px; }
+  .lede { color: var(--text-2); margin: 0 0 28px; font-size: 14px; }
+
+  /* === KPI strip === */
+  .kpis {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 32px;
+  }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .kpi .label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px;
+                font-weight: 500; margin-bottom: 6px; }
+  .kpi .value { font-size: 32px; font-weight: 700; letter-spacing: -0.6px; color: var(--text);
+                 font-family: 'JetBrains Mono', monospace; line-height: 1; }
+  .kpi .delta { font-size: 12px; color: var(--text-2); margin-top: 6px; display: flex; align-items: center; gap: 4px; }
+  .kpi.healthy .value-row { display: flex; align-items: baseline; gap: 8px; }
+  .kpi.healthy .check { color: var(--success); font-size: 16px; }
+  .spark { height: 32px; margin-top: 10px; }
+
+  /* Sparkline using inline svg */
+  .spark svg { width: 100%; height: 100%; display: block; }
+
+  /* === Services grid (compact) === */
+  .section-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 14px; }
+  .section-head h2 { font-size: 15px; font-weight: 600; margin: 0; color: var(--text); }
+  .section-head .sub { color: var(--text-2); font-size: 12px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--navy); }
+  .card .top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
+  .card .name { font-weight: 600; font-size: 14px; }
+  .card .layer { color: var(--text-2); font-size: 11px; margin-top: 1px; font-family: 'JetBrains Mono', monospace; }
+  .tier-pill {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; font-family: 'JetBrains Mono', monospace;
+  }
+  .tier-pill.hot { background: #fffbeb; color: var(--warning); }
+  .tier-pill.cold { background: #eff6ff; color: #1d4ed8; }
+  .status { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .status .dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
+  .status.running .dot { background: var(--success); }
+  .status.stopped .dot { background: #cbd5e1; }
+  .status.running { color: #047857; }
+  .status.stopped { color: var(--text-2); }
+  .card .uptime { font-size: 11px; color: var(--text-2); font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+  .card .btns { display: flex; gap: 6px; margin-top: 12px; }
+  .btn {
+    flex: 1; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: center;
+  }
+  .btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .btn-ghost { border-color: transparent; color: var(--text-2); }
+  .btn:hover { border-color: var(--navy); }
+  .btn-primary:hover { background: var(--navy-2); }
+
+  footer { color: var(--text-2); font-size: 11px; padding: 20px 32px; border-top: 1px solid var(--border);
+           text-align: center; font-family: 'JetBrains Mono', monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-mark">O</span>
+    <span>OrcheStack</span>
+    <span style="color: var(--text-2); font-weight: 400; margin-left: 4px;">/ Dashboard</span>
+  </div>
+  <nav>
+    <a href="#" class="active">Services</a>
+    <a href="#">Sessions</a>
+    <a href="#">Audit</a>
+    <a href="#">Credentials</a>
+    <a href="#">Users</a>
+    <a href="#">Roles</a>
+    <a href="#">Profile</a>
+  </nav>
+  <div class="user">
+    <span class="dot"></span>
+    <span>Connected</span>
+    <span style="color: var(--text); font-weight: 500;">Ayoade</span>
+    <a href="#" style="font-size: 12px;">Sign out</a>
+  </div>
+</header>
+
+<main>
+  <h1>Service status</h1>
+  <p class="lede">Live state of every service · refreshes every 10s</p>
+
+  <!-- KPI strip — Stripe / Mercury inspired -->
+  <div class="kpis">
+    <div class="kpi healthy">
+      <div class="label">Services running</div>
+      <div class="value-row">
+        <span class="value">5</span>
+        <span style="color: var(--text-2); font-size: 14px;">/ 9</span>
+        <span class="check">●</span>
+      </div>
+      <div class="delta">All hot-tier healthy · 4 cold idle</div>
+    </div>
+
+    <div class="kpi">
+      <div class="label">Active sessions</div>
+      <div class="value">2</div>
+      <div class="delta">Ayoade · 4h 12m</div>
+    </div>
+
+    <div class="kpi">
+      <div class="label">Postgres connections</div>
+      <div class="value">14</div>
+      <div class="spark">
+        <svg viewBox="0 0 200 32" preserveAspectRatio="none">
+          <polyline points="0,20 20,18 40,22 60,15 80,17 100,12 120,14 140,10 160,13 180,8 200,11"
+                    fill="none" stroke="#0f2a44" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="kpi">
+      <div class="label">Last audit event</div>
+      <div class="value" style="font-size: 22px; line-height: 1.2;">14m ago</div>
+      <div class="delta">user.login · ayoade@miva.edu.ng</div>
+    </div>
+  </div>
+
+  <!-- Running services grid -->
+  <div class="section-head">
+    <h2>Running</h2>
+    <span class="sub">5 services · use the dashboard to start more</span>
+  </div>
+  <div class="grid" style="margin-bottom: 24px;">
+    <div class="card">
+      <div class="top">
+        <div><div class="name">PostgreSQL</div><div class="layer">warehouse</div></div>
+        <span class="tier-pill hot">hot</span>
+      </div>
+      <div class="status running"><span class="dot"></span>Running</div>
+      <div class="uptime">14h 22m · orchestack-postgres</div>
+      <div class="btns"><button class="btn btn-primary">Open in pgAdmin</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">OpenMetadata</div><div class="layer">governance</div></div>
+        <span class="tier-pill cold">cold</span>
+      </div>
+      <div class="status running"><span class="dot"></span>Running</div>
+      <div class="uptime">2h 14m</div>
+      <div class="btns"><button class="btn btn-primary">Open</button><button class="btn">Stop</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">Apache Airflow</div><div class="layer">orchestration</div></div>
+        <span class="tier-pill hot">hot</span>
+      </div>
+      <div class="status running"><span class="dot"></span>Running</div>
+      <div class="uptime">4h 03m</div>
+      <div class="btns"><button class="btn btn-primary">Open</button><button class="btn">Stop</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">Metabase</div><div class="layer">bi</div></div>
+        <span class="tier-pill hot">hot</span>
+      </div>
+      <div class="status running"><span class="dot"></span>Running</div>
+      <div class="uptime">14h 18m</div>
+      <div class="btns"><button class="btn btn-primary">Open</button><button class="btn">Stop</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">MinIO</div><div class="layer">data-lake</div></div>
+        <span class="tier-pill hot">hot</span>
+      </div>
+      <div class="status running"><span class="dot"></span>Running</div>
+      <div class="uptime">14h 18m</div>
+      <div class="btns"><button class="btn btn-primary">Open</button><button class="btn">Stop</button></div>
+    </div>
+  </div>
+
+  <!-- Stopped services grid -->
+  <div class="section-head">
+    <h2>Stopped</h2>
+    <span class="sub">4 cold-tier services · start on demand</span>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="top">
+        <div><div class="name">Great Expectations</div><div class="layer">quality</div></div>
+        <span class="tier-pill cold">cold</span>
+      </div>
+      <div class="status stopped"><span class="dot"></span>Stopped</div>
+      <div class="uptime">last run 2h ago</div>
+      <div class="btns"><button class="btn btn-primary">Start</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">dbt Core</div><div class="layer">transformation</div></div>
+        <span class="tier-pill cold">cold</span>
+      </div>
+      <div class="status stopped"><span class="dot"></span>Stopped</div>
+      <div class="uptime">last run 30m ago</div>
+      <div class="btns"><button class="btn btn-primary">Start</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">pgAdmin</div><div class="layer">admin-ui</div></div>
+        <span class="tier-pill cold">cold</span>
+      </div>
+      <div class="status stopped"><span class="dot"></span>Stopped</div>
+      <div class="uptime">last run 15m ago</div>
+      <div class="btns"><button class="btn btn-primary">Start</button></div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div><div class="name">Airbyte</div><div class="layer">ingestion</div></div>
+        <span class="tier-pill hot">hot</span>
+      </div>
+      <div class="status stopped"><span class="dot"></span>Stopped</div>
+      <div class="uptime">last run 1d ago</div>
+      <div class="btns"><button class="btn btn-primary">Start</button></div>
+    </div>
+  </div>
+
+  <div style="text-align: right; margin-top: 18px;">
+    <a href="credentials.html" style="font-size: 12px; color: var(--text-2);">→ View credentials mock for this direction</a>
+  </div>
+</main>
+
+<footer>
+  OrcheStack dashboard · phase 3.6 · v0.6.0 · bundle dev-bd8f81c · dashboard mockup-B
+</footer>
+
+</body>
+</html>

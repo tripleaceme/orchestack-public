@@ -1,15 +1,10 @@
 {% extends "base.html" %}
-
 {% block content %}
 
   <div class="breadcrumb">Workspace / Services</div>
   <h1 class="page-title">Service status</h1>
   <p class="lede">Live state of every service in the OrcheStack catalogue. Refreshes every 10s.</p>
 
-  {# KPI strip — HTMX-polled every 10s alongside the service grid so
-     actions (start/stop/pin/open) reflect in the cards without a full
-     page reload. Server-renders the initial values at first request so
-     the cards aren't blank before the first poll lands. #}
   <div id="kpi-strip-container"
        hx-get="{{ url_for('kpi_strip_fragment') }}"
        hx-trigger="every 10s"
@@ -17,11 +12,6 @@
     {% include '_kpi_strip_fragment.html' %}
   </div>
 
-  {#
-    Service grid — HTMX polls /api/dashboard/services/grid every 10s
-    and swaps the result. The grid fragment renders Running + Stopped
-    sections internally — keeps the outer container simple.
-  #}
   <div id="services-grid"
        hx-get="{{ url_for('services_grid') }}"
        hx-trigger="load delay:50ms, every 10s"
@@ -29,11 +19,6 @@
     <p class="muted" style="font-style: italic; font-size: 13px;">Loading service status…</p>
   </div>
 
-  {#
-    Orchestrator health — small card below the grid. The Platform-level
-    health (database, docker socket, etc.) lives here because it's
-    different from per-service state.
-  #}
   <div class="surface">
     <div class="surface-head">
       <h2>Platform health</h2>

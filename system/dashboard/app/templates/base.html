@@ -5,32 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title or "Dashboard" }} · OrcheStack{% endblock %}</title>
 
-  {#
-    Favicon — inline data URL so we don't need a /static mount.
-    Matches the dashboard's .brand-mark CSS: navy rounded square with a
-    white "O" centred. Same SVG as the auth nginx + marketing site.
-  #}
+  {# Favicon inlined as data URL to avoid a /static mount. #}
   <link rel="icon" type="image/svg+xml"
         href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' ry='8' fill='%230f2a44'/><text x='16' y='22' font-family='-apple-system,BlinkMacSystemFont,sans-serif' font-weight='800' font-size='20' text-anchor='middle' fill='%23ffffff'>O</text></svg>">
 
-  {#
-    Tailwind CDN — chosen for phase 3.1-3.5 because no Node build step.
-    Phase 3.6 switches to compiled Tailwind for the production v1.0 image.
-  #}
   <script src="https://cdn.tailwindcss.com"></script>
 
-  {# HTMX for partial-page updates without an SPA. #}
   <script src="https://unpkg.com/htmx.org@2.0.4"
           integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
           crossorigin="anonymous"></script>
 
-  {# Brand fonts — same Inter + JetBrains Mono pair as the auth pages. #}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
   <style>
-    /* OrcheStack brand tokens — phase 3.7 layout: sidebar nav + KPI strip. */
     :root {
       --navy:    #0f2a44;
       --navy-2:  #1c3554;
@@ -51,10 +40,8 @@
     body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
     .font-mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
 
-    /* === App shell — 220px sidebar + 1fr main, full viewport. === */
     .app-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
 
-    /* === Sidebar === */
     .app-sidebar {
       background: var(--surface);
       border-right: 1px solid var(--border);
@@ -113,7 +100,6 @@
     }
     .app-sidebar .footer-pill .signout:hover { color: var(--text); text-decoration: underline; }
 
-    /* Connection indicator dot (lives in sidebar footer in the new layout). */
     .conn-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--success);
@@ -129,7 +115,6 @@
       color: #dc2626;
     }
 
-    /* === Main canvas === */
     .app-main {
       display: flex; flex-direction: column;
       min-height: 100vh;
@@ -150,7 +135,6 @@
       display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
     }
 
-    /* === Surface card === */
     .surface {
       background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
       margin-bottom: 18px;
@@ -164,7 +148,6 @@
     .surface .surface-body { padding: 18px 20px; }
     .surface .surface-body.tight { padding: 0; }
 
-    /* === Buttons === */
     .btn {
       padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
       border: 1px solid var(--border); background: var(--surface); color: var(--text);
@@ -178,12 +161,7 @@
     .btn-danger { background: var(--surface); color: #b91c1c; border-color: #fecaca; }
     .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; }
     .btn:hover { border-color: var(--navy); }
-    /* Disabled / inert buttons: override colored variants (primary navy,
-       danger red) with neutral greyscale so it's unambiguous that the
-       button isn't clickable. Two selectors so it applies to native
-       <button disabled> AND to ARIA-disabled <a>/`<button>` (the latter
-       happens on the home cards where the same role is rendered as
-       a link for Open). */
+    /* Disabled selector covers both native [disabled] and ARIA-disabled links rendered as buttons. */
     .btn[disabled],
     .btn[aria-disabled="true"] {
       opacity: 0.55; cursor: not-allowed; pointer-events: none;
@@ -192,7 +170,6 @@
       border-color: var(--border) !important;
     }
 
-    /* === Tables === */
     .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .data-table th {
       text-align: left; padding: 11px 18px;
@@ -209,11 +186,7 @@
     .data-table td.right { text-align: right; }
     .muted { color: var(--text-2); }
 
-    /* === Badges === */
-    /* `.pill` and `.badge` are aliases — both styles render identically.
-       Approved mocks use `.badge`; some pre-3.7 production templates still
-       use `.pill`. Keeping both keeps every page working without a
-       big-bang rename. */
+    /* `.pill` and `.badge` are aliases — both selectors kept so legacy templates using `.pill` keep working. */
     .pill, .badge {
       font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.5px; font-family: 'JetBrains Mono', monospace;
@@ -227,13 +200,11 @@
     .pill-neutral, .badge-neutral { background: var(--bg); color: var(--text-2); border: 1px solid var(--border); }
     .pill-danger,  .badge-danger  { background: #fef2f2; color: #b91c1c; }
 
-    /* Status dot */
     .status-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
     .status-dot.running { background: var(--success); }
     .status-dot.stopped { background: #cbd5e1; }
     .status-dot.warn    { background: var(--warning); }
 
-    /* === KPI strip === */
     .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
     .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
     .kpi .label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 500; margin-bottom: 5px; }
@@ -241,7 +212,6 @@
     .kpi .value.small { font-size: 18px; }
     .kpi .delta { font-size: 12px; color: var(--text-2); margin-top: 5px; }
 
-    /* === Forms === */
     .form-grid { padding: 24px 28px; max-width: 860px; }
     .form-row { display: grid; grid-template-columns: 200px 1fr; gap: 18px; margin-bottom: 16px; align-items: start; }
     .form-row label { font-size: 13px; font-weight: 500; color: var(--text); padding-top: 8px; }
@@ -263,13 +233,9 @@
     .form-row .input-hint { font-size: 12px; color: var(--text-2); margin-top: 6px; line-height: 1.5; }
     .form-actions { display: flex; gap: 10px; justify-content: end; padding-top: 12px; border-top: 1px solid var(--border); margin-top: 18px; }
 
-    /* HTMX spinner indicator pattern. */
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
 
-    /* Toast notifications — used by the Open flow to show "Starting…"
-       / "Setting up Metabase…" / "Opened" rather than alert(). Stack
-       in the bottom-right; each toast carries its own auto-dismiss. */
     #toast-tray {
       position: fixed; right: 16px; bottom: 16px;
       display: flex; flex-direction: column; gap: 8px;
@@ -303,7 +269,6 @@
 
 <div class="app-shell">
 
-  {# ============================ SIDEBAR ============================ #}
   <aside class="app-sidebar">
     <a href="{{ url_for('home') }}" class="brand">
       <span class="brand-mark">O</span>
@@ -373,17 +338,11 @@
     </div>
   </aside>
 
-  {# ============================ MAIN ============================ #}
   <div class="app-main">
     <main>
       {% block content %}{% endblock %}
     </main>
 
-    {# Minimal footer: brand + version only. Removed phase / bundle /
-       dashboard-SHA / orchestrator-SHA chips — operators don't need
-       internal milestone/build-tracking noise on every page, and the
-       data is still available via /api/dashboard/health for
-       diagnostics. #}
     <footer>
       <span>OrcheStack</span>
       <span class="font-mono">v{{ request.app.version }}</span>
@@ -392,10 +351,8 @@
 
 </div>
 
-{# Toast tray for non-blocking status messages (Open flow uses it). #}
 <div id="toast-tray" aria-live="polite" aria-atomic="false"></div>
 
-{# ---------------- Connection-indicator wiring (existing) ---------- #}
 <script>
   document.addEventListener('htmx:sendError', () => {
     document.body.classList.add('htmx-disconnected');
@@ -416,7 +373,6 @@
   });
 </script>
 
-{# ---------------- Session lifecycle: open + heartbeat + close ----- #}
 <script>
   const SESSION_KEY_PREFIX = 'orchestack:session:';
   const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -555,7 +511,6 @@
   });
 </script>
 
-{# ---------------- Keyboard shortcuts ----------------------------- #}
 <script>
   (function () {
     let leader = null, leaderTimeout;
