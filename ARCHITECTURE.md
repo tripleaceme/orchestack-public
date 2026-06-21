@@ -28,15 +28,14 @@ orchestack-public/
 │   └── dbt/                ← dbt project skeleton served to operators
 ├── docs/                   ← operator-facing documentation (HTML)
 ├── assets/                 ← shared CSS + logos (single source of truth)
-├── Test/                   ← extracted runtime bundles for local testing
 ├── scripts/                ← release-bundle builder
 ├── Makefile                ← convenience commands (see `make help`)
 └── _generate_docs.py       ← regenerates docs/*.html from Python sources
 ```
 
-## The three subsystems
+## The four subsystems
 
-OrcheStack has three top-level subsystems that interact through well-
+OrcheStack has four top-level subsystems that interact through well-
 defined interfaces. The split is what makes the platform contributable in
 small, focused pull requests.
 
@@ -94,6 +93,30 @@ behaviour can be understood entirely from the server-side templates and
 the route handlers, without a separate client-side state machine.
 Tailwind utility classes supply typography and layout. There is no
 JavaScript build step in the operator deployment.
+
+### Auth (`system/auth/`)
+
+A small nginx container that serves the platform's pre-login surface:
+the signup page (first-administrator bootstrap), the login page, and the
+four-step setup wizard (welcome → service selection → configuration →
+deployment). The container is intentionally minimal — static HTML and
+the shared CSS from `assets/css/`, no Python, no JavaScript framework.
+
+Auth is a separate subsystem rather than a route inside the dashboard
+because the two surfaces have different lifecycles and different threat
+models. Auth is reached *before* the operator has a session; the
+dashboard is reached only *after* the orchestrator has issued one.
+Keeping the surfaces in separate containers means the dashboard's
+privileged routes are never on the same port as the public-internet-
+facing signup form, and the auth container can be hardened independently.
+
+Auth has no dependencies of its own — it does not talk to the
+orchestrator or the database directly. The signup form posts to the
+orchestrator's `/api/auth/signup` endpoint through the reverse proxy,
+and the setup wizard posts its accumulated state to the orchestrator's
+`/api/setup/deploy` endpoint at the end of the flow. Auth's
+responsibility ends at the form-submission boundary; everything after
+is the orchestrator's.
 
 ### Integrated stack (`system/docker/services/`)
 

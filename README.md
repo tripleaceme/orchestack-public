@@ -1,200 +1,139 @@
 # OrcheStack
 
-> A containerised open-source data platform for Nigerian organisations.
-> Modern Data Stack on a single host, with hot/cold-tier service orchestration
-> so the resident-memory footprint scales with current activity rather than
+> Containerised open-source data platform — the modern data stack on a single
+> host, with hot/cold-tier service orchestration so the resident-memory
+> footprint scales with what the operator is actually using rather than with
 > the size of the installed toolset.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Status: pre-release (M1)](https://img.shields.io/badge/Status-Pre--release%20(M1)-orange.svg)](#status)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Operator docs](https://img.shields.io/badge/Operator_docs-orchestack.africa-2563eb.svg)](https://orchestack.africa)
+[![CI](https://github.com/tripleaceme/orchestack-public/actions/workflows/ci.yml/badge.svg)](https://github.com/tripleaceme/orchestack-public/actions/workflows/ci.yml)
 
-OrcheStack bundles Apache Airflow, dbt Core, Airbyte, PostgreSQL and pgAdmin
-(default stack), plus MinIO, Great Expectations, OpenMetadata and Metabase
-(optional extensions), behind a unified dashboard.
-Most services start on demand and stop when idle — letting the same Modern
-Data Stack run on an 8 GB Nigerian-affordable VPS that would otherwise need
-16 GB just to idle.
+OrcheStack integrates Airbyte, Apache Airflow, dbt Core, Great Expectations,
+Metabase, MinIO, OpenMetadata, and pgAdmin behind a single operator-facing
+dashboard. Operators do not write integration glue between services — the
+orchestrator handles per-service provisioning, credentials, network plumbing,
+and lifecycle.
 
-## Status
+Most services start on demand and stop when idle, so the same modern data
+stack that would otherwise need a sixteen-gigabyte host to idle runs
+comfortably within an eight-gigabyte envelope.
 
-OrcheStack is in active pre-release development as the implementation
-artefact of an MIT Professional Master's Project at Miva Open University.
+## Quick start (operators)
 
-| Milestone | Window | Status |
-|---|---|---|
-| **M1 — Foundation** | Week 1 | 🛠 in progress |
-| **M2 — Orchestrator** | Weeks 2–3 | ⬜ pending |
-| **M3 — Control plane** | Weeks 4–5 | ⬜ pending |
-| **M4 — Stack integration** | Weeks 6–7 | ⬜ pending |
-| **M5 — Evaluation + write-up** | Week 8 | ⬜ pending |
-
-The marketing site, documentation site, in-package auth/setup-wizard nginx
-container, and the base `docker-compose.yml` for the control plane are
-implemented. The Python service orchestrator (M2) and dashboard
-(M3) ship as stubs in the M1 compose file and get replaced by real
-implementations in their respective milestones.
-
-## Quick start
-
-The base control plane brings up five containers — a reverse proxy, a
-PostgreSQL instance, the auth/setup nginx, and stubs for the orchestrator
-and dashboard. Two install paths, **neither requires cloning this
-repository**:
-
-**Option A — one-line installer (recommended)**
+The fastest path is the install script:
 
 ```sh
 curl -sSL https://orchestack.africa/install.sh | bash
 ```
 
-Downloads the latest release tarball, prompts for the OrcheStack DB
-password, writes `.env`, runs `docker compose up -d`. ~30s end-to-end on
-a decent connection.
+It downloads the latest runtime bundle, prompts for the platform database
+password, writes `.env`, and runs `docker compose up -d`. About thirty
+seconds end-to-end on a decent connection. Visit `http://localhost/signup`
+afterwards to bootstrap your administrator account.
 
-**Option B — manual install from the release tarball**
+If you'd rather inspect what you're running before you run it, download
+the runtime bundle from the [latest release](https://github.com/tripleaceme/orchestack-public/releases/latest)
+instead and follow the included `INSTALL.md`.
 
-```sh
-curl -fsSL -o orchestack.tar.gz \
-  https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz
-tar xzf orchestack.tar.gz
-cd orchestack-runtime-*
-cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
-docker compose up -d
-```
+Full operator documentation: <https://orchestack.africa>
 
-Both options pull the same images from Docker Hub. You never need to run
-`docker pull` manually — Compose handles that in parallel on first boot.
+## What's inside
 
-Full install guide: <https://orchestack.africa/docs/install.html>
+| Service | Role | Tier |
+| --- | --- | --- |
+| PostgreSQL | Warehouse + platform metadata | Hot (always on) |
+| Metabase | Business-intelligence dashboards | Hot |
+| Apache Airflow | Pipeline orchestration | Hot |
+| Airbyte | Source-to-warehouse ingestion | Cold |
+| dbt Core | SQL transformations | Cold |
+| Great Expectations | Data-quality testing | Cold |
+| MinIO | S3-compatible object storage | Cold |
+| OpenMetadata | Lineage and metadata catalogue | Cold |
+| pgAdmin | PostgreSQL administration | Cold |
 
-**Building from source (contributors only)**
+Hot-tier services bear continuous resource cost in exchange for
+continuous availability. Cold-tier services are started on operator
+demand and stopped automatically when idle. The reconciler enforces the
+cold-side discipline without operator intervention; pinning a service
+keeps it warm until the pin expires.
 
-If you're modifying OrcheStack itself, clone this repo:
+## Architecture (one paragraph)
 
-```sh
-git clone https://github.com/tripleaceme/orchestack-public
-cd orchestack/system/docker
-cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
-docker compose up -d
-```
+Four subsystems: the **orchestrator** (FastAPI + asyncpg) owns the
+platform's metadata layer and lifecycle decisions; the **dashboard**
+(FastAPI + HTMX + Jinja) renders operator state behind a reverse-proxy
+path prefix at `/app`; the **auth** container (nginx + static) serves
+the signup and setup-wizard surface; the **integrated stack** is the
+nine third-party services above, each declared as a compose snippet
+plus optional pre-start and post-start hooks. The orchestrator's
+reconciler stops idle cold-tier services on a periodic tick.
 
-Then visit:
+Deeper detail is in [ARCHITECTURE.md](ARCHITECTURE.md) — start there if
+you want to contribute code.
 
-| URL | What you'll see |
-|---|---|
-| `http://localhost/signup` | First-administrator bootstrap form |
-| `http://localhost/login` | Administrator login |
-| `http://localhost/setup/welcome.html` | 4-step onboarding wizard |
-| `http://localhost/app` | dashboard (M1 stub; real dashboard at M3) |
-| `http://localhost:8080/dashboard/` | Traefik routing dashboard (dev only) |
-
-If port 80 is in use on your host, override the host-side mapping in `.env`:
-
-```
-PROXY_HTTP_PORT=1993
-```
-
-…then `http://localhost:1993` instead.
-
-## Repository layout
+## Repository tour
 
 ```
 .
-├── README.md, LICENSE                    This file + Apache 2.0 licence
-├── _generate_docs.py                     Static generator for the docs site
-│
-├── index.html, services.html,            Marketing site (deployed to
-│   contact.html, assets/                  orchestack.africa via Cloudflare Pages)
-├── docs/                                 28-page documentation site (generated)
-│
-└── system/                               Runtime code for the platform
-    ├── auth/                             Auth + setup wizard nginx container
-    │   ├── Dockerfile                    →  tripleaceme/orchestack-auth (build context: repo root)
-    │   ├── nginx.conf                    Routes scoped to /signup, /login, /setup/*, /assets/*
-    │   └── public/                       signup.html, login.html, setup/*.html
-    │                                     (no assets/css — pulled from root /assets at build time)
-    ├── docker/                           Base Docker Compose specification (M1)
-    │   ├── docker-compose.yml            5-service control plane
-    │   ├── .env.example                  Template (copy to .env, set ORCHESTACK_DB_PASSWORD)
-    │   ├── traefik/                      Traefik static config + dynamic dir
-    │   ├── postgres-init/                00-init.sql + 10-platform-schema.sql
-    │   ├── stubs/                        (removed in M3 — dashboard replaces it)
-    │   └── README.md                     Per-service details + troubleshooting
-    ├── dashboard/                        Administrator UI (HTMX + FastAPI + Tailwind)
-    │   ├── Dockerfile                    →  tripleaceme/orchestack-dashboard
-    │   ├── app/main.py                   FastAPI app + Jinja2 templates
-    │   └── app/templates/                base.html, index.html, _health_fragment.html
-    ├── orchestrator/                     (M2) Python service-lifecycle daemon
-    ├── dbt/                              (M4) Default dbt project skeleton
-    ├── dags/                             (M4) Default Airflow DAGs
-    └── configs/                          (M1/M4) Per-service config templates
+├── system/                Runtime code and configuration
+│   ├── auth/              Signup, login, setup wizard (nginx + static)
+│   ├── dashboard/         Administrator UI (FastAPI + HTMX + Jinja)
+│   ├── orchestrator/      Lifecycle daemon (FastAPI + asyncpg)
+│   ├── docker/            Compose specs + per-service snippets
+│   ├── dags/              Starter Airflow DAGs (see README inside)
+│   └── dbt/               Starter dbt project skeleton (see README inside)
+├── docs/                  Operator-facing documentation (28 generated pages)
+├── assets/                Shared CSS and brand logos
+├── scripts/               Release-bundle builder
+├── _generate_docs.py      Regenerates docs/*.html from Python sources
+├── Makefile               Convenience commands — run `make help`
+├── ARCHITECTURE.md        Subsystem-level architecture for contributors
+├── CONTRIBUTING.md        How to contribute
+├── CHANGELOG.md           Notable changes per release
+└── LICENSE                Apache 2.0
 ```
 
-## How OrcheStack is published
+`system/dags/` and `system/dbt/` ship starter content so operators have
+a working pipeline on day one. Both are designed to be replaced: the
+operator points the setup wizard at their own Git repository, and the
+starter falls away. See the README inside each folder for the operator-
+facing pattern.
 
-- **Container images** → Docker Hub under [`tripleaceme/orchestack-*`](https://hub.docker.com/u/tripleaceme):
-  - [`tripleaceme/orchestack-auth`](https://hub.docker.com/r/tripleaceme/orchestack-auth) (built from `system/auth/` + shared `assets/css/`)
-  - [`tripleaceme/orchestack-orchestrator`](https://hub.docker.com/r/tripleaceme/orchestack-orchestrator) (M2)
-  - [`tripleaceme/orchestack-dashboard`](https://hub.docker.com/r/tripleaceme/orchestack-dashboard) (M3)
-  - [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) (M4)
-- **Source code** → this repository ([`github.com/tripleaceme/orchestack-public`](https://github.com/tripleaceme/orchestack-public))
-- **Marketing + docs** → [`https://orchestack.africa`](https://orchestack.africa) (Cloudflare Pages, publishing from this folder)
+## How releases work
 
-## Architecture summary
+| Artefact | Where |
+| --- | --- |
+| Container images | Docker Hub: [`tripleaceme/orchestack-*`](https://hub.docker.com/u/tripleaceme) |
+| Runtime bundle | GitHub Releases: [`orchestack-runtime.tar.gz`](https://github.com/tripleaceme/orchestack-public/releases/latest) |
+| Operator documentation | <https://orchestack.africa> |
 
-OrcheStack is structured around three architectural decisions documented
-in the project's design log:
-
-1. **Three-state lifecycle.** *Base install* (~2 GB) → *Configured* (~4–5 GB)
-   → *Active pipeline* (~6–10 GB peak, transient). Resource consumption
-   scales with what's actually in use, not what's installed.
-2. **Hot/cold tier service classification.** Hot-tier services
-   (PostgreSQL, Airflow scheduler, Metabase, MinIO) stay resident; cold-tier
-   services (Airbyte, dbt, pgAdmin, Great Expectations, OpenMetadata) are
-   activated by event triggers and stopped when idle.
-3. **Unified control plane.** A dashboard behind a Traefik
-   reverse proxy provides a single URL space — `/app`, `/app/metabase`,
-   `/app/airflow`, etc. — for every bundled tool.
-
-The cold→hot override happens through a per-service "Keep warm" toggle in
-the dashboard, which writes to `platform.service_pinning` in PostgreSQL.
-The orchestrator's idle-timeout sweep consults this table on every tick
-and skips the shutdown for pinned services.
-
-Full details, plus the diagrams Figure 1 / 2 / 3, are in the project
-report (not included in this repository; the academic write-up lives
-separately).
-
-## Hosting the marketing + docs site
-
-The marketing pages (`index.html`, `services.html`, `contact.html`) and
-the generated `docs/` site are deployed to Cloudflare Pages, publishing
-from this folder directly (build output directory = `.`). The CSS, tool
-logos, and 28-page docs site are pure static HTML/SVG — no server-side
-runtime is needed.
-
-Regenerating the docs:
-
-```sh
-python3 _generate_docs.py     # writes docs/*.html from a single SIDEBAR list
-```
+A maintainer cuts a release by running `make tag-release VERSION=X.Y.Z`
+and pushing the tag. That fires
+[release.yml](.github/workflows/release.yml), which builds and pushes
+the four OrcheStack-owned images to Docker Hub (`:X.Y.Z` and `:latest`)
+and attaches the runtime bundle to the GitHub Release. Merges to `main`
+between releases do not ship to operators.
 
 ## Contributing
 
-OrcheStack is a one-person Master's project in its initial development;
-contributions are not actively solicited at this stage. The codebase will
-be opened to contributions after the project's M5 evaluation milestone
-completes and a stable 1.0 release is tagged.
+OrcheStack welcomes contributions. The full guide is in
+[CONTRIBUTING.md](CONTRIBUTING.md); the short version is:
 
-If you find a security issue at any point, please report it privately to
-`hello@orchestack.africa` rather than via a public issue.
+1. Fork the repo, branch from `main`, write your change.
+2. Run the relevant smoke procedure documented at `docs/services/<name>.html`.
+3. Open a pull request. CI builds all four images and runs healthchecks.
+4. A maintainer reviews. Once approved, your change is merged into `main`.
+5. It ships to operators when the next release is cut.
+
+If you find a security vulnerability, please [report it privately](https://github.com/tripleaceme/orchestack-public/security/advisories/new)
+rather than in the public issue tracker.
 
 ## Licence
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
-Bundled upstream open-source services (Apache Airflow, dbt Core, Airbyte,
-PostgreSQL, MinIO, Metabase, Great Expectations, OpenMetadata, pgAdmin,
-Traefik) retain their respective upstream licences (Apache 2.0,
-AGPL, MIT, PostgreSQL Licence, BSD) — OrcheStack only orchestrates these
-images and does not modify or redistribute their source code.
+Bundled upstream services (Apache Airflow, dbt Core, Airbyte, PostgreSQL,
+MinIO, Metabase, Great Expectations, OpenMetadata, pgAdmin, Traefik) retain
+their upstream licences. OrcheStack orchestrates these images; it does not
+modify or redistribute their source code.

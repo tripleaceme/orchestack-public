@@ -14,10 +14,102 @@ Entries omit categories that have no changes for that release.
 Pending changes will be listed here and rolled into the next tagged
 release.
 
----
+## [0.1.0] — 2026-06-22
 
-OrcheStack has no tagged releases yet. The first release will be tagged
-`v0.1.0` once the platform passes its public-release verification and
-the inaugural `release.yml` workflow has been exercised end-to-end. From
-that release forward, every change documented above will be moved into
-a dated, versioned section in this file.
+Inaugural public release. OrcheStack moves from a maintainer-only,
+academically-housed project to a publicly-installable open-source data
+platform.
+
+### Added
+
+- **Platform core** — four-subsystem architecture (orchestrator,
+  dashboard, auth, integrated stack) that integrates eight third-party
+  services behind a single operator-facing interface.
+- **Service catalogue** — central registry of manageable services with
+  tier classification (hot or cold), layer, compose snippet path,
+  pre-start and post-start hook bindings, and connection-URL templates.
+  Adding a new service is a catalogue entry plus a compose snippet plus
+  optional hooks; no further integration code is required.
+- **Hot-cold tier orchestration** — reconciler loop that stops idle
+  cold-tier services on a periodic tick, honouring active sessions and
+  active service pins. Brings an aggregate-on resource footprint of
+  approximately 7.3 GB within an eight-gigabyte single-host envelope.
+- **Setup wizard** — five-step operator-onboarding flow (welcome →
+  service selection → configuration → review → deploy) that bootstraps
+  the operator's first administrator account, writes the environment
+  file, and starts the selected hot-tier services.
+- **Administrator dashboard** — operator-facing UI built with FastAPI,
+  HTMX, Jinja, and Tailwind. Pages: Service status, Service detail,
+  Open sessions, Audit log, Credentials, Users, Roles, Profile.
+  Cache-Control no-store middleware ensures the dashboard never serves
+  stale state.
+- **Role-based access control** — role-permissions model with four
+  per-service grants (start, use, force-stop, edit-config) and wildcard
+  service support. Effective-permissions matrix and explicit-grants
+  matrix surfaced separately so revocation works correctly against
+  wildcard-derived grants.
+- **Session lifecycle** — one-session-per-operator-per-service
+  invariant, cascade through declared service `requires` (opening
+  pgAdmin opens its PostgreSQL session), automatic close on service
+  stop, four-hour auto-pin on first open of cold-tier services to
+  prevent reconciler interruption during long analytical sessions.
+- **Audit log** — append-only event stream covering every privileged
+  state transition (lifecycle, sessions, permissions, credentials).
+  Surfaced through the dashboard's Audit page with target and actor
+  filtering.
+- **Integrated services** — pre-start hook + post-start hook +
+  catalogue entry + operator-facing docs page for each of: PostgreSQL,
+  pgAdmin, Metabase, Apache Airflow, Airbyte, dbt Core, MinIO,
+  OpenMetadata, Great Expectations. OpenMetadata's post-start hook
+  applies the single-node Elasticsearch replica-count fix and resets
+  the administrator password idempotently on every start.
+- **Operator documentation site** — 28 pages covering installation,
+  configuration, hot-cold tiers, roles and permissions, sessions,
+  account management, credentials, backup and restore, upgrading,
+  troubleshooting, and one page per managed service with a runbook-
+  style troubleshooting section.
+- **Container images** — published to Docker Hub at
+  `tripleaceme/orchestack-{auth,orchestrator,dashboard,ge}` with full
+  OCI labels (title, description, vendor, source, documentation,
+  licenses, revision, version, created).
+- **Runtime bundle** — minimal operator install tarball
+  (`orchestack-runtime.tar.gz`) attached to each GitHub Release.
+  Contains docker-compose.yml, .env.example, traefik config,
+  postgres-init scripts, per-service compose snippets, INSTALL.md, and
+  a VERSION file. ~30 KB.
+- **One-line installer** — `curl -sSL https://orchestack.africa/install.sh | bash`
+  end-to-end install that prompts for the platform database password,
+  writes the environment file, and starts the stack.
+- **Contribution scaffolding** — CONTRIBUTING.md (development setup,
+  branch and commit conventions, PR submission flow, release process,
+  maintainer-only areas), ARCHITECTURE.md (subsystem-level
+  documentation for contributors), CODEOWNERS, pull request template,
+  issue templates (bug report, feature request, config), Apache 2.0
+  LICENSE.
+- **CI workflows** — PR-gate workflow (`ci.yml`) that builds all four
+  images and runs container healthchecks on every PR against main;
+  release workflow (`release.yml`) that builds and pushes images to
+  Docker Hub and attaches the runtime bundle to the GitHub Release on
+  every `v*.*.*` tag push.
+
+### Security
+
+- **No credentials in images** — `.dockerignore` excludes `**/.env`
+  (allow-listing only `.env.example`) so build contexts never carry
+  resolved credentials into image layers.
+- **Per-service database roles** — each integrated service owns a
+  dedicated PostgreSQL role and database; no tool ever sees another
+  tool's data. The platform's privileged `orchestack_admin` role
+  bootstraps the others and is not used at runtime.
+- **Opaque session tokens** — authentication uses opaque tokens stored
+  in PostgreSQL rather than self-validating JWTs, enabling immediate
+  revocation through the dashboard's Sessions page.
+- **bcrypt password hashing** — cost factor twelve, verification
+  executed inside an asynchronous thread pool to avoid blocking the
+  event loop during login.
+- **Audit-log credential masking** — credential-update events record
+  the affected key name and the actor identity but not the credential
+  value itself; exported audit logs do not leak credential material.
+
+[Unreleased]: https://github.com/tripleaceme/orchestack-public/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/tripleaceme/orchestack-public/releases/tag/v0.1.0
