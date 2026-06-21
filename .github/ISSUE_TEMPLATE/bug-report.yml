@@ -1,0 +1,110 @@
+name: 🐞 Bug report
+description: Report a defect in OrcheStack
+title: "[Bug] <title>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        Before filing, please search the existing issues to see if someone
+        else has already reported the same problem. If this is a question
+        about how to use OrcheStack rather than a defect report, please
+        open a Discussion instead.
+
+  - type: checkboxes
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I have searched existing issues and could not find a duplicate
+          required: true
+        - label: I am running a published OrcheStack release (not a local development build)
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OrcheStack version
+      description: From the dashboard footer, or `cat VERSION` inside the runtime bundle
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area of the platform is affected?
+      description: Pick the one closest to where the bug surfaces
+      options:
+        - Setup wizard (signup, role selection, deploy)
+        - Dashboard (administrator UI)
+        - Orchestrator (lifecycle, sessions, audit)
+        - PostgreSQL warehouse / per-service databases
+        - An integrated service (specify which under "Additional context")
+        - Documentation site
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour
+      description: What is happening that should not be?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should be happening instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal sequence a maintainer can follow to see the bug themselves
+      placeholder: |
+        1. Open the dashboard at http://localhost/app/
+        2. Navigate to ...
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        From `make dev-logs` or `docker compose logs <service>`. Redact any credentials.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - OS:
+        - Docker version:
+        - Browser (if dashboard bug):
+        - Deployment mode (runtime bundle / local dev build):
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: |
+        Anything else that might help a maintainer understand or reproduce
+        the issue. Screenshots welcome (attach by dragging into this box).
+    validations:
+      required: false

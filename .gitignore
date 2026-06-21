@@ -2,6 +2,20 @@
 # Tracks only source. Generated artefacts, secrets, and OS clutter stay out.
 
 # ============================================================================
+# Marketing site — deployed separately to orchestack.africa via Cloudflare.
+# Source kept locally only; not in this product repo.
+# ============================================================================
+front-facing/
+
+# ============================================================================
+# Extracted runtime bundles — bundles are built fresh by CI on tag push and
+# attached as release artefacts. Local extracts are for testing only.
+# ============================================================================
+Test/orchestack-runtime-dev-*/
+orchestack-runtime*.tar.gz
+orchestack-runtime*.tar.gz.sha256
+
+# ============================================================================
 # Secrets — resolved environment files (the .example template IS tracked).
 # Never commit real credentials.
 # ============================================================================

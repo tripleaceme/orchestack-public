@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Operator documentation
+    url: https://orchestack.africa
+    about: Installation, configuration, and per-service guides for operators running OrcheStack
+  - name: 💬 Ask a question or share an idea
+    url: https://github.com/tripleaceme/orchestack-public/discussions
+    about: For usage questions, broad architectural ideas, or community support. Not for defect reports — open a Bug issue instead.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/tripleaceme/orchestack-public/security/advisories/new
+    about: Privately report a security vulnerability. Do not file security issues in the public issue tracker.

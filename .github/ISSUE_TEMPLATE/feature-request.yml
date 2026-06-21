@@ -1,0 +1,83 @@
+name: ✨ Feature request
+description: Propose an extension to OrcheStack's functionality
+title: "[Feature] <title>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to propose this.
+
+        Before filing, please search the existing issues to see if someone
+        has already proposed something similar. For broad architectural
+        ideas ("what if OrcheStack also did X"), please open a Discussion
+        in the **Ideas** category instead — that's a better place to
+        explore an idea before it crystallises into a concrete proposal.
+
+        This template is for **specific, scoped proposals** that a
+        contributor could pick up and implement.
+
+  - type: checkboxes
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I have searched existing issues and could not find a duplicate
+          required: true
+        - label: This is a scoped proposal, not an open-ended discussion of "what could OrcheStack become"
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What operator-facing problem does this feature solve? Describe the situation an operator encounters today and why it's painful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should OrcheStack do? Be as specific as you can — operator interactions, dashboard changes, configuration shapes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider? Why is the one you proposed better than each alternative?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area of the platform does this touch?
+      options:
+        - Setup wizard
+        - Dashboard
+        - Orchestrator (lifecycle, sessions, audit)
+        - Adding or modifying an integrated service
+        - Documentation
+        - Tooling (Makefile, CI, release process)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: contribute
+    attributes:
+      label: Willing to contribute?
+      description: If you'd like to implement this yourself, say so here. Maintainers will work with you on the design before you start coding.
+      placeholder: "Yes / No / Maybe, with guidance"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links, references, screenshots, mockups, anything else that would help.
+    validations:
+      required: false
