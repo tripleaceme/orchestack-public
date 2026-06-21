@@ -1,0 +1,31 @@
+# OrcheStack code owners.
+#
+# Every line is a glob followed by one or more @usernames who own the
+# matched paths. When branch protection requires CODEOWNERS approval, a
+# PR cannot merge until at least one named owner has approved it.
+#
+# This file is parsed top-to-bottom; later rules override earlier ones.
+
+# ── Default ownership ────────────────────────────────────────────────
+# Every change requires maintainer review.
+*                                       @tripleaceme
+
+# ── Maintainer-only areas (already-default, listed for documentation) ─
+# These paths are listed explicitly so contributors searching CODEOWNERS
+# for "what's off-limits" find an authoritative answer. The CONTRIBUTING
+# guide names the same paths.
+
+# Brand and visual identity — every change requires design review.
+/assets/                                @tripleaceme
+
+# Release machinery — single maintainer owns release cadence + secrets.
+/.github/workflows/release.yml          @tripleaceme
+/Makefile                               @tripleaceme
+/scripts/build-bundle.sh                @tripleaceme
+
+# Licence and project-level governance.
+/LICENSE                                @tripleaceme
+/SECURITY.md                            @tripleaceme
+/CODE_OF_CONDUCT.md                     @tripleaceme
+/CODEOWNERS                             @tripleaceme
+/.github/CODEOWNERS                     @tripleaceme

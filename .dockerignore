@@ -1,0 +1,77 @@
+# OrcheStack root .dockerignore
+#
+# This file applies to image builds that use the repo root as their context
+# (currently just system/auth/Dockerfile). Narrower-context builds
+# (orchestrator, dashboard, ge) use their own subdirectory as the context
+# and are not affected by this file's exclusions.
+#
+# The auth image needs assets/css/, system/auth/, and nothing else from the
+# repo root. Everything below is excluded from the build context to keep
+# uploads small, builds fast, and prevent stray files from leaking into
+# image layers.
+
+# ─── Version control ────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+
+# ─── Project metadata (repo-level, not container content) ───────────────────
+README.md
+ARCHITECTURE.md
+CONTRIBUTING.md
+CHANGELOG.md
+LICENSE
+CODE_OF_CONDUCT.md
+SECURITY.md
+Makefile
+.editorconfig
+
+# ─── Operator documentation (served by Cloudflare Pages, not by images) ─────
+docs
+
+# ─── Marketing site (untracked; deployed separately) ────────────────────────
+front-facing
+
+# ─── Internal design notes (untracked; not operator-facing) ─────────────────
+design
+
+# ─── Test artefacts + release bundles (built by CI, not baked in) ───────────
+Test
+scripts
+*.tar.gz
+*.tar.gz.sha256
+
+# ─── Code generators (build inputs, not runtime) ────────────────────────────
+_generate_docs.py
+index.html
+contact.html
+services.html
+
+# ─── Python cruft ───────────────────────────────────────────────────────────
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+**/env
+
+# ─── Node cruft (defensive — no Node tooling today) ─────────────────────────
+**/node_modules
+**/package-lock.json
+
+# ─── Environment files (CRITICAL: never bake credentials into images) ───────
+**/.env
+**/.env.local
+!**/.env.example
+
+# ─── Editor + OS cruft ──────────────────────────────────────────────────────
+.DS_Store
+.idea
+.vscode
+*.swp
+*~
+Thumbs.db

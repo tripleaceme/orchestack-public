@@ -2,15 +2,21 @@
 # OrcheStack — local bundle builder.
 #
 # Mirrors the GitHub Actions release workflow (.github/workflows/release.yml)
-# so you can produce the same orchestack-runtime tarball without pushing a
-# tag or making the repo public. Useful for:
+# so you can produce the same orchestack-runtime tarball locally without
+# tagging a release. Useful for:
 #
-#   - Testing the Option B install path on a separate machine while the
-#     source repo is still private (final-year project, pre-release, etc).
-#   - Smoke-testing changes to docker-compose.yml or postgres-init/ before
-#     tagging a release.
-#   - Producing a customised bundle for an internal customer who shouldn't
-#     see the upstream source.
+#   - Smoke-testing changes to docker-compose.yml, postgres-init/, or any
+#     service snippet before tagging a release.
+#   - Testing the install path on a separate machine before publishing the
+#     release to the public.
+#   - Producing a customised bundle for an internal customer who needs a
+#     variant that the public release doesn't carry.
+#
+# The canonical operator-facing bundle comes from a real release: tag-push
+# v<X.Y.Z> on main, release.yml builds and uploads the same tarball this
+# script produces, and the result appears on the GitHub Releases page for
+# operators to download. This script just shortcuts the loop so you don't
+# have to push a tag every time you tweak a compose snippet.
 #
 # Usage:
 #   ./scripts/build-bundle.sh                  # builds dev-${SHA}.tar.gz

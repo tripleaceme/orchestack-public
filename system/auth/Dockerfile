@@ -36,6 +36,17 @@
 
 FROM nginx:stable-alpine
 
+# OCI image labels — published-image metadata. Static ones live here;
+# build-time labels (revision, version, created) are added by
+# docker/metadata-action in the release workflow so each published tag
+# carries the commit SHA it was built from.
+LABEL org.opencontainers.image.title="orchestack-auth" \
+      org.opencontainers.image.description="OrcheStack signup, login, and setup wizard (nginx + static)" \
+      org.opencontainers.image.vendor="OrcheStack" \
+      org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
+      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 # Remove the default nginx site config so ours takes over.
 RUN rm /etc/nginx/conf.d/default.conf
 

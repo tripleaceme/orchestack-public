@@ -88,21 +88,22 @@ bundle: ## Build a runtime tarball locally (same as the CI release workflow)
 bundle-clean: ## Remove any leftover bundle files at the repo root
 	rm -f orchestack-runtime*.tar.gz orchestack-runtime*.tar.gz.sha256
 
-.PHONY: docker-push
-docker-push: ## Build + push all 4 images to Docker Hub (auth, orchestrator, dashboard, ge). For local "push everything now" — CI does this per-image on path change.
-	@SHA=$$(git rev-parse --short HEAD); \
-	echo "Building all 4 images at SHA=$$SHA"; \
-	docker build -f system/auth/Dockerfile -t tripleaceme/orchestack-auth:latest -t tripleaceme/orchestack-auth:$$SHA . && \
-	docker build -f system/orchestrator/Dockerfile -t tripleaceme/orchestack-orchestrator:latest -t tripleaceme/orchestack-orchestrator:$$SHA system/orchestrator && \
-	docker build -f system/dashboard/Dockerfile -t tripleaceme/orchestack-dashboard:latest -t tripleaceme/orchestack-dashboard:$$SHA system/dashboard && \
-	docker build -t tripleaceme/orchestack-ge:latest -t tripleaceme/orchestack-ge:0.18.21-1 system/docker/ge-image && \
-	echo "Pushing to Docker Hub (run 'docker login -u tripleaceme' first if you haven't)"; \
-	for repo in auth orchestrator dashboard; do \
-		docker push "tripleaceme/orchestack-$$repo:latest" && \
-		docker push "tripleaceme/orchestack-$$repo:$$SHA" || exit 1; \
-	done; \
-	docker push tripleaceme/orchestack-ge:latest && \
-	docker push tripleaceme/orchestack-ge:0.18.21-1
+# NOTE: `docker-push` was deliberately removed. Image publishing to Docker
+# Hub now happens exclusively through CI on tag push — see
+# .github/workflows/release.yml. The publish path is:
+#
+#   make tag-release VERSION=0.3.0
+#   git push origin v0.3.0     # ← this fires release.yml
+#
+# release.yml builds, labels, and pushes all four images with the right
+# semver + :latest tags using DOCKERHUB_USERNAME + DOCKERHUB_TOKEN repo
+# secrets. No laptop credentials, no fat-finger publishes.
+#
+# If you genuinely need to push from a maintainer's machine in an
+# emergency (CI down, broken release), the path is explicit:
+#   docker build -f system/<svc>/Dockerfile -t tripleaceme/orchestack-<svc>:<tag> .
+#   docker push tripleaceme/orchestack-<svc>:<tag>
+# — but expect to write a postmortem explaining why CI couldn't be used.
 
 .PHONY: verify-runtime
 verify-runtime: ## Diff Test/<latest-bundle>/services + .env.example against system/docker — fails if any drift

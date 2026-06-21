@@ -15,6 +15,13 @@
 # CI runner, ~30s faster average build time.
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="orchestack-dashboard" \
+      org.opencontainers.image.description="OrcheStack administrator dashboard — HTMX + FastAPI + Jinja" \
+      org.opencontainers.image.vendor="OrcheStack" \
+      org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
+      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 WORKDIR /app
 
 # Create an unprivileged runtime user. Unlike the orchestrator (which needs

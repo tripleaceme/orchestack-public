@@ -18,6 +18,13 @@
 
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="orchestack-ge" \
+      org.opencontainers.image.description="Great Expectations preinstalled (0.18.21) + ttyd + editors for in-browser data quality work" \
+      org.opencontainers.image.vendor="OrcheStack" \
+      org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
+      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 # ── 1. System packages: editors + git + curl + libpq for psycopg2 ────
 # DEBIAN_FRONTEND=noninteractive prevents prompts from blocking the
 # install (tzdata etc.). --no-install-recommends keeps image size down.

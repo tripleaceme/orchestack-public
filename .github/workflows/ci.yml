@@ -1,0 +1,132 @@
+# PR-gate CI for OrcheStack.
+#
+# Runs on every pull request against main. Builds all four OrcheStack-owned
+# images (auth, orchestrator, dashboard, ge) without pushing, runs each
+# image's healthcheck inside a container, and reports per-image status.
+#
+# Why this exists
+# ---------------
+# A maintainer reviewing a PR should be able to trust that "merge" will
+# produce working images for the next release. The release workflow only
+# runs on tag push, so without this PR-gate any "looks fine" code review
+# would be the only quality gate between contributor and operator.
+#
+# What this does NOT do
+# ---------------------
+#   - No push to Docker Hub. Publishing only happens in release.yml on tag
+#     push, using DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets.
+#   - No multi-arch builds. CI uses linux/amd64 for speed; release.yml is
+#     where multi-arch goes when/if we adopt it.
+#   - No unit-test execution. OrcheStack uses end-to-end smokes instead;
+#     the matrix below runs each image's HEALTHCHECK as a stand-in.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel any in-flight CI run for the same PR when a new commit lands —
+# the older build is no longer interesting and would waste runner minutes.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read   # CI never writes to the repo
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # let every image attempt to build even if one fails
+      matrix:
+        include:
+          - image: orchestack-auth
+            context: .
+            dockerfile: system/auth/Dockerfile
+            healthcheck_port: 80
+          - image: orchestack-orchestrator
+            context: system/orchestrator
+            dockerfile: system/orchestrator/Dockerfile
+            healthcheck_port: 8000
+          - image: orchestack-dashboard
+            context: system/dashboard
+            dockerfile: system/dashboard/Dockerfile
+            healthcheck_port: 8000
+          - image: orchestack-ge
+            context: system/docker/ge-image
+            dockerfile: system/docker/ge-image/Dockerfile
+            healthcheck_port: ""   # GE image has no HTTP healthcheck
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata (labels, tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Don't reference Docker Hub here — CI builds local-only.
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=pr-${{ github.event.pull_request.number || 'manual' }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.pull_request.updated_at || github.event.repository.updated_at }}
+
+      - name: Build ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true   # load into the runner's local Docker daemon so we can run it
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-to: type=gha,scope=ci-${{ matrix.image }},mode=max
+
+      - name: Smoke — start container and wait for healthcheck
+        if: matrix.healthcheck_port != ''
+        env:
+          IMAGE: ${{ matrix.image }}
+          PORT: ${{ matrix.healthcheck_port }}
+        run: |
+          set -euo pipefail
+          CONTAINER=$(docker run -d -p "${PORT}:${PORT}" "${IMAGE}:pr-${{ github.event.pull_request.number || 'manual' }}")
+          echo "Container: ${CONTAINER}"
+
+          # Wait up to 60 seconds for the container's HEALTHCHECK to report
+          # healthy (or unhealthy — either is a definitive answer).
+          for attempt in $(seq 1 60); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "${CONTAINER}" 2>/dev/null || echo "no-healthcheck")
+            echo "  attempt ${attempt}: ${STATUS}"
+            case "${STATUS}" in
+              healthy)        echo "✓ container healthy"; break ;;
+              unhealthy)      echo "✗ container reported unhealthy"; docker logs "${CONTAINER}"; exit 1 ;;
+              no-healthcheck) echo "ℹ image has no HEALTHCHECK directive — skipping"; break ;;
+              *) sleep 1 ;;
+            esac
+          done
+
+          docker rm -f "${CONTAINER}" >/dev/null
+
+  summary:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "✓ All images built and passed smoke checks"
+          else
+            echo "✗ One or more image builds failed — see the matrix above"
+            exit 1
+          fi

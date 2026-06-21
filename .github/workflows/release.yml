@@ -30,11 +30,18 @@
 #   git push origin v0.1.0
 #
 # The workflow runs, the release appears at
-# https://github.com/tripleaceme/orchestack/releases/tag/v0.1.0 with the
-# tarball attached. The `latest` redirect at
+# https://github.com/tripleaceme/orchestack-public/releases/tag/v0.1.0 with
+# the tarball attached. The `latest` redirect at
 # https://github.com/.../releases/latest/download/orchestack-runtime.tar.gz
 # always points to the most recent published release — which is what
 # install.sh downloads.
+#
+# Two jobs run on every tag push:
+#   - bundle:          assembles the operator runtime tarball and uploads it
+#                      to the GitHub Release
+#   - docker-publish:  builds the four OrcheStack-owned images and pushes
+#                      them to Docker Hub, each tagged with both :latest
+#                      and the semantic version
 
 name: Release runtime bundle
 
@@ -127,8 +134,9 @@ jobs:
 
           Source code, Dockerfiles, HTML for the auth UI, documentation site.
           Those are build inputs that live in the GitHub repository at
-          https://github.com/tripleaceme/orchestack — clone the repo only if
-          you want to contribute, fork, or rebuild the images yourself.
+          https://github.com/tripleaceme/orchestack-public — clone the repo
+          only if you want to contribute, fork, or rebuild the images
+          yourself.
 
           ## Updating
 
@@ -202,3 +210,69 @@ jobs:
             orchestack-runtime-*.tar.gz
             orchestack-runtime-*.tar.gz.sha256
           retention-days: 7
+
+  docker-publish:
+    name: Publish ${{ matrix.image }} to Docker Hub
+    # Only push images on real tag pushes — workflow_dispatch runs build the
+    # bundle (above) for testing but do not publish to Docker Hub.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false   # let every image attempt to build even if one fails
+      matrix:
+        include:
+          - image: orchestack-auth
+            context: .
+            dockerfile: system/auth/Dockerfile
+          - image: orchestack-orchestrator
+            context: system/orchestrator
+            dockerfile: system/orchestrator/Dockerfile
+          - image: orchestack-dashboard
+            context: system/dashboard
+            dockerfile: system/dashboard/Dockerfile
+          - image: orchestack-ge
+            context: system/docker/ge-image
+            dockerfile: system/docker/ge-image/Dockerfile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags + OCI labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: tripleaceme/${{ matrix.image }}
+          # Tag with both the semantic version (v0.3.0 → 0.3.0) and the
+          # rolling :latest. `latest` is intentionally bumped on every
+          # tagged release so `docker compose pull` upgrades operators.
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+          # Build-time OCI labels — augment the static labels baked into
+          # each Dockerfile with the per-build revision + version + created.
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.image }}
+          cache-to: type=gha,scope=release-${{ matrix.image }},mode=max
