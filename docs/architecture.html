@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -115,61 +113,71 @@
     <p class="lede">OrcheStack is a three-state system: a minimal base that ships in every install, a hot tier that appears after configuration, and a cold tier that spins up on demand during pipeline runs.</p>
 
 <h2 id="three-states">Three states</h2>
-<p>Traditional data-stack deployments pull every tool upfront, a "worst-case RAM" footprint that wastes resources when only parts of the stack are in use. OrcheStack instead pulls and starts services according to what's actually needed right now.</p>
+<p>Traditional data-stack deployments pull every tool upfront — a "worst-case RAM" footprint that wastes resources when only parts of the stack are in use. OrcheStack instead pulls and starts services according to what's actually needed right now.</p>
 
 <h3 id="state-base">1. Base install (~2 GB)</h3>
-<p>Runs from the first <code class="inline">docker compose up -d</code>. OrcheStack contains only the control plane:</p>
+<p>Runs from the first <code class="inline">docker compose up OrcheStack</code>. Contains only the control plane:</p>
 <ul>
-  <li><strong>Reverse Proxy</strong>: routes HTTP traffic, terminates TLS, serves the landing page</li>
-  <li><strong>Front-facing site</strong>: this docs site, plus home, services, and contact pages</li>
-  <li><strong>Dashboard</strong>: admin UI, HTMX + FastAPI + Tailwind (served after auth)</li>
-  <li><strong>PostgreSQL</strong>: stores user accounts, roles, permissions, session ledger</li>
-  <li><strong>Service Orchestrator</strong>: Python process managing hot/cold lifecycles</li>
+  <li><strong>Reverse Proxy</strong> — routes HTTP traffic, terminates TLS, serves the landing page</li>
+  <li><strong>Front-facing site</strong> — this docs site, plus home, services, and contact pages</li>
+  <li><strong>Dashboard</strong> — admin UI, HTMX + FastAPI + Tailwind (served after auth)</li>
+  <li><strong>PostgreSQL</strong> — stores user accounts, roles, permissions, session ledger</li>
+  <li><strong>Service Orchestrator</strong> — Python process managing hot/cold lifecycles</li>
 </ul>
 
 <h3 id="state-configured">2. Configured (~4–5 GB)</h3>
 <p>After the admin picks tools and enters credentials, OrcheStack pulls the selected services and brings up those marked <em>hot</em> to stay running:</p>
 <ul>
-  <li><strong>MinIO</strong>: data lake for raw files</li>
-  <li><strong>Metabase</strong> (or Superset / Lightdash): BI for stakeholders</li>
-  <li><strong>Airflow scheduler</strong>: the clock that triggers cold services on schedule</li>
+  <li><strong>MinIO</strong> — data lake for raw files</li>
+  <li><strong>Metabase</strong> (or Superset / Lightdash) — BI for stakeholders</li>
+  <li><strong>Airflow scheduler</strong> — the clock that triggers cold services on schedule</li>
 </ul>
 
 <h3 id="state-active">3. Active pipeline (~7–10 GB peak)</h3>
 <p>During a scheduled DAG run or when an engineer manually triggers work, OrcheStack spins up cold-tier services for the duration of the task:</p>
 <ul>
-  <li><strong>Airbyte</strong>: ingestion window</li>
-  <li><strong>Airflow workers</strong>: task execution</li>
-  <li><strong>dbt Core</strong>: SQL transformations</li>
-  <li><strong>Great Expectations</strong>: data quality checks</li>
-  <li><strong>pgAdmin</strong>, <strong>OpenMetadata</strong>: when an engineer opens them. OpenMetadata is OrcheStack's observability layer for dbt run history, table lineage, column-level provenance, and anomaly surfacing.</li>
+  <li><strong>Airbyte</strong> — ingestion window</li>
+  <li><strong>Airflow workers</strong> — task execution</li>
+  <li><strong>dbt Core</strong> — SQL transformations</li>
+  <li><strong>Great Expectations</strong> — data quality checks</li>
+  <li><strong>Elementary</strong> — dbt observability</li>
+  <li><strong>pgAdmin</strong>, <strong>OpenMetadata</strong> — when an engineer opens them</li>
 </ul>
 <p>Cold services stop when their task completes and the reference-counted session count reaches zero.</p>
 
 <h2 id="why-three-states">Why three states matter</h2>
 <p>A naive deployment would keep every service running constantly. For a 10-tool stack, that's ~15 GB of RAM sitting idle between pipeline runs. OrcheStack's three-state model means:</p>
 <ul>
-  <li>Your baseline resource cost is ~2 GB (what the control plane needs)</li>
-  <li>Steady-state cost is ~4–5 GB (what stakeholders need to query BI)</li>
-  <li>Peak cost is bounded to pipeline runtime, typically minutes per day</li>
+  <li>Your baseline resource cost is ~2 GB — what the control plane needs</li>
+  <li>Steady-state cost is ~4–5 GB — what stakeholders need to query BI</li>
+  <li>Peak cost is bounded to pipeline runtime — typically minutes per day</li>
 </ul>
+<div class="callout">
+  <p><strong>Total Cost of Ownership impact.</strong> For a Nigerian SME running OrcheStack on a $40/month VPS, the three-state model is what makes the platform viable. A 16 GB VPS would cost 3–4× more than the 8 GB one OrcheStack actually needs at peak.</p>
+</div>
 
 <h2 id="reverse-proxy">Reverse proxy as unified entry</h2>
 <p>Every service with a native web UI is reachable through the same domain via the reverse proxy:</p>
-<pre>/app             → Dashboard (after auth)
+<pre>/                → Front-facing site (landing, services, contact)
+/docs/*          → This docs site
+/app             → Dashboard (after auth)
 /app/metabase    → Metabase (hot)
 /app/airflow     → Airflow UI (hot)
-/app/airbyte     → Airbyte (cold, spun up on click)
-/app/openmetadata → OpenMetadata (cold)
+/app/airbyte     → Airbyte (cold — spun up on click)
+/app/openmeta    → OpenMetadata (cold)
 /app/pgadmin     → pgAdmin (cold)</pre>
 <p>Clicking any cold-service URL in the dashboard triggers the orchestrator to spin it up, then redirects you to the proxy route once a health check passes.</p>
 
 <h2 id="storage-layout">Storage layout</h2>
 <p>OrcheStack uses a single PostgreSQL instance with multiple schemas to avoid database sprawl:</p>
 <ul>
-  <li><code class="inline">platform</code>: user accounts, roles, permissions, sessions, audit log</li>
-  <li><code class="inline">airflow_db (own dedicated database)' metadata</li>
+  <li><code class="inline">platform</code> — user accounts, roles, permissions, sessions, audit log</li>
+  <li><code class="inline">raw</code> — landed data from Airbyte, waiting for dbt</li>
+  <li><code class="inline">marts</code> — dbt outputs consumed by Metabase</li>
+  <li><code class="inline">airflow</code> and <code class="inline">openmetadata</code> schemas for those services' metadata</li>
 </ul>
+<p>MinIO holds raw files as an alternate substrate for AI / ML / DS consumers who prefer objects over rows.</p>
+
     <div class="next-prev">
       <a href="first-pipeline.html">
         <span class="dir">← Previous</span>

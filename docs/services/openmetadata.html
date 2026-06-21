@@ -8,28 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/favicon.svg">
-  <style>
-    /* Scoped to this page — keeps the connection-cheatsheet tables
-       readable without bringing in a global .docs-table rule. */
-    .docs-main .docs-table {
-      width: 100%; border-collapse: collapse;
-      font-size: 13.5px; margin: 14px 0 20px;
-      border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-    }
-    .docs-main .docs-table thead { background: var(--bg, #f6f7f9); }
-    .docs-main .docs-table th, .docs-main .docs-table td {
-      padding: 10px 14px; border-bottom: 1px solid var(--border);
-      text-align: left; vertical-align: top; line-height: 1.55;
-    }
-    .docs-main .docs-table th { font-weight: 600; font-size: 12px;
-      text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-2); }
-    .docs-main .docs-table tr:last-child td { border-bottom: none; }
-    .docs-main .docs-table td:first-child, .docs-main .docs-table th:first-child {
-      white-space: nowrap;
-    }
-    .docs-toc li.sub a { padding-left: 14px; font-size: 12px; color: var(--text-2); }
-  </style>
 </head>
 <body>
 
@@ -135,139 +113,20 @@
     <p class="lede">Column-level lineage, data catalog, glossary. Auto-ingests from Airbyte, dbt, and PostgreSQL to show how data flows end to end.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> OpenMetadata is heavy (~2–3 GB RAM) and stakeholders rarely open it. Engineers open it when they need to understand lineage, OrcheStack spins it up on click and stops it when idle.</p>
+<p><strong>Cold.</strong> OpenMetadata is heavy (~2–3 GB RAM) and stakeholders rarely open it. Engineers open it when they need to understand lineage — OrcheStack spins it up on click and stops it when idle.</p>
 
 <h2 id="role">Role</h2>
 <p>OpenMetadata pulls metadata from every stage (Airbyte sources, PostgreSQL schemas, dbt models, Metabase dashboards) to produce column-level lineage graphs. It answers the question: "If I change this column, what breaks downstream?"</p>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
-  <li><strong>Admin email and password:</strong> for the OpenMetadata web UI</li>
-  <li><strong>JWT secret:</strong> 32+ characters, used for internal API authentication</li>
-  <li><strong>Backend PostgreSQL:</strong> OrcheStack stores OpenMetadata's state in the <code class="inline">openmetadata</code> schema of the base PostgreSQL</li>
+  <li><strong>Admin email and password</strong> — for the OpenMetadata web UI</li>
+  <li><strong>JWT secret</strong> — 32+ characters, used for internal API authentication</li>
+  <li><strong>Backend PostgreSQL</strong> — OrcheStack stores OpenMetadata's state in the <code class="inline">openmetadata</code> schema of the base PostgreSQL</li>
 </ul>
 
 <h2 id="when-to-use">When to open it</h2>
 <p>Typical triggers: before a schema change (to check downstream impact), after a pipeline failure (to see which models are affected), during an audit (to document data provenance).</p>
-
-<h2 id="adding-ingestion">Adding a database ingestion</h2>
-<p>OpenMetadata builds its catalog by <em>connecting outward</em> to each source database and crawling schemas, tables, and columns. Click <strong>Settings → Services → Databases → Add new service</strong> in the OM UI, pick the source type(PostgreSQL), then fill the connection form.</p>
-
-<table class="docs-table">
-  <thead>
-    <tr><th>Field</th><th>Value</th><th>Why</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><strong>Host and Port</strong></td>
-      <td><code class="inline">orchestack-postgres:5432</code></td>
-      <td>Container DNS name on the <code class="inline">orchestack-net</code> network. Port <strong>5432</strong> is the container-internal port.</td>
-    </tr>
-    <tr>
-      <td><strong>Username</strong></td>
-      <td><code class="inline">warehouse_admin</code></td>
-      <td>Dedicated warehouse role connection. This cannot be changed.</td>
-    </tr>
-    <tr>
-      <td><strong>Password</strong></td>
-      <td>value of <code class="inline">WAREHOUSE_DB_PASSWORD</code> in <code class="inline">.env</code></td>
-      <td>Reveal it from Configuration → Credentials in the dashboard, or read it from your <code class="inline">.env</code> file.</td>
-    </tr>
-    <tr>
-      <td><strong>Database</strong></td>
-      <td><code class="inline">your_database_name</code></td>
-      <td>Your DB or any other database you want to ingest. Other DBs in this Postgres (<code class="inline">openmetadata_db</code>, <code class="inline">airflow_db</code>, <code class="inline">airbyte_db</code>, <code class="inline">metabase_db</code>) are each tool's internal storage, so don't ingest them, they're noise.</td>
-    </tr>
-    <tr>
-      <td><strong>Scheme</strong></td>
-      <td><code class="inline">postgresql+psycopg2</code> (default)</td>
-      <td>OM's standard Postgres driver. Leave as-is.</td>
-    </tr>
-  </tbody>
-</table>
-
-<p>Click <strong>Test Connection</strong>. You should see green on CheckAccess / GetDatabases / GetSchemas / GetTables. Save, then <strong>Run ingestion</strong> from the service page; OM populates the catalog within a few minutes.</p>
-
-<h3 id="common-mistakes">Common mistakes</h3>
-<table class="docs-table">
-  <thead>
-    <tr><th>You put</th><th>OM says</th><th>Fix</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code class="inline">localhost:postgres</code></td>
-      <td><code class="inline">invalid literal for int() with base 10: 'postgres'</code></td>
-      <td>OM parses the <strong>Host and Port</strong> field as <code class="inline">host:port</code>. <code class="inline">postgres</code> isn't a number. Use <code class="inline">orchestack-postgres:5432</code>.</td>
-    </tr>
-    <tr>
-      <td><code class="inline">localhost:5432</code></td>
-      <td><code class="inline">connection to server at "localhost" (::1), port 5432 failed: Connection refused</code></td>
-      <td>Inside the OM ingestion container, <code class="inline">localhost</code> is the container itself — no Postgres there. Use the docker DNS name <code class="inline">orchestack-postgres:5432</code>.</td>
-    </tr>
-    <tr>
-      <td><code class="inline">localhost:5433</code></td>
-      <td>Same connection refused</td>
-      <td>5433 is the <em>host-side</em> port mapping (so you can <code class="inline">psql -h localhost -p 5433</code> from your laptop). Other containers see Postgres at its <em>internal</em> port 5432.</td>
-    </tr>
-    <tr>
-      <td><code class="inline">orchestack_admin</code> as username</td>
-      <td>Works, but pollutes audit trail</td>
-      <td>Use <code class="inline">warehouse_admin</code>. The role is provisioned specifically so data tools don't run as the platform admin.</td>
-    </tr>
-  </tbody>
-</table>
-
-<h3 id="more-sources">Ingesting other services in the OrcheStack stack</h3>
-<p>The same docker-DNS rule applies for every internal source. Most operators won't need anything beyond the warehouse, but if you want OM to catalogue the inner machinery too:</p>
-<table class="docs-table">
-  <thead>
-    <tr><th>Source</th><th>Host:Port</th><th>Username</th><th>Password env var</th><th>Database</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>Database (Postgres)</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">warehouse_admin</code></td><td><code class="inline">WAREHOUSE_DB_PASSWORD</code></td><td><code class="inline">your_database_name</code></td></tr>
-    <tr><td>Airbyte internal</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">airbyte_admin</code></td><td><code class="inline">AIRBYTE_DB_PASSWORD</code></td><td><code class="inline">airbyte_db</code></td></tr>
-    <tr><td>Airflow metadata</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">airflow_admin</code></td><td><code class="inline">AIRFLOW_DB_PASSWORD</code></td><td><code class="inline">airflow_db</code></td></tr>
-    <tr><td>Metabase application</td><td><code class="inline">orchestack-postgres:5432</code></td><td><code class="inline">metabase_admin</code></td><td><code class="inline">METABASE_DB_PASSWORD</code></td><td><code class="inline">metabase_db</code></td></tr>
-  </tbody>
-</table>
-
-<h3 id="ingesting-external">Ingesting an external database (outside OrcheStack)</h3>
-<p>If your warehouse is hosted elsewhere RDS, Cloud SQL, a colleague's VM, the same connection form takes the external host's reachable hostname or IP. OpenMetadata's ingestion container makes outbound network calls like any other container, so as long as DNS resolves and the firewall allows it, you're good.</p>
-<ul>
-  <li><strong>Public RDS endpoint:</strong> <code class="inline">my-warehouse.abc123.eu-west-1.rds.amazonaws.com:5432</code></li>
-  <li><strong>Internal hostname over VPN:</strong> resolves via your host's DNS; make sure your Docker daemon's DNS is configured to see it (host network not required for outbound).</li>
-  <li><strong>Connection arguments:</strong> add <code class="inline">sslmode=require</code> for cloud-managed databases.</li>
-</ul>
-
-<h3 id="scheduling">Scheduling repeat ingestion</h3>
-<p>After the first ingestion succeeds, add a Metadata workflow with a cron schedule (e.g. <code class="inline">0 2 * * *</code> for nightly at 02:00). The ingestion runs inside the <code class="inline">orchestack-openmetadata-ingestion</code> sidecar (Airflow under the hood), so it survives across OM server restarts.</p>
-
-<h2 id="troubleshooting">Troubleshooting</h2>
-<table class="docs-table">
-  <thead>
-    <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Popup: <em>"Search failed due to Elasticsearch exception [type=search_phase_execution_exception, reason=all shards failed]"</em> when browsing Domains, Tags, or Glossary pages.</td>
-      <td>OM creates every search index with <code class="inline">number_of_replicas=1</code>. OrcheStack runs Elasticsearch single-node, so replicas can never be allocated and the cluster sits in <strong>yellow</strong>. Most queries still work in yellow, but a few search paths return 500.</td>
-      <td>The OM bootstrap hook applies the fix automatically on every service start (drops replicas to 0 on existing indices + future ones). To apply manually if the popup persists after a fresh start, run:<br>
-        <code class="inline">docker exec orchestack-openmetadata-es curl -X PUT "http://localhost:9200/_all/_settings" -H "Content-Type: application/json" -d '{"index":{"number_of_replicas":0}}'</code><br>
-        then refresh the OM tab.
-      </td>
-    </tr>
-    <tr>
-      <td>OM login fails with <em>"invalid username or password"</em> even though you typed what the wizard asked for.</td>
-      <td>OM 1.6.x's <code class="inline">AUTHORIZER_ADMIN_PRINCIPALS</code> env var creates the admin user with the hardcoded default password <code class="inline">admin</code>, not the value of <code class="inline">OPENMETADATA_ADMIN_PASSWORD</code>.</td>
-      <td>OrcheStack's bootstrap hook runs <code class="inline">openmetadata-ops.sh reset-password</code> after the API comes up to fix this. If you ever land in the broken state (e.g. hook timed out on slow boot), log in with <code class="inline">admin / admin</code> and change the password via the OM Settings UI.</td>
-    </tr>
-    <tr>
-      <td>OM UI loads but every page spins on "Loading"; no errors in browser console.</td>
-      <td>First-boot migrations are still running. OM 1.6 migrates its Postgres schema on first start; can take 90–120s on a cold container.</td>
-      <td>Wait 2 minutes; the spinner resolves on its own. If it doesn't, check <code class="inline">docker logs orchestack-openmetadata</code> for migration errors.</td>
-    </tr>
-  </tbody>
-</table>
 
     <div class="next-prev">
       <a href="metabase.html">
@@ -288,13 +147,6 @@
       <li><a href="#role">Role</a></li>
       <li><a href="#configuration">Configuration</a></li>
       <li><a href="#when-to-use">When to open it</a></li>
-      <li><a href="#adding-ingestion">Adding a database ingestion</a></li>
-      <li class="sub"><a href="#warehouse-cheatsheet">Warehouse cheatsheet</a></li>
-      <li class="sub"><a href="#common-mistakes">Common mistakes</a></li>
-      <li class="sub"><a href="#more-sources">Other stack services</a></li>
-      <li class="sub"><a href="#ingesting-external">External databases</a></li>
-      <li class="sub"><a href="#scheduling">Scheduling</a></li>
-      <li><a href="#troubleshooting">Troubleshooting</a></li>
     </ul>
   </aside>
 

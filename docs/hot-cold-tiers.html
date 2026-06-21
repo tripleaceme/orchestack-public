@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -117,30 +115,30 @@
 <h2 id="definition">Definition</h2>
 <p>Every OrcheStack-managed service falls into one of three classes:</p>
 <ul>
-  <li><strong>Base</strong>: ships with the control plane. Always running. Cannot be disabled.</li>
-  <li><strong>Hot</strong>: pulled on configuration, stays running while enabled. Used by services that stakeholders or schedulers need to reach at any time.</li>
-  <li><strong>Cold</strong>: pulled on configuration, runs only when a task or an engineer's click demands it. Stops when idle.</li>
+  <li><strong>Base</strong> — ships with the control plane. Always running. Cannot be disabled.</li>
+  <li><strong>Hot</strong> — pulled on configuration, stays running while enabled. Used by services that stakeholders or schedulers need to reach at any time.</li>
+  <li><strong>Cold</strong> — pulled on configuration, runs only when a task or an engineer's click demands it. Stops when idle.</li>
 </ul>
 
 <h2 id="assignment-rules">Assignment rules</h2>
 <p>The principle is simple: <strong>services that need to respond to external traffic at any moment are hot; services that respond to triggered work are cold</strong>.</p>
 <ul>
-  <li><strong>Metabase</strong>: hot. A stakeholder might open a dashboard at any time.</li>
-  <li><strong>Airflow scheduler</strong>: hot. It is the clock; without it, nothing fires.</li>
-  <li><strong>MinIO</strong>: hot. The data lake must always be readable by downstream consumers.</li>
-  <li><strong>Airbyte</strong>: cold. Only runs during the ingestion window.</li>
-  <li><strong>dbt</strong>: cold. A CLI, not a service. Runs when Airflow triggers it.</li>
-  <li><strong>Great Expectations</strong>: cold. Runs after dbt finishes to assert quality contracts on the marts schema.</li>
-  <li><strong>pgAdmin</strong>: cold. Ad-hoc engineer tool, not stakeholder-facing.</li>
-  <li><strong>OpenMetadata</strong>: cold. Heavy (~3 GB); engineers open it to explore lineage, then close it.</li>
+  <li><strong>Metabase</strong> — hot. A stakeholder might open a dashboard at any time.</li>
+  <li><strong>Airflow scheduler</strong> — hot. It is the clock; without it, nothing fires.</li>
+  <li><strong>MinIO</strong> — hot. The data lake must always be readable by downstream consumers.</li>
+  <li><strong>Airbyte</strong> — cold. Only runs during the ingestion window.</li>
+  <li><strong>dbt</strong> — cold. A CLI, not a service. Runs when Airflow triggers it.</li>
+  <li><strong>Great Expectations, Elementary</strong> — cold. Run after dbt finishes.</li>
+  <li><strong>pgAdmin</strong> — cold. Ad-hoc engineer tool, not stakeholder-facing.</li>
+  <li><strong>OpenMetadata</strong> — cold. Heavy (~3 GB); engineers open it to explore lineage, then close it.</li>
 </ul>
 
 <h2 id="lifecycle">Cold-service lifecycle</h2>
 <p>Cold services transition through four states: <code class="inline">STOPPED</code> → <code class="inline">STARTING</code> → <code class="inline">RUNNING</code> → <code class="inline">STOPPING</code>. Transitions are driven by three triggers:</p>
 <ol>
-  <li><strong>Airflow DAG schedule</strong>: e.g. the nightly ETL at 02:00 starts Airbyte + workers + dbt + Great Expectations in sequence.</li>
-  <li><strong>Dashboard manual button</strong>: e.g. "Run dbt now" or "Open pgAdmin".</li>
-  <li><strong>Upstream dependency</strong>: e.g. when dbt finishes, Great Expectations auto-starts to assert quality contracts on the new marts. OpenMetadata also auto-starts to ingest dbt run history and lineage when its workflow is scheduled.</li>
+  <li><strong>Airflow DAG schedule</strong> — e.g. the nightly ETL at 02:00 starts Airbyte + workers + dbt + Elementary in sequence.</li>
+  <li><strong>Dashboard manual button</strong> — e.g. "Run dbt now" or "Open pgAdmin".</li>
+  <li><strong>Upstream dependency</strong> — e.g. when dbt finishes, Elementary auto-starts to record test results.</li>
 </ol>
 <p>A cold service only stops when its <em>reference-counted session count</em> hits zero AND the idle timeout has elapsed. See <a href="sessions.html">Service sessions</a> for the multi-user safety this provides.</p>
 

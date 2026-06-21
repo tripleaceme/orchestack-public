@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -115,7 +113,7 @@
     <p class="lede">The transformation layer of OrcheStack. Reads raw landed data from PostgreSQL, builds analytics-ready marts in the same database.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> dbt Core is a CLI that runs as a scheduled task or on manual trigger, it doesn't stay running between invocations. Typical memory during a run: ~500 MB. Typical run duration: 30 seconds to 5 minutes depending on model count.</p>
+<p><strong>Cold.</strong> dbt Core is a CLI that runs as a scheduled task or on manual trigger — it doesn't stay running between invocations. Typical memory during a run: ~500 MB. Typical run duration: 30 seconds to 5 minutes depending on model count.</p>
 
 <h2 id="role">Role in the pipeline</h2>
 <p>Airbyte lands raw data into the <code class="inline">raw</code> schema. dbt reads from there, applies SQL transformations (staging → intermediate → marts), and writes results back to the <code class="inline">marts</code> schema in the same PostgreSQL instance. Metabase then queries <code class="inline">marts</code> for dashboards.</p>
@@ -123,13 +121,13 @@
 <h2 id="configuration">Configuration</h2>
 <p>OrcheStack's credentials form collects:</p>
 <ul>
-  <li><strong>Profile target:</strong> typically <code class="inline">dev</code> or <code class="inline">prod</code></li>
-  <li><strong>Warehouse host:</strong> usually <code class="inline">postgres</code> (OrcheStack's internal service name)</li>
-  <li><strong>Warehouse port:</strong> <code class="inline">5432</code></li>
-  <li><strong>Warehouse database:</strong> the DB holding raw and marts schemas</li>
-  <li><strong>Schema for dbt outputs:</strong> typically <code class="inline">marts</code></li>
-  <li><strong>dbt user:</strong> a PostgreSQL user with read on raw, write on marts</li>
-  <li><strong>dbt password:</strong> stored in <code class="inline">.env</code>, referenced in <code class="inline">profiles.yml</code></li>
+  <li><strong>Profile target</strong> — typically <code class="inline">dev</code> or <code class="inline">prod</code></li>
+  <li><strong>Warehouse host</strong> — usually <code class="inline">postgres</code> (OrcheStack's internal service name)</li>
+  <li><strong>Warehouse port</strong> — <code class="inline">5432</code></li>
+  <li><strong>Warehouse database</strong> — the DB holding raw and marts schemas</li>
+  <li><strong>Schema for dbt outputs</strong> — typically <code class="inline">marts</code></li>
+  <li><strong>dbt user</strong> — a PostgreSQL user with read on raw, write on marts</li>
+  <li><strong>dbt password</strong> — stored in <code class="inline">.env</code>, referenced in <code class="inline">profiles.yml</code></li>
 </ul>
 <p>OrcheStack generates <code class="inline">profiles.yml</code> at <code class="inline">./config/dbt/profiles.yml</code> during save. This file references environment variables so credentials never get committed.</p>
 
@@ -154,7 +152,7 @@
 <p>From the OrcheStack admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
 
 <h2 id="observability">Observability</h2>
-<p><strong>OpenMetadata</strong> is OrcheStack's observability layer. When you select it during setup, it captures dbt run history, table lineage, column-level provenance, and surfaces anomalies via <code class="inline">/app/openmetadata</code>. Without it, observability is via dbt's own test results in PostgreSQL and Metabase queries against the run-history tables.</p>
+<p>If you enabled <strong>Elementary</strong> during setup, its container runs immediately after each dbt invocation to record test results and detect anomalies. Elementary dashboards are accessible from <code class="inline">/app/elementary</code> via the reverse proxy.</p>
 <div class="callout">
   <p><strong>Tip.</strong> dbt plays best when combined with Great Expectations for assertion-based quality checks on the <code class="inline">marts</code> schema. Configure both during setup and OrcheStack wires them into the Airflow DAG automatically.</p>
 </div>

@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -115,7 +113,7 @@
     <p class="lede">Users close their own sessions. The orchestrator owns the container lifecycle. Reference counting keeps one user from disrupting another.</p>
 
 <h2 id="the-problem">The shared-service problem</h2>
-<p>Two engineers are using pgAdmin at the same time. One finishes their work and clicks "Stop". Under a naive design, pgAdmin's container stops, kicking the other engineer out mid-query. This is the classic shared-resource race condition.</p>
+<p>Two engineers are using pgAdmin at the same time. One finishes their work and clicks "Stop". Under a naive design, pgAdmin's container stops — kicking the other engineer out mid-query. This is the classic shared-resource race condition.</p>
 <p>OrcheStack prevents this by separating <strong>user sessions</strong> from <strong>container lifecycle</strong>.</p>
 
 <h2 id="the-design">The design</h2>

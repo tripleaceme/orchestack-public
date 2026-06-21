@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -112,18 +110,18 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Concepts</a> › Roles & permissions</div>
     <h1>Roles & permissions</h1>
-    <p class="lede">OrcheStack ships with three system roles (Admin, Engineer, Analyst) and lets Admins create additional roles with fine-grained per-service permissions.</p>
+    <p class="lede">OrcheStack ships with three system roles — Admin, Engineer, Analyst — and lets Admins create additional roles with fine-grained per-service permissions.</p>
 
 <h2 id="role-model">The role model</h2>
-<p>Every user has exactly one <strong>role</strong>. A role is a named bundle of permissions. Permissions are defined <em>per service</em>, the same role can have different capabilities on different services.</p>
+<p>Every user has exactly one <strong>role</strong>. A role is a named bundle of permissions. Permissions are defined <em>per service</em> — the same role can have different capabilities on different services.</p>
 
 <h2 id="permission-matrix">Permission matrix</h2>
 <p>For each (role, service) pair, four permissions apply:</p>
 <ul>
-  <li><code class="inline">can_start</code>: may initiate service spin-up (cold tier only)</li>
-  <li><code class="inline">can_use</code>: may access the service's UI while it's running</li>
-  <li><code class="inline">can_force_stop</code>: may kill the container even when other users have active sessions (emergency)</li>
-  <li><code class="inline">can_edit_config</code>: may modify the service's credentials / env vars</li>
+  <li><code class="inline">can_start</code> — may initiate service spin-up (cold tier only)</li>
+  <li><code class="inline">can_use</code> — may access the service's UI while it's running</li>
+  <li><code class="inline">can_force_stop</code> — may kill the container even when other users have active sessions (emergency)</li>
+  <li><code class="inline">can_edit_config</code> — may modify the service's credentials / env vars</li>
 </ul>
 
 <h2 id="system-roles">System roles</h2>
@@ -138,7 +136,7 @@
 
 <h2 id="custom-roles">Creating custom roles</h2>
 <p>From the OrcheStack admin dashboard, go to <strong>Users → Roles → New role</strong>. For each service, tick the permissions you want. Save.</p>
-<p>Example: An "Analytics Engineer" role that can operate dbt and pgAdmin but has read-only access to Metabase:</p>
+<p>Example — an "Analytics Engineer" role that can operate dbt and pgAdmin but has read-only access to Metabase:</p>
 <pre>service     | can_start | can_use | can_force_stop | can_edit_config
 dbt         | ✓         | ✓       |                | ✓
 pgadmin     | ✓         | ✓       |                |

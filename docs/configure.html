@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -112,81 +110,50 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Get started</a> › Configure services</div>
     <h1>Step 3 — Configure services</h1>
-    <p class="lede">Pick one tool per pipeline layer, provide credentials, and OrcheStack pulls the Docker images you chose while writing a <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code> under the hood.</p>
+    <p class="lede">Pick one tool per pipeline layer, provide credentials, and OrcheStack pulls the Docker images you chose — writing a generated <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code> under the hood.</p>
 
 <h2 id="pick-tools">Pick your tools</h2>
 <p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a dropdown with a tested default and documented alternatives:</p>
 <ul>
-  <li><strong>Ingestion:</strong> Airbyte <em>(recommended)</em>, Custom Python, None</li>
-  <li><strong>Orchestration:</strong> Apache Airflow (core, always-on)</li>
-  <li><strong>Warehouse:</strong> PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
-  <li><strong>Data lake:</strong> MinIO (core)</li>
-  <li><strong>Transformation:</strong> dbt Core <em>(recommended)</em>, SQLMesh</li>
-  <li><strong>Data quality:</strong> Great Expectations <em>(recommended)</em>, Soda Core, None</li>
-  <li><strong>Governance:</strong> OpenMetadata <em>(recommended)</em>, DataHub, None</li>
-  <li><strong>BI:</strong> Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
-  <li><strong>Database admin UI:</strong> pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
+  <li><strong>Ingestion</strong> — Airbyte <em>(recommended)</em>, Custom Python, None</li>
+  <li><strong>Orchestration</strong> — Apache Airflow (core, always-on)</li>
+  <li><strong>Warehouse</strong> — PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
+  <li><strong>Data lake</strong> — MinIO (core)</li>
+  <li><strong>Transformation</strong> — dbt Core <em>(recommended)</em>, SQLMesh</li>
+  <li><strong>Data quality</strong> — Great Expectations <em>(recommended)</em>, Soda Core, None</li>
+  <li><strong>Governance</strong> — OpenMetadata <em>(recommended)</em>, DataHub, None</li>
+  <li><strong>BI</strong> — Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
+  <li><strong>Database admin UI</strong> — pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
 </ul>
-<p>Mix and match as you like, OrcheStack's modular design supports any combo. Recommended defaults are a great starting point if you're unsure.</p>
-<p>Don't worry about making the "wrong" choice. You can change services later from the
-admin dashboard, and OrcheStack handles the heavy lifting of reconfiguring and restarting containers for you.</p>
+<p>Pick the defaults if you're unsure — they're the ones OrcheStack tests end-to-end.</p>
 
 <h2 id="enter-credentials">Enter credentials</h2>
-<p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool. For example, OpenMetadata asks for:</p>
+<p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool — for example, OpenMetadata asks for:</p>
 <ul>
   <li>Admin email and password</li>
   <li>JWT secret (32+ characters)</li>
   <li>PostgreSQL backend details (host, port, database, user, password)</li>
 </ul>
-<p>OrcheStack runs a live connection test against every backend before allowing you to proceed. Invalid credentials fail fast, so no container rebuilds.</p>
+<p>OrcheStack runs a live connection test against every backend before allowing you to proceed. Invalid credentials fail fast — no container rebuilds burning time.</p>
 <div class="callout">
-  <p><strong>Where credentials go:</strong> OrcheStack writes them to a file at <code class="inline">./config/.env</code> on the host, with <code class="inline">chmod 600</code>-protected. 
-    The <code class="inline">docker-compose.yml</code> references them via <code class="inline">${VAR}</code> placeholders. 
-    <strong>Add <code class="inline">./config</code> to your <code class="inline">.gitignore</code></strong> before committing anything.</p>
+  <p><strong>Where credentials go.</strong> OrcheStack writes them to a file at <code class="inline">./config/.env</code> on the host, <code class="inline">chmod 600</code>-protected. Your <code class="inline">docker-compose.yml</code> references them via <code class="inline">${VAR}</code> placeholders. <strong>Add <code class="inline">./config</code> to your <code class="inline">.gitignore</code></strong> before committing anything — you don't want credentials in source control.</p>
 </div>
 
 <h2 id="pull-and-start">Pull and start</h2>
 <p>Once you click <strong>Save &amp; deploy</strong>, OrcheStack does three things:</p>
 <ol>
   <li>Regenerates <code class="inline">docker-compose.yml</code> with just the services you picked.</li>
-  <li>Pulls each service's Docker image (first time only and cached after).</li>
+  <li>Pulls each service's Docker image (first time only — cached after).</li>
   <li>Runs <code class="inline">docker compose up -d</code> to start hot-tier services and register cold-tier services with the orchestrator.</li>
 </ol>
-<p>Expect the first-time pull to take 20–35 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
+<p>Expect the first-time pull to take 2–5 minutes depending on your internet connection. Subsequent saves are near-instant.</p>
 
 <h2 id="editing-later">Editing credentials later</h2>
-<p>Every variable the setup wizard collected, plus the OrcheStack platform DB credentials, image tags,
-  and anything else you've manually added lives in a single source of truth: the <code class="inline">.env</code> file on the host. The orchestrator bind-mounts that file read-write into its own container at <code class="inline">/etc/orchestack/.env</code>; per-service Docker Compose snippets interpolate <code class="inline">${VAR}</code> references against the same file on every <code class="inline">docker compose up -d</code>.</p>
-
-<h3 id="editing-via-edit-config">Via the service's Edit config page</h3>
-<p>Each service has its own Edit config page reachable from its tile on the dashboard. Click the service, then click <strong>Edit config</strong>. The form shows just that service's variables, runs a live connection test on database-typed fields, and writes valid values back to <code class="inline">.env</code>.</p>
-<p>Admins also have a global view at <strong><code class="inline">/app/credentials</code></strong> that shows every <code class="inline">.env</code> variable in one table with a per-service filter. Use this when you want to scan across services or rotate shared variables. Non-admin users don't see this page; their per-service Edit config form is the supported path.</p>
-<p>(The legacy "Click Services &rarr; Edit config" workflow described in earlier docs is what you're using now. Both paths converge on the same <code class="inline">.env</code> file with the same validation.)</p>
-<p>Saving immediately writes back to <code class="inline">.env</code>. Image tags (<code class="inline">AUTH_TAG</code>, <code class="inline">ORCHESTRATOR_TAG</code>, <code class="inline">DASHBOARD_TAG</code>) and the platform DB password (<code class="inline">ORCHESTACK_DB_PASSWORD</code>) are rendered read-only. The audit log records that the variable was updated and by whom, but never the value itself, so credentials never leak through audit history.</p>
-
-<h3 id="editing-via-env">Direct .env edit</h3>
-<p>Stop the stack, edit <code class="inline">.env</code> in your editor of choice, and bring the stack back up:</p>
-<pre>cd orchestack-runtime-*
-nano .env             <span class="comment"># change whatever you need</span>
-docker compose up -d  <span class="comment"># picks up the new values on next start</span></pre>
-<p>This is the right tool for bulk rotations (e.g. rotating every per-service admin password in one editor session) or for variables not yet surfaced in any dashboard form. The Edit config and Credentials pages read the same file, so whatever you change here appears there immediately on the next refresh.</p>
-
-<h3 id="picking-up-changes">Picking up the change in the running services</h3>
-<p>Editing <code class="inline">.env</code>through either path updates the file but does <strong>not</strong> automatically restart services that are already running. Container env vars are read at start time; running containers keep the values they were started with.</p>
-<p>To rotate a credential and have it take effect now:</p>
-<ol>
-  <li>Save the new value (via the Credentials page or by editing <code class="inline">.env</code>).</li>
-  <li>Go to the <strong>Services</strong> page (<span class="kbd">g</span> <span class="kbd">h</span>), find the affected service, click <strong>Stop</strong>, then <strong>Start</strong>. The orchestrator runs <code class="inline">docker compose up -d</code> again, which re-interpolates the now-updated <code class="inline">${VAR}</code> references.</li>
-</ol>
-<p>Data volumes are preserved across restart, so you don't lose history when rotating a password.</p>
-
+<p>From the OrcheStack admin dashboard, click any service tile and choose <strong>Edit config</strong>. Saving a change writes the new value to <code class="inline">.env</code> and issues:</p>
+<pre>docker compose up -d --force-recreate &lt;service&gt;</pre>
+<p>Container recreation picks up the new environment variables. Data volumes are preserved, so you don't lose history when rotating a password.</p>
 <div class="callout warn">
-  <p><strong>Heads up for admins.</strong> If a service has active user sessions (e.g. someone is using pgAdmin), stopping it ends those sessions. The dashboard's <strong>Stop</strong> button asks for confirmation in that case. Schedule rotations during off-hours or coordinate with users beforehand.</p>
-</div>
-
-<div class="callout info">
-  <p><strong>First-run-only caveat.</strong> A small number of services consume their admin credentials <em>only</em> on first start, when their own internal store is empty.
-     pgAdmin, Metabase, and Airflow all behave this way. After first start, changing <code class="inline">PGADMIN_DEFAULT_PASSWORD</code> in <code class="inline">.env</code> and restarting the container will <strong>not</strong> rotate the existing admin account; you must use the tool's own admin UI to change the password (and keep <code class="inline">.env</code> in sync so a future fresh install picks up the new value). The Credentials page surfaces this caveat inline next to first-run-only keys in a later polish pass.</p>
+  <p><strong>Heads up for admins.</strong> Any credential change triggers a container recreation. If a service currently has active user sessions (e.g. someone is using pgAdmin), OrcheStack will ask you to confirm because recreation disconnects them. Scheduled updates during off-hours are safest.</p>
 </div>
 
     <div class="next-prev">
@@ -207,14 +174,7 @@ docker compose up -d  <span class="comment"># picks up the new values on next st
       <li><a class="active" href="#pick-tools">Pick your tools</a></li>
       <li><a href="#enter-credentials">Enter credentials</a></li>
       <li><a href="#pull-and-start">Pull and start</a></li>
-      <li>
-        <a href="#editing-later">Editing credentials later</a>
-        <ul>
-          <li><a href="#editing-via-edit-config">Via the service's Edit config page</a></li>
-          <li><a href="#editing-via-env">Direct .env edit</a></li>
-          <li><a href="#picking-up-changes">Picking up the change</a></li>
-        </ul>
-      </li>
+      <li><a href="#editing-later">Editing credentials later</a></li>
     </ul>
   </aside>
 

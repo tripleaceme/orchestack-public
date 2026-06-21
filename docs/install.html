@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -126,11 +124,11 @@
 </div>
 
 <h2 id="distribution">Where OrcheStack lives</h2>
-<p>OrcheStack is three artifacts in three places, understanding the split makes the install paths below obvious:</p>
+<p>OrcheStack is three artifacts in three places — understanding the split makes the install paths below obvious:</p>
 <ul>
-  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>): our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-dashboard</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
-  <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack</code>): source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
-  <li><strong>orchestack.africa</strong>: marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
+  <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-dashboard</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
+  <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack-public</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
+  <li><strong>orchestack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
 </ul>
 <p>Pick an install option below based on how much you want to see under the hood.</p>
 
@@ -144,15 +142,15 @@
 
 <h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>
 <p>For operators who want to read every file before running it, or who plan to fork and customise.</p>
-<pre>git clone https://github.com/tripleaceme/orchestack
+<pre>git clone https://github.com/tripleaceme/orchestack-public
 cd orchestack
 docker compose up -d</pre>
 <p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose pull</code>.</p>
 
 <h2 id="install-manual">Option 3 — Manual compose</h2>
-<p>If you want to inspect or edit the compose file before starting anything.</p>
+<p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts.</p>
 <pre>mkdir orchestack && cd orchestack
-curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack/main/docker-compose.yml -o docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack-public/main/docker-compose.yml -o docker-compose.yml
 # inspect / edit as needed
 docker compose up -d</pre>
 <p>This is what options 1 and 2 do under the hood. Use it when you need to change the compose file (e.g. change exposed ports, add a volume mount) before the first boot.</p>
@@ -164,7 +162,7 @@ docker compose up -d</pre>
  ✔ Container orchestack-auth         Started
  ✔ Container orchestack-postgres     Started
  ✔ Container orchestack-dashboard     Started</pre>
-<p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet, those come after you configure the platform.</p>
+<p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
 <p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
 <div class="callout warn">
   <p><strong>Port conflict?</strong> If something else is using port 80 on the host, edit the <code class="inline">PROXY_HTTP_PORT</code> variable in your <code class="inline">.env</code> file and restart.</p>

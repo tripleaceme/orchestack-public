@@ -17,5 +17,5 @@ Visit http://localhost and sign up.
 ## Updating
 
 Get a fresh tarball from the developer (or once the repo goes public, from
-https://github.com/tripleaceme/orchestack/releases/latest) and replace the
+https://github.com/tripleaceme/orchestack-public/releases/latest) and replace the
 files in this directory. Keep your `.env` — never overwrite it.

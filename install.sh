@@ -35,7 +35,7 @@ set -euo pipefail
 # ----------------------------------------------------------------------------
 ORCHESTACK_VERSION="${ORCHESTACK_VERSION:-latest}"
 ORCHESTACK_DIR="${ORCHESTACK_DIR:-./orchestack}"
-ORCHESTACK_REPO="tripleaceme/orchestack"
+ORCHESTACK_REPO="tripleaceme/orchestack-public"
 
 # ----------------------------------------------------------------------------
 # Pretty output (ANSI colours, gracefully degrade for non-TTY)

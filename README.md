@@ -55,7 +55,7 @@ a decent connection.
 
 ```sh
 curl -fsSL -o orchestack.tar.gz \
-  https://github.com/tripleaceme/orchestack/releases/latest/download/orchestack-runtime.tar.gz
+  https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz
 tar xzf orchestack.tar.gz
 cd orchestack-runtime-*
 cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
@@ -72,7 +72,7 @@ Full install guide: <https://orchestack.africa/docs/install.html>
 If you're modifying OrcheStack itself, clone this repo:
 
 ```sh
-git clone https://github.com/tripleaceme/orchestack
+git clone https://github.com/tripleaceme/orchestack-public
 cd orchestack/system/docker
 cp .env.example .env       # set ORCHESTACK_DB_PASSWORD
 docker compose up -d
@@ -137,7 +137,7 @@ PROXY_HTTP_PORT=1993
   - [`tripleaceme/orchestack-orchestrator`](https://hub.docker.com/r/tripleaceme/orchestack-orchestrator) (M2)
   - [`tripleaceme/orchestack-dashboard`](https://hub.docker.com/r/tripleaceme/orchestack-dashboard) (M3)
   - [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) (M4)
-- **Source code** → this repository ([`github.com/tripleaceme/orchestack`](https://github.com/tripleaceme/orchestack))
+- **Source code** → this repository ([`github.com/tripleaceme/orchestack-public`](https://github.com/tripleaceme/orchestack-public))
 - **Marketing + docs** → [`https://orchestack.africa`](https://orchestack.africa) (Cloudflare Pages, publishing from this folder)
 
 ## Architecture summary

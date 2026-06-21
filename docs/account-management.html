@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -112,7 +110,7 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Concepts</a> › Account management</div>
     <h1>Managing your account</h1>
-    <p class="lede">Change your password, email, or username from the OrcheStack dashboard. No SQL, no command-line tools. Admins have extra controls for managing other users.</p>
+    <p class="lede">Change your password, email, or username from the OrcheStack dashboard — no SQL, no command-line tools. Admins have extra controls for managing other users.</p>
 
 <h2 id="where-creds-live">Where your credentials live</h2>
 <p>Every OrcheStack user account is a row in the <code class="inline">platform.users</code> table inside the base-install PostgreSQL. The schema looks roughly like:</p>
@@ -129,9 +127,9 @@
 │ last_login_at    │ timestamptz                                │
 │ is_active        │ boolean default true                       │
 └──────────────────┴───────────────────────────────────────────┘</pre>
-<p>Passwords are <strong>never stored in plain text</strong>. OrcheStack hashes them with bcrypt before writing to the database; the original is not recoverable. If you forget your password, it must be reset, not retrieved.</p>
+<p>Passwords are <strong>never stored in plain text</strong>. OrcheStack hashes them with bcrypt before writing to the database; the original is not recoverable. If you forget your password, it must be reset — not retrieved.</p>
 <div class="callout">
-  <p><strong>You don't need to touch this table directly.</strong> Every field you'd want to change has a UI for it. Going into pgAdmin and running <code class="inline">UPDATE platform.users SET password_hash = ...</code> is unsupported and likely to break things.</p>
+  <p><strong>You don't need to touch this table directly.</strong> Every field you'd want to change has a UI for it. Going into pgAdmin and running <code class="inline">UPDATE platform.users SET password_hash = ...</code> is unsupported and likely to break things (wrong hash format, stale session cookies, no audit log entry).</p>
 </div>
 
 <h2 id="change-your-own">Change your own password, email, or username</h2>
@@ -148,7 +146,7 @@
 </ol>
 
 <h3 id="change-email">Change email</h3>
-<p>Enter your new email and confirm your password. The change is immediate, your next login can use either the old or new email for one hour (grace window), then only the new one.</p>
+<p>Enter your new email and confirm your password. The change is immediate — your next login can use either the old or new email for one hour (grace window), then only the new one.</p>
 
 <h3 id="change-username">Change username</h3>
 <p>Enter the new username. OrcheStack checks uniqueness against the <code class="inline">platform.users</code> table. On success, the change is immediate.</p>
@@ -168,71 +166,16 @@
 <h2 id="admin-actions">What Admins can do</h2>
 <p>From <strong>Users</strong> in the admin dashboard, an Admin can:</p>
 <ul>
-  <li><strong>Add a new user:</strong> provide name, email, username, role, and a temporary password. The user is required to change it on first login.</li>
-  <li><strong>Reset another user's password:</strong> overrides the bcrypt hash with a new value. Writes an audit entry.</li>
-  <li><strong>Change another user's role:</strong> use the dropdown on their row.</li>
-  <li><strong>Deactivate a user:</strong> sets <code class="inline">is_active=false</code>. They can no longer log in, but their historical activity and audit trail are preserved.</li>
-  <li><strong>Reactivate a user:</strong> the reverse.</li>
-  <li><strong>Delete a user:</strong> hard delete. <strong>Prefer deactivate</strong> unless you have a compliance reason to fully remove.</li>
+  <li><strong>Add a new user</strong> — provide name, email, username, role, and a temporary password. The user is required to change it on first login.</li>
+  <li><strong>Reset another user's password</strong> — overrides the bcrypt hash with a new value. Writes an audit entry.</li>
+  <li><strong>Change another user's role</strong> — use the dropdown on their row.</li>
+  <li><strong>Deactivate a user</strong> — sets <code class="inline">is_active=false</code>. They can no longer log in, but their historical activity and audit trail are preserved.</li>
+  <li><strong>Reactivate a user</strong> — the reverse.</li>
+  <li><strong>Delete a user</strong> — hard delete. <strong>Prefer deactivate</strong> unless you have a compliance reason to fully remove.</li>
 </ul>
 
 <h2 id="deleting-account">Deleting an account</h2>
-<p>Regular users cannot delete their own account, only an Admin can. This is intentional to protect against accidental deletion and to ensure the audit trail stays coherent. If you want your account removed, ask your Admin.</p>
-
-<h2 id="tool-user-vs-platform-user">OrcheStack users vs tool users</h2>
-<p>OrcheStack and the tools it manages keep <strong>independent user systems</strong>:</p>
-<ul>
-  <li><strong>OrcheStack users</strong> sign in at <code class="inline">/app/</code> and perform actions on the platform such as start and stop services, edit credentials, invite other operators, see the audit log. They're stored in <code class="inline">platform.users</code> in OrcheStack's internal database. Manage them on the <code class="inline">/app/users</code> page.</li>
-  <li><strong>Tool users</strong> sign into each managed tool separately, Metabase at <code class="inline">/app/metabase</code>, OpenMetadata at <code class="inline">/app/openmetadata</code> etc. Each tool maintains its own user list inside its own database. You invite these users from the tool's own admin interface, not from OrcheStack.</li>
-</ul>
-<p>A stakeholder who just wants to view dashboards typically only needs a <strong>tool user</strong>, not an OrcheStack user. See each service's documentation for how to invite tool users, e.g. <a href="services/metabase.html#adding-stakeholders">Adding stakeholders</a> on the Metabase page.</p>
-<p>Unified single sign-on across both systems is on the roadmap. Until it lands, two user lists is the correct mental model.</p>
-
-<h3 id="roles-do-not-propagate">Important: roles in OrcheStack do not propagate to the tools</h3>
-<p>When you create an OrcheStack user and assign them the <strong>Engineer</strong> or <strong>Analyst</strong> role on the <code class="inline">/app/users</code> page, that role governs ONLY what they can do inside the OrcheStack admin dashboard such as viewing the audit log, editing service credentials, starting and stopping services. <strong>It does NOT automatically give them access to the data in Metabase, the warehouse, MinIO, or any other deployed tool.</strong></p>
-<p>For each stakeholder you want to give data access to, you have to create them in the relevant tool separately. The path is documented per-tool below.</p>
-
-<h3 id="onboarding-analyst-metabase">Onboarding an analyst (Metabase dashboards)</h3>
-<ol>
-  <li>Sign into Metabase as the admin.</li>
-  <li>Click the gear icon (top right) → <strong>Admin settings</strong> → <strong>People</strong> → <strong>Invite someone</strong>.</li>
-  <li>Fill in the analyst's name and email. Optionally assign them to a Group. Metabase Groups are how you scope dashboard access (e.g. a <strong>Marketing</strong> group can only see marketing dashboards).</li>
-  <li>Metabase generates a temp password they'll change on first login.</li>
-  <li>Send them the URL <code class="inline">http://your-host/app/metabase</code> and the temp password. They sign into Metabase directly. They do <em>not</em> need an OrcheStack account.</li>
-</ol>
-
-<h3 id="onboarding-engineer-airbyte">Onboarding a data engineer (Airbyte ingestion)</h3>
-<ol>
-  <li>Sign into Airbyte as the admin.</li>
-  <li><strong>Settings</strong> → <strong>Users</strong> → <strong>Invite</strong>.</li>
-  <li>Assign them the relevant workspace role. <strong>Workspace Admin</strong> can create new connectors; <strong>Workspace Editor</strong> can configure existing ones.</li>
-  <li>They sign into Airbyte at <code class="inline">http://your-host/app/airbyte</code>.</li>
-</ol>
-
-<h3 id="onboarding-warehouse-sql">Onboarding anyone querying the warehouse directly (pgAdmin / SQL access)</h3>
-<p>If a person needs raw SQL access to the warehouse (not via Metabase), you have two paths.</p>
-<p><strong>Scoped per-user warehouse access:</strong></p>
-<ol>
-  <li>As the OrcheStack admin, open pgAdmin (or run <code class="inline">psql</code> against the warehouse).</li>
-  <li>Create a per-user PostgreSQL role: <code class="inline">CREATE ROLE alice WITH LOGIN PASSWORD '...';</code></li>
-  <li>Grant scoped privileges: <code class="inline">GRANT CONNECT ON DATABASE data_warehouse TO alice; GRANT USAGE ON SCHEMA marts TO alice; GRANT SELECT ON ALL TABLES IN SCHEMA marts TO alice;</code></li>
-  <li>Give them the credentials. They connect with a standalone SQL client (DBeaver, psql, etc.). No OrcheStack account needed.</li>
-</ol>
-
-<h3 id="onboarding-minio">Onboarding a data scientist or ML engineer (MinIO / data lake access)</h3>
-<ol>
-  <li>Sign into the MinIO console at <code class="inline">http://your-host/app/minio</code>.</li>
-  <li><strong>Identity</strong> → <strong>Users</strong> → <strong>Create user</strong>.</li>
-  <li>Assign them an IAM policy scoped to the buckets they should access (<code class="inline">raw</code>, <code class="inline">processed</code>, etc.).</li>
-  <li>They use the generated access key and secret key with their preferred S3 client (boto3, mc, etc.).</li>
-</ol>
-
-<h3 id="onboarding-openmetadata">Onboarding anyone for OpenMetadata (observability + lineage)</h3>
-<ol>
-  <li>Sign into OpenMetadata.</li>
-  <li><strong>Settings</strong> → <strong>Users</strong> → <strong>Invite</strong>.</li>
-  <li>Assign them the relevant team and role.</li>
-</ol>
+<p>Regular users cannot delete their own account — only an Admin can. This is intentional to protect against accidental deletion and to ensure the audit trail stays coherent. If you want your account removed, ask your Admin.</p>
 
     <div class="next-prev">
       <a href="sessions.html">
@@ -254,13 +197,6 @@
       <li><a href="#forgot-password">Forgot password</a></li>
       <li><a href="#admin-actions">What Admins can do</a></li>
       <li><a href="#deleting-account">Deleting an account</a></li>
-      <li><a href="#tool-user-vs-platform-user">OrcheStack users vs tool users</a></li>
-      <li><a href="#roles-do-not-propagate">Roles do not propagate to tools</a></li>
-      <li><a href="#onboarding-analyst-metabase">Onboarding an analyst (Metabase)</a></li>
-      <li><a href="#onboarding-engineer-airbyte">Onboarding a data engineer (Airbyte)</a></li>
-      <li><a href="#onboarding-warehouse-sql">Onboarding warehouse SQL access</a></li>
-      <li><a href="#onboarding-minio">Onboarding a data scientist (MinIO)</a></li>
-      <li><a href="#onboarding-openmetadata">Onboarding for OpenMetadata</a></li>
     </ul>
   </aside>
 

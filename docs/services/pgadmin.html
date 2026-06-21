@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../assets/css/main.css">
-  <link rel="icon" type="image/svg+xml" href="../../assets/logos/favicon.svg">
-
 </head>
 <body>
 
@@ -112,41 +110,20 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Services</a> › pgAdmin</div>
     <h1>pgAdmin</h1>
-    <p class="lede">The PostgreSQL web UI is to inspect tables, write ad-hoc SQL, review query plans. Starts on click, stops when idle.</p>
+    <p class="lede">The PostgreSQL web UI for engineers — inspect tables, write ad-hoc SQL, review query plans. Starts on click, stops when idle.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard. OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
+<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
 
 <h2 id="role">Role</h2>
-<p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; Analysts, Engineers etc, use pgAdmin when they need raw SQL or schema inspection.</p>
+<p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection. Alternatives: <strong>Adminer</strong> (~50 MB, single-file PHP) or <strong>pgweb</strong> (~30 MB, read-only Go binary).</p>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
-  <li><code class="inline">PGADMIN_DEFAULT_EMAIL</code>: admin login email</li>
-  <li><code class="inline">PGADMIN_DEFAULT_PASSWORD</code>: admin password</li>
-  <li><code class="inline">PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False</code>: we disable the master-password prompt so you sign in straight into the Object Explorer.</li>
+  <li><code class="inline">PGADMIN_DEFAULT_EMAIL</code> — admin login email</li>
+  <li><code class="inline">PGADMIN_DEFAULT_PASSWORD</code> — admin password</li>
 </ul>
-
-<h2 id="preloaded-server">The pre-loaded server connection</h2>
-<p>You don't have to add a server connection by hand. The orchestrator's pre-start hook materialises a <code class="inline">servers.json</code> and a <code class="inline">.pgpass</code> file into a shared volume that pgAdmin reads on startup. When you open pgAdmin you see:</p>
-<ul>
-  <li>One pre-loaded server connection named after your <code class="inline">WAREHOUSE_DB_NAME</code> (e.g. <strong>data_warehouse</strong>), grouped under <strong>OrcheStack</strong>.</li>
-  <li>Clicking it connects without a password prompt — the <code class="inline">.pgpass</code> file auto-fills the <code class="inline">warehouse_user</code> password read from <code class="inline">.env</code>.</li>
-  <li>All four databases (<code class="inline">data_warehouse</code>, <code class="inline">metabase</code>, <code class="inline">orchestack_db</code>, <code class="inline">postgres</code>) are visible in the Object Explorer because you sign in as the platform admin.</li>
-  <li>Clicking the <code class="inline">metabase</code> or <code class="inline">orchestack_db</code> databases may return <em>"permission denied"</em>. That is correct — PostgreSQL is enforcing role-level scoping so the warehouse user can't poke at the platform's internal databases.</li>
-</ul>
-<div class="callout">
-  <p>You won't see a master-password prompt anymore. We turned it off via <code class="inline">PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False</code> so you go from "Open pgAdmin" to writing SQL in two clicks.</p>
-</div>
-
-<h2 id="querying-the-warehouse">Querying the warehouse</h2>
-<p>Once you're in:</p>
-<ol>
-  <li>Right-click the pre-loaded server in the left tree and choose <strong>Query Tool</strong>.</li>
-  <li>A SQL editor tab opens, scoped to the warehouse database.</li>
-  <li>Run something like <code class="inline">SELECT * FROM marts.fct_sales LIMIT 50;</code> and hit <strong>F5</strong> (or the play icon) to execute.</li>
-</ol>
-<p>From there you can inspect schemas, eyeball mart tables, and sanity-check what dbt has just built before sending stakeholders to Metabase.</p>
+<p>On first launch, add a server connection pointing at <code class="inline">postgres:5432</code> with your warehouse credentials.</p>
 
 <h2 id="who-has-access">Who has access</h2>
 <p>By default, only users with roles that have <code class="inline">can_start=true</code> and <code class="inline">can_use=true</code> on pgAdmin. That's typically Admin and Engineer. Analysts can be granted access per-role from the dashboard's <strong>Users → Roles</strong> page.</p>
@@ -169,8 +146,6 @@
       <li><a class="active" href="#tier">Tier</a></li>
       <li><a href="#role">Role</a></li>
       <li><a href="#configuration">Configuration</a></li>
-      <li><a href="#preloaded-server">The pre-loaded server connection</a></li>
-      <li><a href="#querying-the-warehouse">Querying the warehouse</a></li>
       <li><a href="#who-has-access">Who has access</a></li>
     </ul>
   </aside>
