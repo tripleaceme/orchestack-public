@@ -13,7 +13,7 @@
 # tags (the release.yml docker-publish matrix sets both :latest and the
 # semver tag on every image at once).
 
-FROM apache/airflow:3.2-python3.12
+FROM apache/airflow:3.2.2-python3.12
 
 LABEL org.opencontainers.image.title="orchestack-airflow" \
       org.opencontainers.image.description="Apache Airflow 3 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack" \
