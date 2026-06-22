@@ -21,6 +21,8 @@ DOCKER_NS         := tripleaceme
 AUTH_IMAGE        := $(DOCKER_NS)/orchestack-auth
 ORCHESTRATOR_IMAGE := $(DOCKER_NS)/orchestack-orchestrator
 DASHBOARD_IMAGE   := $(DOCKER_NS)/orchestack-dashboard
+AIRFLOW_IMAGE     := $(DOCKER_NS)/orchestack-airflow
+GE_IMAGE          := $(DOCKER_NS)/orchestack-ge
 
 # The compose file the dev-* targets operate on. Override on the command line
 # (`make dev-up COMPOSE_FILE=path/to/other.yml`) for non-default setups.
@@ -75,8 +77,16 @@ image-orchestrator: ## Build the orchestack-orchestrator image locally (M2)
 	docker build -t $(ORCHESTRATOR_IMAGE):dev -f system/orchestrator/Dockerfile system/orchestrator
 
 .PHONY: image-dashboard
-image-dashboard: ## Build the orchestack-dashboard image locally (M3)
+image-dashboard: ## Build the orchestack-dashboard image locally
 	docker build -t $(DASHBOARD_IMAGE):dev -f system/dashboard/Dockerfile system/dashboard
+
+.PHONY: image-airflow
+image-airflow: ## Build the orchestack-airflow image locally (Airflow 3 + dbt + Cosmos)
+	docker build -t $(AIRFLOW_IMAGE):dev -f system/docker/airflow-image/Dockerfile system/docker/airflow-image
+
+.PHONY: image-ge
+image-ge: ## Build the orchestack-ge image locally (Great Expectations + ttyd)
+	docker build -t $(GE_IMAGE):0.18.21-1 -f system/docker/ge-image/Dockerfile system/docker/ge-image
 
 # ---------- Runtime bundles -------------------------------------------------
 

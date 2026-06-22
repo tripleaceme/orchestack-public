@@ -110,60 +110,90 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Services</a> › dbt Core</div>
     <h1>dbt Core</h1>
-    <p class="lede">The transformation layer of OrcheStack. Reads raw landed data from PostgreSQL, builds analytics-ready marts in the same database.</p>
+    <p class="lede">OrcheStack's transformation layer. The dbt service container holds an in-browser terminal + docs site; the Airflow image bakes dbt + Cosmos so DAGs can run dbt models with per-model task granularity.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> dbt Core is a CLI that runs as a scheduled task or on manual trigger — it doesn't stay running between invocations. Typical memory during a run: ~500 MB. Typical run duration: 30 seconds to 5 minutes depending on model count.</p>
+<p><strong>Cold.</strong> The dbt service container provides an in-browser terminal and a dbt-docs site; it stays running while the operator is using it and stops when idle. Cosmos-driven dbt runs from Airflow execute inside the Airflow container (which has its own pre-installed dbt) so they don't depend on the dbt service container being warm.</p>
 
 <h2 id="role">Role in the pipeline</h2>
-<p>Airbyte lands raw data into the <code class="inline">raw</code> schema. dbt reads from there, applies SQL transformations (staging → intermediate → marts), and writes results back to the <code class="inline">marts</code> schema in the same PostgreSQL instance. Metabase then queries <code class="inline">marts</code> for dashboards.</p>
+<p>dbt is the transformation step. Raw data lands in the warehouse (from Airbyte, dlt, custom Python loaders, or any other source); dbt reads from <code class="inline">raw</code> schemas, applies SQL transformations defined in your project's models, writes results back. Downstream consumers (Metabase, Tableau, or engineers querying directly) read the transformed tables.</p>
 
-<h2 id="configuration">Configuration</h2>
-<p>OrcheStack's credentials form collects:</p>
-<ul>
-  <li><strong>Profile target</strong> — typically <code class="inline">dev</code> or <code class="inline">prod</code></li>
-  <li><strong>Warehouse host</strong> — usually <code class="inline">postgres</code> (OrcheStack's internal service name)</li>
-  <li><strong>Warehouse port</strong> — <code class="inline">5432</code></li>
-  <li><strong>Warehouse database</strong> — the DB holding raw and marts schemas</li>
-  <li><strong>Schema for dbt outputs</strong> — typically <code class="inline">marts</code></li>
-  <li><strong>dbt user</strong> — a PostgreSQL user with read on raw, write on marts</li>
-  <li><strong>dbt password</strong> — stored in <code class="inline">.env</code>, referenced in <code class="inline">profiles.yml</code></li>
-</ul>
-<p>OrcheStack generates <code class="inline">profiles.yml</code> at <code class="inline">./config/dbt/profiles.yml</code> during save. This file references environment variables so credentials never get committed.</p>
+<h2 id="populating-your-project">Populating your dbt project</h2>
+<p>Your dbt project lives in the <code class="inline">orchestack-dbt-repo</code> docker volume, mounted into the dbt service container at <code class="inline">/usr/app/dbt</code> (read-write) and into the Airflow container at <code class="inline">/opt/airflow/dbt-project</code> (read-only). Two ways to populate it:</p>
+<ol>
+  <li><strong>Set <code class="inline">DBT_REPO_URL</code> in your <code class="inline">.env</code></strong> (or via the dashboard's Edit Config page). The dbt service entrypoint clones the repo on next start. Set <code class="inline">DBT_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch.</li>
+  <li><strong>Use the in-browser dbt terminal</strong> — open the dbt service tile in the dashboard, click "Open Terminal", and run <code class="inline">git clone &lt;your-repo-url&gt; .</code> inside <code class="inline">/usr/app/dbt</code>. Iteration via direct edits works for solo development; teams should prefer Git-based flow for review and history.</li>
+</ol>
+<p>If neither path is configured, the dbt service container writes a minimal demo project on first start so the dbt-docs server has something to render. Replace it with your own.</p>
 
-<h2 id="where-models-live">Where your models live</h2>
-<p>Your dbt project directory is mounted into the dbt container at <code class="inline">/dbt</code>. The default project skeleton ships with a <code class="inline">staging/</code> and <code class="inline">marts/</code> folder layout, a sample <code class="inline">dbt_project.yml</code>, and a smoke test.</p>
-<pre>./dbt/
-├── dbt_project.yml
+<h2 id="project-layout">Project layout</h2>
+<p>A typical dbt project looks like:</p>
+<pre>your-dbt-repo/
+├── dbt_project.yml         # name + profile + paths
+├── packages.yml            # dbt_utils, dbt_expectations, etc.
 ├── models/
-│   ├── staging/
-│   │   └── stg_orders.sql
-│   └── marts/
-│       └── fct_sales.sql
-├── tests/
-└── profiles.yml   # generated — do not edit by hand</pre>
+│   ├── staging/            # raw → cleaned (one staging model per source table)
+│   │   ├── _sources.yml    # source declarations
+│   │   ├── stg_orders.sql
+│   │   └── stg_customers.sql
+│   └── marts/              # cleaned → analytics tables
+│       ├── _models.yml     # tests + documentation
+│       ├── fct_orders.sql
+│       └── dim_customers.sql
+├── tests/                  # custom singular tests
+└── macros/                 # custom Jinja macros</pre>
+<p>OrcheStack's only requirement: the <code class="inline">profile:</code> name in <code class="inline">dbt_project.yml</code> must match what's in your generated <code class="inline">profiles.yml</code>. The dbt service entrypoint generates <code class="inline">profiles.yml</code> using your project's profile name — set the project's <code class="inline">profile:</code> to something like <code class="inline">orchestack_warehouse</code> for consistency with the Airflow Connection that Cosmos uses, or any other name as long as it matches what you set in the dashboard.</p>
 
-<h2 id="running-dbt">Running dbt</h2>
+<h2 id="running-from-airflow">Running dbt from Airflow with Cosmos</h2>
+<p>This is the production pattern. Cosmos parses your dbt project's manifest at DAG-parse time and generates <strong>one Airflow task per model and per test</strong>, preserving dbt's dependency DAG inside Airflow's. When a model fails, the specific failed-model task lights up red — not a single opaque "dbt build" task.</p>
+<pre>from pathlib import Path
+from airflow import DAG
+from cosmos import DbtDag, ProjectConfig, ProfileConfig, ExecutionConfig
+from cosmos.profiles import PostgresUserPasswordProfileMapping
+from datetime import datetime
 
-<h3 id="scheduled">Scheduled</h3>
-<p>The default Airflow DAG (<code class="inline">OrcheStack_nightly</code>) runs dbt every day at 02:00. OrcheStack creates it automatically when dbt is selected during setup.</p>
+profile_config = ProfileConfig(
+    profile_name="orchestack_warehouse",
+    target_name="prod",
+    profile_mapping=PostgresUserPasswordProfileMapping(
+        conn_id="orchestack_warehouse",      # auto-created by OrcheStack
+        profile_args={"schema": "public"},
+    ),
+)
 
-<h3 id="manual">Manual</h3>
-<p>From the OrcheStack admin dashboard, click <strong>Run dbt now</strong>. The orchestrator spins up a dbt container, runs <code class="inline">dbt run --select tag:daily</code>, captures logs to PostgreSQL, and stops the container.</p>
+with DAG(dag_id="daily_models", schedule="@daily", start_date=datetime(2026, 1, 1)) as dag:
+    dbt_models = DbtDag(
+        dag_id_prefix="dbt",
+        project_config=ProjectConfig(Path("/opt/airflow/dbt-project")),
+        profile_config=profile_config,
+        execution_config=ExecutionConfig(dbt_executable_path="/home/airflow/.local/bin/dbt"),
+    )
+</pre>
+<p>Behaviour:</p>
+<ul>
+  <li>First DAG run after a manifest change: Cosmos re-parses; new models become new tasks automatically</li>
+  <li>Failed model: appears as a failed task with the model name; click <strong>Clear Task and Downstream</strong> to re-run only that model + its downstream models + tests</li>
+  <li>Tests: each <code class="inline">_models.yml</code> test becomes its own task downstream of the model it tests</li>
+  <li>Selection: pass <code class="inline">render_config=RenderConfig(select=["+fct_orders"])</code> to <code class="inline">DbtDag</code> to run only a subset</li>
+</ul>
+<p>For complete end-to-end DAGs that combine ingest + Cosmos + BI refresh, see the three patterns on the <a href="../first-pipeline.html">Compose your first pipeline</a> page.</p>
 
-<h2 id="observability">Observability</h2>
-<p>If you enabled <strong>Elementary</strong> during setup, its container runs immediately after each dbt invocation to record test results and detect anomalies. Elementary dashboards are accessible from <code class="inline">/app/elementary</code> via the reverse proxy.</p>
-<div class="callout">
-  <p><strong>Tip.</strong> dbt plays best when combined with Great Expectations for assertion-based quality checks on the <code class="inline">marts</code> schema. Configure both during setup and OrcheStack wires them into the Airflow DAG automatically.</p>
-</div>
+<h2 id="running-from-terminal">Running dbt from the terminal (interactively)</h2>
+<p>For diagnosis, ad-hoc model runs, and exploratory <code class="inline">dbt show</code> / <code class="inline">dbt debug</code>, use the in-browser dbt terminal. Open the dbt tile in the dashboard, click "Open Terminal", and you're inside <code class="inline">/usr/app/dbt</code> with dbt on the PATH.</p>
+<p>Common commands:</p>
+<pre>dbt debug                              # confirm the warehouse connection works
+dbt deps                               # install package dependencies (packages.yml)
+dbt run --select stg_orders            # run a single model
+dbt test --select fct_orders           # test a single model
+dbt show --inline 'select * from raw.orders limit 5'   # quick data peek
+dbt docs generate &amp;&amp; dbt docs serve    # rebuild + serve the dbt-docs site</pre>
+<p>For production fixes, prefer editing models via your Git repo (changes go through PR review and CI). The terminal is for diagnosis — figuring out why something failed, not for nightly production runs.</p>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
-<p>dbt run failed? Three common causes:</p>
-<ul>
-  <li><strong>Missing raw data.</strong> Airbyte didn't land anything. Check Airflow logs for the preceding <code class="inline">airbyte_sync</code> task.</li>
-  <li><strong>Permission denied on marts schema.</strong> Your dbt user lacks <code class="inline">CREATE</code> privilege on the marts schema. Fix via pgAdmin or the dashboard credential editor.</li>
-  <li><strong>SQL error in a model.</strong> The dashboard's <strong>Logs</strong> tab shows the full dbt output with the failing model highlighted.</li>
-</ul>
+<p><strong>"Could not find profile named 'X'"</strong>: the <code class="inline">profile:</code> in your <code class="inline">dbt_project.yml</code> does not match the top-level key in <code class="inline">profiles.yml</code>. The dbt service auto-generates <code class="inline">profiles.yml</code> using whatever your project's <code class="inline">profile:</code> field says, so the mismatch usually means a stale generated file. Restart the dbt service container to regenerate.</p>
+<p><strong>Cosmos can't find the dbt project</strong>: confirm the volume <code class="inline">orchestack-dbt-repo</code> exists (it's created by the dbt service's compose project on first start) and that the Airflow container is mounting it read-only at <code class="inline">/opt/airflow/dbt-project</code>. <code class="inline">docker volume inspect orchestack-dbt-repo</code> from the host shows whether the volume has content.</p>
+<p><strong>Permission denied on warehouse schema</strong>: the <code class="inline">dbt_admin</code> role (or the role you configured) lacks <code class="inline">CREATE</code> privilege on the target schema. Connect via pgAdmin as the warehouse admin and grant: <code class="inline">GRANT CREATE ON SCHEMA marts TO dbt_admin;</code></p>
+<p><strong>SQL error in a model</strong>: open the failed-model task in Airflow → Logs. Cosmos passes the full dbt output through. The same error reproduces from the dbt terminal with <code class="inline">dbt run --select &lt;the_failing_model&gt;</code> — that's the fastest iteration loop.</p>
 
     <div class="next-prev">
       <a href="airflow.html">
@@ -182,10 +212,10 @@
     <ul>
       <li><a class="active" href="#tier">Tier</a></li>
       <li><a href="#role">Role in the pipeline</a></li>
-      <li><a href="#configuration">Configuration</a></li>
-      <li><a href="#where-models-live">Where your models live</a></li>
-      <li><a href="#running-dbt">Running dbt</a></li>
-      <li><a href="#observability">Observability</a></li>
+      <li><a href="#populating-your-project">Populating your dbt project</a></li>
+      <li><a href="#project-layout">Project layout</a></li>
+      <li><a href="#running-from-airflow">Running dbt from Airflow with Cosmos</a></li>
+      <li><a href="#running-from-terminal">Running dbt from the terminal (interactively)</a></li>
       <li><a href="#troubleshooting">Troubleshooting</a></li>
     </ul>
   </aside>

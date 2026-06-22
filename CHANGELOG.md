@@ -25,6 +25,30 @@ platform.
 - **Platform core** — four-subsystem architecture (orchestrator,
   dashboard, auth, integrated stack) that integrates eight third-party
   services behind a single operator-facing interface.
+- **Apache Airflow 3 with dbt + Cosmos baked in** — published as
+  `tripleaceme/orchestack-airflow`. Airflow 3.2 base with `dbt-core`,
+  `dbt-postgres`, and `astronomer-cosmos` preinstalled at build time
+  so the operator never runs `pip install` at task time. Cosmos
+  generates one Airflow task per dbt model and per dbt test, giving
+  per-model failure attribution in the Airflow UI instead of
+  whole-DAG opaque failures.
+- **Shared dbt-project volume** — `orchestack-dbt-repo` mounted
+  read-write into the dbt service container and read-only into the
+  Airflow container. Operators populate it once (via `DBT_REPO_URL`
+  or via the dbt service's in-browser terminal) and both services
+  see it.
+- **Airflow Connection auto-creation** — the orchestrator's
+  post-start hook creates the `orchestack_warehouse` Airflow
+  Connection idempotently on first Airflow start, using the
+  warehouse credentials from `.env`. Cosmos's
+  `PostgresUserPasswordProfileMapping` reads it directly; operators
+  don't need to learn about Airflow Connections to run dbt.
+- **Composition-pattern documentation** — the operator-facing
+  `first-pipeline.html` page documents three composition patterns
+  (Airbyte → dbt → Metabase, Python ingest → dbt → Tableau, dlt →
+  dbt → engineer-queries-warehouse) with complete copy-paste DAG
+  snippets. Each pattern is independent; operators compose to fit
+  their actual stack.
 - **Service catalogue** — central registry of manageable services with
   tier classification (hot or cold), layer, compose snippet path,
   pre-start and post-start hook bindings, and connection-URL templates.

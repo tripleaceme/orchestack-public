@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: fct_demo_orders
+    description: |
+      Order-grain fact with customer-name lookup. The marts-layer
+      output the demo Metabase dashboard would read from in a real
+      deployment.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_demo_customers')
+              field: customer_id
+      - name: customer_name
+      - name: order_total
+        tests: [not_null]
+
+  - name: dim_demo_customers
+    description: Customer dimension.
+    columns:
+      - name: customer_id
+        tests: [not_null, unique]
+      - name: customer_name

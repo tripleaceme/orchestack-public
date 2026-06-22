@@ -1,0 +1,37 @@
+# orchestack-demo dbt project — MAINTAINER VERIFICATION ONLY.
+#
+# This project exists in this repo so maintainers can exercise the
+# Airflow + Cosmos + dbt integration end-to-end. It is NOT shipped to
+# operators; the operator runtime bundle excludes system/dbt/.
+#
+# To use locally during v0.1.0 verification:
+#   docker volume create orchestack-dbt-repo
+#   docker run --rm -v "$PWD/system/dbt:/src" -v orchestack-dbt-repo:/dst alpine \
+#       sh -c "cp -r /src/. /dst/"
+#   make dev-up
+#
+# After dev-up, dbt service + Airflow both see this project at their
+# respective mount paths (/usr/app/dbt and /opt/airflow/dbt-project).
+
+name: 'orchestack_demo'
+version: '0.1.0'
+config-version: 2
+
+# Profile name matches the auto-created Airflow Connection ID
+# (orchestack_warehouse) so Cosmos's PostgresUserPasswordProfileMapping
+# wires up correctly without extra configuration.
+profile: 'orchestack_warehouse'
+
+model-paths:   ["models"]
+test-paths:    ["tests"]
+target-path:   "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  orchestack_demo:
+    +materialized: view   # cheaper than tables for the small demo dataset
+    staging:
+      +schema: staging    # outputs land in raw_staging schema (default-prefixed by dbt)
+    marts:
+      +schema: marts
+      +materialized: table   # marts are tables — analytics consumers expect persisted state

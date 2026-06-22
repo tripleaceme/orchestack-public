@@ -67,7 +67,11 @@ path prefix at `/app`; the **auth** container (nginx + static) serves
 the signup and setup-wizard surface; the **integrated stack** is the
 nine third-party services above, each declared as a compose snippet
 plus optional pre-start and post-start hooks. The orchestrator's
-reconciler stops idle cold-tier services on a periodic tick.
+reconciler stops idle cold-tier services on a periodic tick. Airflow
+ships with `dbt-core` + `astronomer-cosmos` baked in so the operator
+can run dbt models with per-model task granularity from any DAG —
+see [Compose your first pipeline](https://orchestack.africa/first-pipeline.html)
+for the canonical patterns.
 
 Deeper detail is in [ARCHITECTURE.md](ARCHITECTURE.md) — start there if
 you want to contribute code.

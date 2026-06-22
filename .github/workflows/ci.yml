@@ -60,6 +60,10 @@ jobs:
             context: system/docker/ge-image
             dockerfile: system/docker/ge-image/Dockerfile
             healthcheck_port: ""   # GE image has no HTTP healthcheck
+          - image: orchestack-airflow
+            context: system/docker/airflow-image
+            dockerfile: system/docker/airflow-image/Dockerfile
+            healthcheck_port: ""   # Airflow image has no in-container HTTP probe (the runtime compose adds one)
     steps:
       - name: Check out PR head
         uses: actions/checkout@v4

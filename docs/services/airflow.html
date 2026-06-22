@@ -110,31 +110,118 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Services</a> › Apache Airflow</div>
     <h1>Apache Airflow</h1>
-    <p class="lede">The orchestration backbone. Schedules pipeline runs, coordinates dependencies between cold services, and provides a web UI for monitoring execution.</p>
+    <p class="lede">OrcheStack ships Airflow 3 with dbt + astronomer-cosmos preinstalled. Author DAGs in your own Git repository; Airflow discovers and runs them on the cadence you set.</p>
 
 <h2 id="tier">Tier</h2>
-<p>Split: <strong>scheduler and webserver are hot</strong>; <strong>workers are cold</strong>. The scheduler is the clock that triggers everything, so it must always be running. Workers only start when a task needs to run.</p>
+<p>Hot tier. The Airflow webserver and scheduler stay running so the cron triggers fire reliably and the operator can reach the UI at any moment. Single-container LocalExecutor — task workers are in the same process, no separate worker pool.</p>
 
-<h2 id="role">Role in the pipeline</h2>
-<p>Airflow is the thing that fires on schedule (e.g., 02:00 nightly) and tells Airbyte, dbt, and the quality tools when to run. It holds the dependency graph of your pipeline and blocks downstream tasks if an upstream one fails.</p>
-
-<h2 id="configuration">Configuration</h2>
-<p>OrcheStack configures Airflow to use the base-install PostgreSQL for its metadata database. You won't normally edit these fields:</p>
+<h2 id="what-ships-in-the-image">What ships in the image</h2>
+<p>Airflow 3.2 with three things baked in at build time so the operator never runs <code class="inline">pip install</code> at task time:</p>
 <ul>
-  <li><code class="inline">AIRFLOW__DATABASE__SQL_ALCHEMY_CONN</code> — auto-generated</li>
-  <li><code class="inline">AIRFLOW__CORE__EXECUTOR</code> — <code class="inline">LocalExecutor</code> for single-host deployments</li>
-  <li><code class="inline">AIRFLOW__CORE__FERNET_KEY</code> — generated at install; encrypts connection credentials</li>
+  <li><strong><code class="inline">dbt-core</code></strong> + <strong><code class="inline">dbt-postgres</code></strong> — for running dbt models against the warehouse</li>
+  <li><strong><code class="inline">astronomer-cosmos</code></strong> — turns the operator's dbt project into one Airflow task per model + per test</li>
+  <li><strong>Airflow's HTTP provider</strong> — for triggering external tools (Airbyte, Fivetran, Metabase, Tableau, etc.) via their REST APIs</li>
 </ul>
+<p>Anything else the operator's DAGs need — <code class="inline">dlt</code>, <code class="inline">requests</code>, <code class="inline">pandas</code>, custom Python loaders — gets installed per-task via <code class="inline">PythonVirtualenvOperator</code> (see below).</p>
 
-<h2 id="dags-live-where">Where DAGs live</h2>
-<p>DAG Python files are mounted into the Airflow container from <code class="inline">./dags/</code> on the host. Edit files there, commit to source control, and Airflow auto-discovers them within 30 seconds.</p>
+<h2 id="connections">Connections</h2>
+<p>Cosmos needs an Airflow Connection named <code class="inline">orchestack_warehouse</code> with the warehouse credentials. OrcheStack creates this connection automatically on first Airflow start through the orchestrator's post-start hook — no manual setup needed.</p>
+<p>For other connections (Airbyte's API, Metabase's API, Tableau Server, your custom HTTP endpoints), add them in the Airflow UI: <strong>Admin → Connections → +</strong>. Common ones:</p>
+<table class="docs-table">
+  <thead><tr><th>Connection ID</th><th>Type</th><th>Host</th></tr></thead>
+  <tbody>
+    <tr><td><code class="inline">airbyte</code></td><td>HTTP</td><td><code class="inline">http://orchestack-airbyte:8000</code></td></tr>
+    <tr><td><code class="inline">metabase</code></td><td>HTTP</td><td><code class="inline">http://orchestack-metabase:3000</code></td></tr>
+    <tr><td><code class="inline">openmetadata</code></td><td>HTTP</td><td><code class="inline">http://orchestack-openmetadata:8585</code></td></tr>
+  </tbody>
+</table>
 
-<h2 id="default-dag">The default nightly DAG</h2>
-<p>OrcheStack creates <code class="inline">OrcheStack_nightly</code> on first configuration. It runs at 02:00 local time and executes:</p>
-<pre>airbyte_sync  →  dbt_build  →  great_expectations_check
-                                         ↓
-                                  elementary_report</pre>
-<p>Open Airflow from the dashboard to inspect DAG runs, retry failures, and pause schedules.</p>
+<h2 id="dags-live-where">Where your DAGs live</h2>
+<p>DAG Python files live in <code class="inline">/opt/airflow/dags/</code> inside the Airflow container, backed by the <code class="inline">orchestack-airflow-dags</code> docker volume. Two ways to get DAGs in there:</p>
+<ol>
+  <li><strong>Set <code class="inline">AIRFLOW_DAGS_REPO_URL</code> in your <code class="inline">.env</code></strong> — the Airflow entrypoint clones the repo on each start. Set <code class="inline">AIRFLOW_DAGS_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch. This is the recommended pattern for any team that uses Git.</li>
+  <li><strong>Bind-mount a host directory</strong> — for single-developer iteration. Replace the <code class="inline">airflow-dags</code> volume with a bind mount in the dbt service's compose snippet and Airflow picks up your local edits within 30 seconds.</li>
+</ol>
+<p>Your dbt project files live in a separate location: <code class="inline">/opt/airflow/dbt-project/</code> inside the Airflow container (read-only). This is a mount of the same volume the dbt service uses, so populating your dbt project on the dbt side makes it visible to Airflow automatically. See the <a href="dbt.html">dbt Core</a> page for how to populate it.</p>
+
+<h2 id="dbt-from-airflow">Running dbt from Airflow with Cosmos</h2>
+<p>Cosmos's <code class="inline">DbtDag</code> reads the operator's dbt project at DAG-parse time and generates one Airflow task per dbt model and per dbt test. The dbt DAG becomes visible inside the Airflow UI, and per-model failures surface with the correct task ID — no more "<code class="inline">dbt_build [FAILED]</code>, scroll the logs to find which model."</p>
+<pre>from pathlib import Path
+from cosmos import DbtDag, ProjectConfig, ProfileConfig, ExecutionConfig
+from cosmos.profiles import PostgresUserPasswordProfileMapping
+
+profile_config = ProfileConfig(
+    profile_name="orchestack_warehouse",
+    target_name="prod",
+    profile_mapping=PostgresUserPasswordProfileMapping(
+        conn_id="orchestack_warehouse",      # auto-created by OrcheStack
+        profile_args={"schema": "public"},   # or "marts", "analytics", etc.
+    ),
+)
+
+dbt_dag = DbtDag(
+    dag_id_prefix="dbt",
+    project_config=ProjectConfig(Path("/opt/airflow/dbt-project")),
+    profile_config=profile_config,
+    execution_config=ExecutionConfig(
+        dbt_executable_path="/home/airflow/.local/bin/dbt",
+    ),
+)
+</pre>
+<p>For end-to-end DAGs that combine ingest + Cosmos dbt + BI refresh, see the three patterns on the <a href="../first-pipeline.html">Compose your first pipeline</a> page.</p>
+
+<h2 id="http-pattern">Triggering external tools (HttpOperator)</h2>
+<p>For any tool with a REST API — Airbyte's connection-sync endpoint, Metabase's dashboard-refresh endpoint, Tableau Server's data-source-refresh endpoint, Fivetran's connector-trigger endpoint — use <code class="inline">HttpOperator</code> (and its companion <code class="inline">HttpSensor</code> for polling completion).</p>
+<pre>from airflow.providers.http.operators.http import HttpOperator
+from airflow.providers.http.sensors.http import HttpSensor
+
+trigger = HttpOperator(
+    task_id="trigger_airbyte",
+    http_conn_id="airbyte",                  # set in Airflow UI
+    endpoint="api/v1/connections/sync",
+    method="POST",
+    data='{"connectionId": "{{ var.value.airbyte_connection_id }}"}',
+)
+
+wait = HttpSensor(
+    task_id="wait_for_airbyte",
+    http_conn_id="airbyte",
+    endpoint="api/v1/jobs/{{ ti.xcom_pull(task_ids='trigger_airbyte')['job']['id'] }}",
+    response_check=lambda r: r.json()["job"]["status"] == "succeeded",
+    poke_interval=30,
+    timeout=60 * 60,
+)
+</pre>
+<p>The same pattern works for any tool that exposes an HTTP trigger + a status endpoint to poll. Only the connection ID, endpoint URL, and response-check logic change.</p>
+
+<h2 id="python-pattern">Custom Python ingestion (PythonVirtualenvOperator)</h2>
+<p>For ingestion logic written in Python — using libraries OrcheStack doesn't bake in (dlt, requests, pandas, your custom loader) — use <code class="inline">PythonVirtualenvOperator</code>. Airflow creates an ephemeral virtualenv with the listed dependencies on first task run (~30-60s), caches it, then reuses the cached venv on subsequent runs (sub-second).</p>
+<pre>from airflow.operators.python import PythonVirtualenvOperator
+
+def load_data():
+    # Runs in an isolated venv with `dlt[postgres]` installed.
+    import dlt
+    pipeline = dlt.pipeline(pipeline_name="github", destination="postgres", dataset_name="raw")
+    pipeline.run([{"id": 1, "name": "example"}], table_name="github_repos")
+
+load_task = PythonVirtualenvOperator(
+    task_id="load_with_dlt",
+    python_callable=load_data,
+    requirements=["dlt[postgres]&gt;=1.0"],
+    system_site_packages=False,
+)
+</pre>
+<p>This is how the platform stays unopinionated about ingestion: any Python library that exists on PyPI can ingest into the warehouse without rebuilding the Airflow image.</p>
+
+<h2 id="composing">Composing patterns</h2>
+<p>The patterns above are independent. Mix and match for your pipeline:</p>
+<ul>
+  <li><strong>Airbyte ingest + dbt + Metabase</strong>: HttpOperator + DbtDag + HttpOperator</li>
+  <li><strong>dlt ingest + dbt + Tableau</strong>: PythonVirtualenvOperator + DbtDag + HttpOperator</li>
+  <li><strong>Multiple sources in one DAG</strong>: two HttpOperators in parallel (or one HttpOperator + one PythonVirtualenvOperator), then DbtDag downstream</li>
+  <li><strong>dbt-only schedule</strong>: a DAG with just <code class="inline">DbtDag</code> if your ingest fires from somewhere else</li>
+</ul>
+<p>Three worked-out compositions are on the <a href="../first-pipeline.html">Compose your first pipeline</a> page — copy whichever matches your stack, edit, run.</p>
 
     <div class="next-prev">
       <a href="airbyte.html">
@@ -152,10 +239,13 @@
     <div class="toc-title">On this page</div>
     <ul>
       <li><a class="active" href="#tier">Tier</a></li>
-      <li><a href="#role">Role in the pipeline</a></li>
-      <li><a href="#configuration">Configuration</a></li>
-      <li><a href="#dags-live-where">Where DAGs live</a></li>
-      <li><a href="#default-dag">The default nightly DAG</a></li>
+      <li><a href="#what-ships-in-the-image">What ships in the image</a></li>
+      <li><a href="#connections">Connections</a></li>
+      <li><a href="#dags-live-where">Where your DAGs live</a></li>
+      <li><a href="#dbt-from-airflow">Running dbt from Airflow with Cosmos</a></li>
+      <li><a href="#http-pattern">Triggering external tools (HttpOperator)</a></li>
+      <li><a href="#python-pattern">Custom Python ingestion (PythonVirtualenvOperator)</a></li>
+      <li><a href="#composing">Composing patterns</a></li>
     </ul>
   </aside>
 

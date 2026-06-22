@@ -1,87 +1,63 @@
-# system/dbt/ — dbt starter template
+# system/dbt/
 
-**This folder is NOT where the customer's dbt code lives.** The customer's
-actual dbt project lives in their own Git repository. They point OrcheStack
-at it via the setup wizard's `DBT_REPO_URL` field, and OrcheStack clones
-that repo into the dbt container at runtime.
+This folder holds a small **demo dbt project** that exists for
+**maintainer verification only** — it lets us exercise Cosmos's
+per-model task generation against a real project structure without
+depending on operator-supplied content.
 
-This folder will eventually contain a **starter dbt project skeleton** that
-OrcheStack can scaffold for new operators who don't have an existing dbt
-project. Currently empty.
+**OrcheStack does not ship this demo project to operators.** The
+operator runtime bundle (`orchestack-runtime.tar.gz`) does not include
+this directory. Operators populate `/usr/app/dbt` inside the dbt
+service container from their own Git repository — see
+[`DBT_REPO_URL`](https://orchestack.africa/services/dbt.html#populating-your-project)
+for the canonical pattern.
 
----
+If you're an operator looking for project-layout guidance, the
+[**dbt Core**](https://orchestack.africa/services/dbt.html#project-layout)
+docs page shows the expected directory shape.
 
-## What lands here
+## What's in this folder (maintainer artefacts)
 
-A minimal but production-shaped dbt project an operator can fork:
+A minimal but realistic dbt project:
 
 ```
 system/dbt/
-├── dbt_project.yml         Project config + paths + targets
-├── profiles.yml.template    Templated profile pointing at the warehouse DB
-├── packages.yml             dbt_utils + 1-2 helpful packages
+├── dbt_project.yml         # name: orchestack_demo, profile: orchestack_warehouse
+├── packages.yml            # dbt_utils
 ├── models/
 │   ├── staging/
-│   │   ├── _sources.yml     Reads from raw schema (Airbyte landing tables)
-│   │   ├── stg_orders.sql   Example staging model
-│   │   └── ...
-│   ├── marts/
-│   │   ├── _models.yml      Documentation + tests
-│   │   ├── fct_orders.sql   Example fact table
-│   │   └── dim_customers.sql
-│   └── ...
-├── tests/                   Custom singular tests
-├── macros/                  Custom Jinja macros
-└── README.md                "How to fork this for your project" guide
+│   │   ├── _sources.yml    # declares raw.demo_orders, raw.demo_customers
+│   │   ├── stg_demo_orders.sql
+│   │   └── stg_demo_customers.sql
+│   └── marts/
+│       ├── _models.yml     # tests + docs
+│       ├── fct_demo_orders.sql
+│       └── dim_demo_customers.sql
+└── tests/
+    └── assert_demo_orders_total_positive.sql
 ```
 
-The orchestrator's wizard handoff writes a copy of this skeleton to the
-customer's `./config/dbt-starter/` directory if they don't supply a
-DBT_REPO_URL. They can then `git init` it and push to their own repo,
-returning to the dashboard to paste the URL in.
+This is enough surface to exercise:
 
----
+- Cosmos's per-model task generation (5 models + tests)
+- Per-model failure attribution (introduce a bad SQL → specific task fails)
+- Re-run only failed model (Clear Task and Downstream)
+- dbt tests as separate Airflow tasks
 
-## What a typical CUSTOMER dbt project looks like
+## Why this is not in the runtime bundle
 
-This is what the operator's *own* repo should contain — not what
-OrcheStack ships:
+Two reasons:
 
-```
-acme-dbt-project/                    Their Git repo
-├── dbt_project.yml                  name: 'acme_analytics'  ← matches DBT_PROJECT_NAME in wizard
-│                                    profile: 'acme_analytics'
-├── packages.yml                     dbt_utils, dbt_expectations, etc.
-├── models/
-│   ├── staging/
-│   │   ├── stg_orders.sql
-│   │   ├── stg_customers.sql
-│   │   └── _sources.yml             { source: 'raw', schema: 'raw' }
-│   ├── marts/
-│   │   ├── fct_orders.sql
-│   │   └── dim_customers.sql
-│   └── README.md
-├── tests/
-├── macros/
-├── .gitignore                       ignores target/, dbt_packages/, profiles.yml
-└── README.md
-```
+1. **Prescription**: shipping a demo dataset implies operators should
+   start from it. They shouldn't — they have their own data. The dbt
+   service container writes a minimal demo project on first start *if*
+   the operator has not pointed `DBT_REPO_URL` at their own repo, but
+   that minimal project is generated at runtime (in the dbt service's
+   compose snippet), not bundled.
+2. **Bundle size**: keeping the bundle to ~35 KB makes the install
+   experience clean. Demo project SQL would bloat that with content
+   no operator actually wants in production.
 
-**The customer never edits OrcheStack's `system/dbt/`.** They fork it (or
-start from scratch), push to GitHub, and OrcheStack pulls from there.
-
----
-
-## How OrcheStack uses this folder at runtime
-
-When Airflow's `dbt run` task fires, the dbt container does:
-
-1. Read `DBT_REPO_URL` from the operator's `.env`
-2. If empty → use the starter project from this folder (mounted into the
-   container at `/dbt/project/`)
-3. If set → `git clone <url> --branch <DBT_REPO_BRANCH>` into `/dbt/project/`
-4. Generate `profiles.yml` from the operator's WAREHOUSE_DB_* credentials
-5. `dbt deps && dbt run --target $DBT_TARGET`
-
-The starter project exists so operators can use OrcheStack on day one
-without having to write a dbt project from scratch.
+The maintainer verification flow uses this folder by copying it into
+the `orchestack-dbt-repo` volume before running the verification DAGs
+in `system/dags/`.

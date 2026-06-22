@@ -1361,10 +1361,94 @@ async def _bootstrap_openmetadata() -> None:
             log.warning("openmetadata bootstrap: ES replica reset failed: %s", e)
 
 
+async def _bootstrap_airflow() -> None:
+    """Create the `orchestack_warehouse` Airflow Connection idempotently.
+
+    Cosmos's PostgresUserPasswordProfileMapping reads this connection
+    to build the dbt profile. Operators shouldn't have to learn about
+    Airflow Connections to run dbt — same principle as the OpenMetadata
+    password reset (absorb upstream-defaults overrides at the platform
+    layer).
+
+    Connection ID:        orchestack_warehouse
+    Connection type:      postgres
+    Host:                 orchestack-postgres
+    Port:                 5432
+    Schema (database):    ${WAREHOUSE_DB_NAME} (defaults to data_warehouse)
+    Login (user):         warehouse_admin
+    Password:             ${WAREHOUSE_DB_PASSWORD} from .env
+
+    Idempotent: `airflow connections add` errors with code 1 if the
+    connection already exists; we treat that as success.
+    """
+    env = _read_env_file_or_empty()
+    db_name = env.get("WAREHOUSE_DB_NAME", "data_warehouse").strip() or "data_warehouse"
+    db_user = env.get("WAREHOUSE_DB_USER", "warehouse_admin").strip() or "warehouse_admin"
+    db_pass = env.get("WAREHOUSE_DB_PASSWORD", "").strip()
+    if not db_pass:
+        log.info("airflow bootstrap: WAREHOUSE_DB_PASSWORD not set; skipping connection creation")
+        return
+
+    # The Airflow CLI shells inside the container — equivalent to:
+    #   docker exec orchestack-airflow airflow connections add ...
+    # We wait briefly for the webserver to be reachable so the CLI
+    # has a live metadata DB to write to.
+    for attempt in range(60):  # ~2 minutes
+        try:
+            res = await asyncio.to_thread(
+                _run_sync,
+                ["docker", "exec", "orchestack-airflow", "airflow", "version"],
+                10,
+            )
+            if res.returncode == 0:
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+    else:
+        log.info("airflow bootstrap: container never reachable; skipping")
+        return
+
+    cmd = [
+        "docker", "exec", "orchestack-airflow",
+        "airflow", "connections", "add", "orchestack_warehouse",
+        "--conn-type", "postgres",
+        "--conn-host", "orchestack-postgres",
+        "--conn-port", "5432",
+        "--conn-schema", db_name,
+        "--conn-login", db_user,
+        "--conn-password", db_pass,
+    ]
+    try:
+        res = await asyncio.to_thread(_run_sync, cmd, 30)
+        if res.returncode == 0:
+            log.info("airflow bootstrap: connection orchestack_warehouse created")
+            from . import audit
+            await audit.write(
+                "airflow_bootstrapped",
+                service_name="airflow",
+                user_id=None,
+                details={"connection_id": "orchestack_warehouse"},
+            )
+        else:
+            # Returncode 1 with "already exists" message is the idempotent path.
+            stderr_lower = (res.stderr or "").lower()
+            if "already exists" in stderr_lower or "duplicate" in stderr_lower:
+                log.info("airflow bootstrap: connection orchestack_warehouse already exists; no-op")
+            else:
+                log.warning(
+                    "airflow bootstrap: connections-add returned %d: %s",
+                    res.returncode, (res.stderr or res.stdout or "")[:300],
+                )
+    except Exception as e:
+        log.warning("airflow bootstrap: connections-add raised: %s", e)
+
+
 POST_START_HOOKS = {
     "metabase":     _bootstrap_metabase,
     "airbyte":      _bootstrap_airbyte,
     "openmetadata": _bootstrap_openmetadata,
+    "airflow":      _bootstrap_airflow,
 }
 
 

@@ -1,76 +1,52 @@
-# system/dags/ — Airflow DAGs starter template
+# system/dags/
 
-**This folder is NOT where the customer's DAGs live.** The customer's
-actual DAGs live in their own Git repository. They point OrcheStack at
-it via the setup wizard's `AIRFLOW_DAGS_REPO_URL` field, and OrcheStack
-clones that repo into the Airflow container at runtime.
+This folder holds Airflow DAG examples that exist for **maintainer
+verification only** — they let us exercise the Airflow + dbt + Cosmos
+integration end-to-end without depending on operator-supplied content.
 
-This folder will eventually contain a **starter DAG set** that OrcheStack
-ships pre-installed for new operators who don't have an Airflow repo yet.
-Currently empty.
+**OrcheStack does not ship any of these DAGs to operators.** The
+operator runtime bundle (`orchestack-runtime.tar.gz`) does not include
+this directory. Operators receive an empty `/opt/airflow/dags/` folder
+and populate it from their own Git repository — see
+[`AIRFLOW_DAGS_REPO_URL`](https://orchestack.africa/services/airflow.html)
+for the canonical pattern.
 
----
+If you're an operator looking for *example* DAGs to copy-paste, look at
+[**Compose your first pipeline**](https://orchestack.africa/first-pipeline.html)
+on the docs site. Three concrete composition patterns (Airbyte→dbt→Metabase,
+Python→dbt→Tableau, dlt→dbt→warehouse-only) are documented there with
+complete, copy-paste-ready DAG snippets.
 
-## What lands here
+## What's in this folder (maintainer artefacts)
 
-A small set of starter DAGs an operator can fork:
+Each file demonstrates a specific composition pattern at the level needed
+to verify the integration works:
 
-```
-system/dags/
-├── README.md                    "How to fork these for your project"
-├── 00_airbyte_to_dbt.py         Daily: trigger Airbyte → wait → run dbt build
-├── 01_dbt_test.py               Hourly: dbt test against marts
-├── 02_data_freshness.py         Daily: alert if any raw table is stale
-└── lib/
-    ├── airbyte.py               Helper for triggering Airbyte syncs via API
-    ├── notifications.py         Slack/email helpers
-    └── __init__.py
-```
+| File | Verifies |
+| --- | --- |
+| `01_airbyte_dbt_metabase.py` | HttpOperator triggering Airbyte + Cosmos-driven dbt + Metabase refresh end-to-end |
+| `02_python_dbt.py` | PythonVirtualenvOperator with `requests` + dbt+Cosmos — proves arbitrary Python deps install correctly |
+| `03_dbt_tests_only.py` | A schedule that runs `dbt test` independently of model runs |
 
-These cover the 80% case operators hit on day one: "I want a daily sync +
-transform + test pipeline." Customers fork and extend; OrcheStack stops
-shipping them once the customer's own DAGs are in place.
+These files are tracked in this repo so contributors can see how the
+patterns are composed, and so we can verify end-to-end behaviour
+during release preparation. The `release.yml` workflow's bundle
+assembly does **not** copy `system/dags/` into the runtime tarball.
 
----
+## How an operator actually gets DAGs into their Airflow
 
-## What a typical CUSTOMER Airflow repo looks like
+Two paths, both documented at <https://orchestack.africa/services/airflow.html#dags-live-where>:
 
-This is what the operator's *own* repo should contain — not what
-OrcheStack ships:
+1. **`AIRFLOW_DAGS_REPO_URL` in `.env`** (or via the dashboard's Edit
+   Config). On every Airflow start, the entrypoint clones the repo
+   (or `git fetch && git reset --hard` on subsequent starts) into the
+   container's `/opt/airflow/dags/` volume.
+2. **Bind mount a host directory** at the same path for single-developer
+   iteration. Edit a `.py` file locally; Airflow discovers it within
+   ~30 seconds.
 
-```
-acme-airflow-dags/                   Their Git repo
-├── dags/                            ← AIRFLOW_DAGS_REPO_PATH default
-│   ├── daily_metabase_refresh.py
-│   ├── weekly_finance_export.py
-│   ├── ad_hoc_backfill.py
-│   └── _utils/
-│       ├── slack.py
-│       └── airbyte_client.py
-├── tests/                           pytest unit tests for DAG helpers
-├── requirements.txt                 extra Python deps (if any)
-├── .gitignore
-└── README.md
-```
-
-OrcheStack's wizard takes the repo URL + branch + subdirectory
-(default `dags/`), and the Airflow container's git-sync sidecar
-keeps it in sync.
-
----
-
-## How OrcheStack uses this folder at runtime
-
-When the Airflow container starts, it follows this resolution:
-
-1. Read `AIRFLOW_DAGS_REPO_URL` from the operator's `.env`
-2. If empty → mount this folder into the container at `/opt/airflow/dags/`
-   (operator gets the starter DAGs out of the box)
-3. If set → `git clone <url> --branch <AIRFLOW_DAGS_REPO_BRANCH>` and
-   mount `<clone>/<AIRFLOW_DAGS_REPO_PATH>` at `/opt/airflow/dags/`
-4. A git-sync sidecar refreshes the clone every ~30 seconds so DAG
-   changes pushed to the repo appear in Airflow without a restart
-
-The split between OrcheStack-shipped starter DAGs and customer DAGs is
-explicit: the wizard's repo field is optional precisely so a new operator
-can see things working before they need to set up their own Git repo.
+The operator's DAGs live in their own Git repo for the same reasons
+their dbt project does — review history, blame, branching, the
+operator's normal Git workflow. OrcheStack does not edit operator DAGs,
+does not ship "starter" DAGs that bake in our assumptions about their
+stack, and does not maintain DAG content on their behalf.

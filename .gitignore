@@ -2,6 +2,15 @@
 # Tracks only source. Generated artefacts, secrets, and OS clutter stay out.
 
 # ============================================================================
+# dbt build outputs — dbt_packages/ is dbt's analog of node_modules
+# (downloaded by `dbt deps` at runtime); target/ is the per-run output dir.
+# Both get re-created on every dbt invocation; never commit either.
+# ============================================================================
+**/dbt_packages/
+**/target/
+**/logs/
+
+# ============================================================================
 # Marketing site — deployed separately to orchestack.africa via Cloudflare.
 # Source kept locally only; not in this product repo.
 # ============================================================================

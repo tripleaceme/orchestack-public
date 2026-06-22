@@ -235,6 +235,9 @@ jobs:
           - image: orchestack-ge
             context: system/docker/ge-image
             dockerfile: system/docker/ge-image/Dockerfile
+          - image: orchestack-airflow
+            context: system/docker/airflow-image
+            dockerfile: system/docker/airflow-image/Dockerfile
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
