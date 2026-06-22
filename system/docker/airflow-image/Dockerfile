@@ -33,9 +33,12 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 #     exact dbt + cosmos versions
 #
 # Version pins:
-#   - dbt-core 1.10.x   : current minor at OrcheStack v0.1.0 cut
-#   - dbt-postgres 1.10.x : matches dbt-core minor (required by dbt convention)
-#   - astronomer-cosmos 1.8.x : current minor; explicitly supports Airflow 3.0+
+#   - dbt-core 1.10.x         : 1.10 is the line cosmos 1.14 supports
+#   - dbt-postgres 1.10.x     : matches dbt-core minor (dbt convention)
+#   - astronomer-cosmos 1.14.x: current stable; required for Airflow 3.x
+#                               (1.8 series doesn't initialise cleanly
+#                               on Airflow 3 — DAG import fails at
+#                               airflow.configuration init)
 #
 # Bump cadence: review on each OrcheStack semver bump. Patch versions
 # float within minor (the "1.10.x" pattern); minor bumps are deliberate
@@ -43,7 +46,7 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 RUN pip install --no-cache-dir \
         "dbt-core>=1.10,<1.11" \
         "dbt-postgres>=1.10,<1.11" \
-        "astronomer-cosmos>=1.8,<1.9"
+        "astronomer-cosmos>=1.14,<1.15"
 
 # Build-time verification: container build fails if dbt or cosmos
 # can't be imported. Catches version-pin breaks at build time, not
