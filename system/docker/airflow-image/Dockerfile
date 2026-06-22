@@ -45,11 +45,18 @@ RUN pip install --no-cache-dir \
         "dbt-postgres>=1.10,<1.11" \
         "astronomer-cosmos>=1.8,<1.9"
 
-# Build-time verification: container build fails if any binary is
-# missing. Catches version-pin breaks at build time, not at the
-# operator's first DAG run.
-RUN dbt --version && \
-    python -c "import cosmos; print(f'cosmos OK: {cosmos.__version__}')"
+# Build-time verification: container build fails if dbt or cosmos
+# can't be imported. Catches version-pin breaks at build time, not
+# at the operator's first DAG run.
+#
+# `dbt --version` exits with code 1 when an upstream newer version
+# exists on PyPI — that's by design in dbt for end-user nag purposes,
+# but for build-verification we just need "can we import these?",
+# which Python imports answer cleanly without any update-check side
+# effects.
+RUN python -c "import dbt.version; import cosmos; \
+    print(f'dbt-core OK: {dbt.version.__version__}'); \
+    print(f'astronomer-cosmos OK: {cosmos.__version__}')"
 
 # Re-set USER to airflow (the pip install above runs as root via the
 # upstream image's entrypoint convention; runtime should drop back to
