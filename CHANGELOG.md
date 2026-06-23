@@ -116,6 +116,33 @@ platform.
   Docker Hub and attaches the runtime bundle to the GitHub Release on
   every `v*.*.*` tag push.
 
+### Known issues
+
+End-to-end verification on a fresh install (`orchestack-runtime-0.1.0.tar.gz`)
+surfaced two install-time bugs that block parts of the canonical
+pipeline. Both are scheduled for v0.1.1.
+
+- **[#1](https://github.com/tripleaceme/orchestack-public/issues/1)** —
+  Airflow start fails with `external volume orchestack-dbt-repo not found`
+  if Airflow is opened before dbt. The volume is declared `external: true`
+  in `system/docker/services/airflow.yml` but only created by the dbt
+  service. **Workaround**: open the dbt service tile in the dashboard
+  first, then Airflow.
+- **[#2](https://github.com/tripleaceme/orchestack-public/issues/2)** —
+  Airbyte's Temporal container crash-loops with `pq: database "temporal"
+  does not exist`. The orchestrator's pre-start hook creates `temporal_db`
+  following the platform-wide `<service>_db` naming convention, but
+  Temporal's binary hardcodes the unsuffixed name `temporal`.
+  **Workaround**: `ALTER DATABASE temporal_db RENAME TO temporal;` and
+  `ALTER DATABASE temporal_visibility_db RENAME TO temporal_visibility;`
+  then restart the Airbyte service. See the issue for the full command.
+
+What v0.1.0 verifies end-to-end **without** workarounds: install (download,
+checksum, extract, control-plane up), signup, setup wizard, audit-log
+event recording, .env write-back, dashboard authentication, Metabase
+start + bootstrap + warehouse registration, pgAdmin start with
+PostgreSQL cascade, MinIO start, dbt service start.
+
 ### Security
 
 - **No credentials in images** — `.dockerignore` excludes `**/.env`
