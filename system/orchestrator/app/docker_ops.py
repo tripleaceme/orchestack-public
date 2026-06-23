@@ -701,9 +701,19 @@ async def _ensure_airbyte_setup() -> None:
     )
     from . import db as _db
     pool = _db.get_pool()
+    # Temporal's upstream binary hardcodes the unsuffixed database
+    # names "temporal" + "temporal_visibility" (via its compose snippet's
+    # POSTGRES_DEFAULT_DB env defaults). We have to provision those
+    # exact names — the platform-wide <service>_db naming convention
+    # we use elsewhere DOES NOT APPLY HERE because Temporal isn't
+    # configurable on this point. See GitHub issue #2.
+    #
+    # The legacy slot now holds the buggy "<name>_db" form that earlier
+    # v0.1.x installs created, so the rename branch below migrates
+    # stuck installs automatically on next start (no operator action).
     for new_name, legacy_name in (
-        ("temporal_db", "temporal"),
-        ("temporal_visibility_db", "temporal_visibility"),
+        ("temporal", "temporal_db"),
+        ("temporal_visibility", "temporal_visibility_db"),
     ):
         async with pool.acquire() as conn:
             new_exists = await conn.fetchval(

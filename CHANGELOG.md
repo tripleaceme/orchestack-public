@@ -22,6 +22,22 @@ Entries omit categories that have no changes for that release.
   The dbt service populates the volume on its own start (cloning from
   `DBT_REPO_URL` or writing the built-in demo project). Airflow
   operators no longer have to remember to open dbt before Airflow.
+  Shipped in v0.1.1.
+
+- **[#2](https://github.com/tripleaceme/orchestack-public/issues/2)** —
+  Airbyte's Temporal sidecar now starts cleanly on a fresh install.
+  The orchestrator's Airbyte pre-start hook was provisioning the two
+  Temporal databases as `temporal_db` and `temporal_visibility_db`,
+  following the platform-wide `<service>_db` naming convention.
+  Temporal's upstream binary, however, hardcodes the unsuffixed
+  names `temporal` and `temporal_visibility` (via its compose env
+  defaults), and crash-looped with `pq: database "temporal" does
+  not exist`. Carved Temporal out of the naming convention — the
+  hook now provisions the unsuffixed names directly. For operators
+  already running a v0.1.1 install with the broken database names,
+  the existing migration loop in the same hook renames `temporal_db`
+  → `temporal` (and the visibility one) automatically on next start;
+  no operator action required.
 
 ## [0.1.0] — 2026-06-22
 
