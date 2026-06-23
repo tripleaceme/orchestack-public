@@ -1,0 +1,86 @@
+# Sync Docker Hub repository descriptions for the five OrcheStack-owned
+# images. Runs when any of .github/docker-hub/*.md change on main, and can
+# be triggered manually via the Actions tab (workflow_dispatch).
+#
+# Why this exists
+# ---------------
+# Docker Hub's repository "Overview" + short description are separate from
+# the image manifest's OCI labels. The OCI labels appear on the "Image
+# Layers" view but not on the repository's landing page. Operators reading
+# the Docker Hub page first see the short description + overview, so those
+# need to be correct + non-stale.
+#
+# Categories cannot be set via this action (Docker Hub API limitation as
+# of 2026); they remain UI-only. The README at .github/docker-hub/ lists
+# the recommended categories per image.
+#
+# Credentials
+# -----------
+# Uses the same DOCKERHUB_USERNAME / DOCKERHUB_TOKEN secrets the
+# release.yml docker-publish job uses. The token must be a Personal
+# Access Token with at least read+write scope (write is needed for
+# update-description).
+
+name: Sync Docker Hub descriptions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/docker-hub/*.md'
+      - '.github/workflows/docker-hub-sync.yml'
+  workflow_dispatch:
+    inputs:
+      images:
+        description: "Which images to sync (comma-separated, or 'all')"
+        default: 'all'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: orchestack-auth
+            short: "OrcheStack pre-login surface — nginx serving signup, login, and the setup wizard."
+          - image: orchestack-orchestrator
+            short: "OrcheStack control-plane daemon — service lifecycle, sessions, audit log, reconciler."
+          - image: orchestack-dashboard
+            short: "OrcheStack administrator dashboard — FastAPI + HTMX + Jinja UI for platform operators."
+          - image: orchestack-airflow
+            short: "Apache Airflow 3 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack."
+          - image: orchestack-ge
+            short: "Great Expectations 0.18.21 + ttyd + editors preinstalled — in-browser data quality work in OrcheStack."
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Skip if image not in requested set (workflow_dispatch)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.images }}" != "all" ]; then
+            case ",${{ inputs.images }}," in
+              *",${{ matrix.image }},"*) echo "should_sync=true" >> "$GITHUB_OUTPUT" ;;
+              *) echo "should_sync=false" >> "$GITHUB_OUTPUT" ;;
+            esac
+          else
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update Docker Hub description for tripleaceme/${{ matrix.image }}
+        if: steps.gate.outputs.should_sync == 'true'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: tripleaceme/${{ matrix.image }}
+          short-description: ${{ matrix.short }}
+          readme-filepath: ./.github/docker-hub/${{ matrix.image }}.md
+          enable-url-completion: true
