@@ -114,10 +114,16 @@ volumes:
     name: orchestack-airflow-logs
   airflow-plugins:
     name: orchestack-airflow-plugins
-  # Shared with the dbt service's compose project. The dbt service
-  # creates this volume on first start (its own compose file owns the
-  # write side); Airflow joins it read-only. The "name:" matches
-  # exactly so docker resolves both refs to the same physical volume.
+  # Shared with the dbt service's compose project. Either service can
+  # create this volume on first start — Docker resolves both refs to
+  # the same physical volume because the "name:" matches exactly. If
+  # Airflow starts first, it creates an empty volume; the dbt service
+  # later populates it (DBT_REPO_URL clone or built-in demo project).
+  # If dbt starts first, it creates + populates the volume and Airflow
+  # mounts the populated content. Either ordering works.
+  #
+  # (Earlier this was declared `external: true` here, which broke
+  # Airflow's start when the operator opened Airflow before dbt —
+  # see GitHub issue #1. Removed in v0.1.1.)
   dbt-repo:
     name: orchestack-dbt-repo
-    external: true

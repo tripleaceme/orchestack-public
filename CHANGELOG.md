@@ -11,8 +11,17 @@ Entries omit categories that have no changes for that release.
 
 ## [Unreleased]
 
-Pending changes will be listed here and rolled into the next tagged
-release.
+### Fixed
+
+- **[#1](https://github.com/tripleaceme/orchestack-public/issues/1)** —
+  Airflow now starts independently of dbt. Removed the `external: true`
+  declaration on the shared `orchestack-dbt-repo` volume in
+  `system/docker/services/airflow.yml`. Docker now creates the named
+  volume on first reference from either service; whichever service
+  starts first creates the (empty) volume, and the other joins it.
+  The dbt service populates the volume on its own start (cloning from
+  `DBT_REPO_URL` or writing the built-in demo project). Airflow
+  operators no longer have to remember to open dbt before Airflow.
 
 ## [0.1.0] — 2026-06-22
 
