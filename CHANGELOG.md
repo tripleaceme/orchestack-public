@@ -11,6 +11,16 @@ Entries omit categories that have no changes for that release.
 
 ## [Unreleased]
 
+Pending changes will be listed here and rolled into the next tagged
+release.
+
+## [0.1.1] — 2026-06-23
+
+First patch release. Closes both install-time bugs surfaced during
+end-to-end verification of v0.1.0. Operators upgrade with
+`docker compose pull && docker compose up -d` — no destructive
+changes, no `.env` edits required.
+
 ### Fixed
 
 - **[#1](https://github.com/tripleaceme/orchestack-public/issues/1)** —
@@ -22,7 +32,6 @@ Entries omit categories that have no changes for that release.
   The dbt service populates the volume on its own start (cloning from
   `DBT_REPO_URL` or writing the built-in demo project). Airflow
   operators no longer have to remember to open dbt before Airflow.
-  Shipped in v0.1.1.
 
 - **[#2](https://github.com/tripleaceme/orchestack-public/issues/2)** —
   Airbyte's Temporal sidecar now starts cleanly on a fresh install.
@@ -34,10 +43,10 @@ Entries omit categories that have no changes for that release.
   defaults), and crash-looped with `pq: database "temporal" does
   not exist`. Carved Temporal out of the naming convention — the
   hook now provisions the unsuffixed names directly. For operators
-  already running a v0.1.1 install with the broken database names,
-  the existing migration loop in the same hook renames `temporal_db`
-  → `temporal` (and the visibility one) automatically on next start;
-  no operator action required.
+  upgrading from the broken v0.1.0 install with the legacy database
+  names already on disk, the existing migration loop in the same
+  hook renames `temporal_db` → `temporal` (and the visibility one)
+  automatically on next start; no operator action required.
 
 ## [0.1.0] — 2026-06-22
 
@@ -187,5 +196,6 @@ PostgreSQL cascade, MinIO start, dbt service start.
   the affected key name and the actor identity but not the credential
   value itself; exported audit logs do not leak credential material.
 
-[Unreleased]: https://github.com/tripleaceme/orchestack-public/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tripleaceme/orchestack-public/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/tripleaceme/orchestack-public/releases/tag/v0.1.1
 [0.1.0]: https://github.com/tripleaceme/orchestack-public/releases/tag/v0.1.0
