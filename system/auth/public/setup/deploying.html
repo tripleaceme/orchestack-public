@@ -168,6 +168,68 @@
     }
   }
 
+  // Wait for all hot-tier services to actually be running before
+  // redirecting the operator to the dashboard. The deploy endpoint
+  // returns fast (it just registers services + persists .env + kicks
+  // off background docker compose up calls); pulling images and
+  // booting containers takes minutes on first install. The wizard's
+  // Configure copy promises "the images will be pulled and services
+  // created", so the operator should land on a dashboard where every
+  // hot-tier tile is genuinely Running, not a uniformly-Stopped grid
+  // they have to interpret.
+  //
+  // Polls /orchestrator/api/services every 5s. Caps at 25 minutes to
+  // tolerate slow first-pull on residential broadband (~2.4 GB
+  // orchestack-airflow + ~2.3 GB apache/airflow base + Metabase +
+  // pgAdmin). If the cap hits with services still not running, redirect
+  // anyway with a soft warning — operator can troubleshoot from the
+  // dashboard's per-service detail page.
+  const SERVICES_POLL_INTERVAL_MS = 5000;
+  const SERVICES_POLL_MAX_MS = 25 * 60 * 1000;   // 25 minutes
+
+  async function waitForHotTierRunning(registeredServices) {
+    const startedAt = performance.now();
+    let lastRunningCount = -1;
+    while (performance.now() - startedAt < SERVICES_POLL_MAX_MS) {
+      let services;
+      try {
+        const r = await fetch("/orchestrator/api/services", { credentials: "same-origin" });
+        if (!r.ok) { await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS)); continue; }
+        const data = await r.json();
+        services = (data && data.services) || [];
+      } catch (_e) {
+        await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS));
+        continue;
+      }
+      // Only track hot-tier services the operator just registered.
+      // Control-plane services (postgresql with control_plane=true) are
+      // always running and don't need a status check.
+      const hotTier = services.filter(s =>
+        s.tier === "hot" &&
+        !s.control_plane &&
+        registeredServices.includes(s.name)
+      );
+      if (hotTier.length === 0) {
+        // Nothing to wait for (operator only picked cold-tier services).
+        return { allRunning: true, services: [] };
+      }
+      const running = hotTier.filter(s => s.status === "running");
+      if (running.length !== lastRunningCount) {
+        const stillStarting = hotTier.filter(s => s.status !== "running");
+        if (stillStarting.length > 0) {
+          statusEl.textContent =
+            `Pulling images + starting: ${stillStarting.map(s => s.display_name || s.name).join(", ")}…`;
+        }
+        lastRunningCount = running.length;
+      }
+      if (running.length === hotTier.length) {
+        return { allRunning: true, services: hotTier };
+      }
+      await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS));
+    }
+    return { allRunning: false, services: [] };
+  }
+
   (async function deploy() {
     try {
       const res = await fetch(ORCHESTRATOR_DEPLOY_URL, {
@@ -181,10 +243,26 @@
         return;
       }
       const data = await res.json();
-      if (data.status === "ready") {
+      if (data.status !== "ready") {
+        finish(false, `unexpected status: ${data.status}`);
+        return;
+      }
+
+      // Deploy succeeded. Now wait for the hot-tier services we
+      // just registered to actually come up before redirecting.
+      const registered = data.registered_services || [];
+      statusEl.textContent = "Services registered. Now pulling images + starting…";
+      const wait = await waitForHotTierRunning(registered);
+
+      if (wait.allRunning) {
         finish(true);
       } else {
-        finish(false, `unexpected status: ${data.status}`);
+        // Cap hit — surface a soft warning + still redirect so the
+        // operator can troubleshoot from the dashboard.
+        statusEl.innerHTML =
+          "Some services are still pulling/starting after 25 min — " +
+          "taking you to the dashboard so you can monitor progress there…";
+        setTimeout(() => { window.location.href = REDIRECT_TO; }, 2500);
       }
     } catch (e) {
       finish(false, `${e.name}: ${e.message}`);

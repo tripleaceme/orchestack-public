@@ -319,13 +319,25 @@
     </div>
     {% endif %}
 
-    <div class="group">
-      <div class="group-label">Catalogue</div>
-      <a href="/setup/select?mode=add" class="item">
-        <span class="item-label">+ Add another service</span>
-        <span class="kbd">{{ sidebar_counts.configured if sidebar_counts else 9 }} / {{ sidebar_counts.total if sidebar_counts else 9 }}</span>
-      </a>
-    </div>
+    {# Catalogue link: only render when at least one catalogue entry
+       hasn't yet been configured. Mirrors the inline "+ Configure
+       another service" affordance on the home grid, which is also
+       gated on unconfigured_count > 0. Keeps the wording identical
+       across both entry points. On pages that don't pass
+       sidebar_counts (i.e. anywhere outside the home route), default
+       to showing the link — operators on those pages still need a way
+       in to the wizard, and clicking through to a "nothing to add"
+       wizard page is a softer failure than no link at all. #}
+    {% set _unconfigured = (sidebar_counts.total - sidebar_counts.configured) if sidebar_counts else 1 %}
+    {% if _unconfigured > 0 %}
+      <div class="group">
+        <div class="group-label">Catalogue</div>
+        <a href="/setup/select?mode=add" class="item">
+          <span class="item-label">+ Configure another service</span>
+          <span class="kbd">{{ sidebar_counts.configured if sidebar_counts else 0 }} / {{ sidebar_counts.total if sidebar_counts else 9 }}</span>
+        </a>
+      </div>
+    {% endif %}
 
     <div class="footer-pill">
       <div class="conn-row">

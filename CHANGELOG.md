@@ -18,6 +18,38 @@ release.
 
 ### Changed
 
+- **`/setup/deploying.html` now waits for hot-tier services to be
+  running before redirecting.** Previously the deploying page POSTed
+  the wizard state to the orchestrator, got a fast `status: ready`
+  response, then immediately redirected to `/app/`. Operators
+  reached the dashboard and saw every tile as `Stopped` because the
+  background image pulls had only just started. Now the page polls
+  `/orchestrator/api/services` every 5 s after the deploy returns,
+  updates the visible status text with the names of services still
+  pulling/starting, and only redirects once every registered
+  hot-tier service reports `state: running`. 25-minute cap tolerates
+  first-pull on residential broadband (orchestack-airflow alone is
+  ~2.4 GB on top of a ~2.3 GB base); if the cap hits with services
+  still not running, the page redirects with a soft warning and lets
+  the operator monitor progress from the dashboard's per-service
+  detail pages.
+
+- **Sidebar "+ Add another service" link** now matches the inline
+  "+ Configure another service" affordance on the home grid:
+  - Gated on `unconfigured_count > 0` — hides when every catalogue
+    entry has already been configured, instead of dropping the
+    operator on a dead-end wizard page.
+  - Wording standardised to **"+ Configure another service"** across
+    both entry points.
+  - Counter shows real `configured / catalogue_total` (e.g. `5 / 9`
+    when 5 of 9 services have been configured) — previously both
+    halves of the counter were the same number due to a bug in
+    `_aggregate_kpis`. Required adding `catalogue_total` as a
+    separate KPI field, computed from the orchestrator's full
+    service list rather than just the configured subset.
+
+### Changed (continued)
+
 - **Service tier classification revised.** `pgadmin` moved from cold to
   hot (operators reach for it dozens of times a session; the cold-start
   delay was annoying). `minio`, `airflow`, and `airbyte` moved from

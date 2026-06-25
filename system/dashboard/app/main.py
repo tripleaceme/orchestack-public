@@ -277,9 +277,11 @@ async def _aggregate_kpis() -> dict:
     """Aggregate the four KPI-strip metrics from the orchestrator. Shared by /home and the HTMX polling endpoint so the data shape stays in sync."""
     services_running = 0
     services_total = 0
+    catalogue_total = 0
     try:
         svc_data = await orchestrator.list_services()
         all_services = svc_data.get("services", [])
+        catalogue_total = len(all_services)
         configured = [s for s in all_services if s.get("configured")]
         services_total = len(configured)
         services_running = sum(1 for s in configured if s.get("state") == "running")
@@ -314,6 +316,7 @@ async def _aggregate_kpis() -> dict:
     return {
         "services_running":   services_running,
         "services_total":     services_total,
+        "catalogue_total":    catalogue_total,
         "active_sessions":    active_sessions,
         "last_event_type":    last_event_type,
         "last_event_target":  last_event_target,
@@ -334,8 +337,8 @@ async def home(request: Request, user=Depends(require_user)) -> HTMLResponse:
             "kpi": kpi,
             "sidebar_counts": {
                 "configured": kpi["services_total"],
-                "total":      kpi["services_total"],
-            } if kpi["services_total"] else None,
+                "total":      kpi.get("catalogue_total") or kpi["services_total"],
+            } if kpi.get("catalogue_total") else None,
         },
     )
 
