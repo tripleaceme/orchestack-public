@@ -21,7 +21,7 @@
     </a>
 
     <h1 class="deploy-h1">Spinning up your data stack…</h1>
-    <p class="deploy-status" id="status">Pulling Docker images…</p>
+    <p class="deploy-status" id="status">Registering services…</p>
 
     <div class="spinner" aria-hidden="true"></div>
 
@@ -29,15 +29,32 @@
       <div class="progress-fill" id="progress-fill"></div>
     </div>
 
-    <p class="muted" style="font-size:13.5px">
+    <p class="muted" style="font-size:13.5px; margin-bottom: 16px;">
       First-time installs take 5–15 minutes depending on your network.<br>
-      Hang around while we pull your selected services' Docker images and start the containers. 
-      We'll take you to your dashboard as soon as everything's ready.
+      We're pulling Docker images and starting hot-tier services. You'll see
+      progress per service below.
     </p>
 
-    <div class="joke-card">
-      <div class="joke-label">While you wait</div>
-      <p class="joke-text" id="joke">Why do Python developers wear glasses? Because they can't C#.</p>
+    <!-- Per-service status table — populated by JS once /deploy returns.
+         Each row shows current state of one hot-tier service from the
+         poll loop: queued → starting → running, or failed with error.
+         Replaces the old jokes carousel — operators wanted to see what
+         was actually happening, not entertainment. -->
+    <div id="service-status-table"
+         style="text-align: left; margin-top: 20px; display: none;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+                  text-transform: uppercase; color: var(--text-2);
+                  margin-bottom: 8px;">
+        Hot-tier services
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13.5px;">
+        <tbody id="service-status-rows"></tbody>
+      </table>
+      <p class="muted" style="font-size: 11.5px; margin-top: 14px;">
+        Cold-tier services (Airflow, Airbyte, dbt, GE, OpenMetadata, MinIO)
+        are not started automatically — open them from the dashboard when
+        you need them.
+      </p>
     </div>
 
     <!--
@@ -73,78 +90,75 @@
     };
   }
 
-  // Pull the selection list for the status carousel.
-  const DEFAULT_STACK = ["Airbyte", "PostgreSQL", "MinIO", "dbt Core",
-                         "Great Expectations", "OpenMetadata", "Metabase", "pgAdmin"];
-  function loadSelectionList() {
-    try {
-      const sel = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').selections || {};
-      const picked = Object.values(sel).filter(v => v && v !== 'None');
-      return picked.length ? picked : DEFAULT_STACK;
-    } catch (e) { return DEFAULT_STACK; }
-  }
-  const STACK = loadSelectionList();
-
-  const STATUSES = [
-    "Validating your selections…",
-    "Creating the pipeline database…",
-    "Provisioning the pipeline DB role with scoped permissions…",
-    ...STACK.map(svc => `Registering ${svc} with the orchestrator…`),
-    "Persisting setup state to platform.setup_state…",
-    "Finalising the install…",
-  ];
-
-  const JOKES = [
-    "Why do Python developers wear glasses? Because they can't C#.",
-    "Why did the developer go broke? Because he used up all his cache.",
-    "Debugging is like being the detective in a crime movie where you're also the murderer.",
-    "Why was the data engineer fired? He couldn't keep his tables clean.",
-    "What do you call a data engineer who doesn't document? Eventually unemployed.",
-    "If it works, don't fix it — unless it's in production, then you have to fix it anyway.",
-    "Why did the dashboard break up with the database? Too many joins, not enough relationship.",
-  ];
-
-  const STATUS_EVERY = 1500;
-  const JOKE_EVERY   = 4500;
-
   const statusEl = document.getElementById('status');
-  const jokeEl   = document.getElementById('joke');
   const progress = document.getElementById('progress-fill');
+  const tableEl  = document.getElementById('service-status-table');
+  const rowsEl   = document.getElementById('service-status-rows');
 
-  // ---------- Cosmetic cyclers (run regardless of deploy state) -----------
-  let statusIdx = 0;
-  const statusTimer = setInterval(() => {
-    statusIdx = (statusIdx + 1) % STATUSES.length;
-    statusEl.textContent = STATUSES[statusIdx];
-  }, STATUS_EVERY);
+  // ---------- Per-service status table --------------------------------
+  // STATE_COLORS maps an orchestrator-reported state to a (label, color)
+  // pair shown on each row. The polling code calls renderRows() with the
+  // latest service list every cycle; rows are stable (same order across
+  // polls), only the badge text and progress fill update.
+  const STATE_BADGES = {
+    queued:   { label: "Queued",          color: "#94a3b8", emoji: "⏳" },
+    starting: { label: "Pulling image…",  color: "#0ea5e9", emoji: "⬇" },
+    running:  { label: "Running",         color: "#10b981", emoji: "✓" },
+    stopped:  { label: "Stopped",         color: "#94a3b8", emoji: "·" },
+    error:    { label: "Failed",          color: "#dc2626", emoji: "✗" },
+  };
 
-  let jokeIdx = 0;
-  const jokeTimer = setInterval(() => {
-    let next;
-    do { next = Math.floor(Math.random() * JOKES.length); } while (next === jokeIdx);
-    jokeIdx = next;
-    jokeEl.style.opacity = 0;
-    setTimeout(() => { jokeEl.textContent = JOKES[jokeIdx]; jokeEl.style.opacity = 1; }, 200);
-  }, JOKE_EVERY);
-  jokeEl.style.transition = "opacity .3s ease";
+  function renderRows(services) {
+    rowsEl.innerHTML = services.map(s => {
+      const badge = STATE_BADGES[s.state] || STATE_BADGES.queued;
+      const errSnippet = s.error ? `<div style="color: #dc2626; font-size: 11.5px; font-family: monospace; margin-top: 4px; white-space: pre-wrap;">${escapeHtml(s.error).slice(0, 240)}</div>` : "";
+      return `
+        <tr style="border-top: 1px solid var(--border);">
+          <td style="padding: 10px 12px;">
+            <div style="font-weight: 500; color: var(--text);">${escapeHtml(s.display_name || s.name)}</div>
+            <div style="font-size: 11.5px; color: var(--text-2); margin-top: 2px;">${escapeHtml(s.layer || "")}</div>
+            ${errSnippet}
+          </td>
+          <td style="padding: 10px 12px; text-align: right; vertical-align: top;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;
+                         font-size: 12.5px; font-weight: 500; color: ${badge.color};">
+              <span>${badge.emoji}</span><span>${badge.label}</span>
+            </span>
+          </td>
+        </tr>`;
+    }).join("");
+    tableEl.style.display = "block";
+  }
 
-  // Progress bar — eases toward 90% so we always have headroom for the
-  // "actually done" jump to 100%. Avoids the look of "100%... still
-  // waiting..." that erodes user trust in progress bars.
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return "";
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // Progress bar — driven by services-running-count / total-being-watched
+  // once polling kicks in. Pre-poll (during the /deploy POST), tweens 0→30%
+  // so the bar isn't empty while we wait for the deploy response.
+  let progressTimer = null;
   const progressStart = performance.now();
-  const PROGRESS_CAP_MS = 20000;   // 20s to reach 90%
-  const progressTimer = setInterval(() => {
+  progressTimer = setInterval(() => {
     const elapsed = performance.now() - progressStart;
-    const pct = Math.min(90, (elapsed / PROGRESS_CAP_MS) * 90);
-    progress.style.width = pct + "%";
+    const pct = Math.min(30, (elapsed / 8000) * 30);   // 0→30% over 8s
+    if (progress.dataset.locked !== "1") {
+      progress.style.width = pct + "%";
+    }
   }, 100);
+
+  function setProgress(pct) {
+    progress.dataset.locked = "1";
+    progress.style.width = Math.round(pct) + "%";
+  }
 
   // ---------- The actual deploy --------------------------------------------
   function finish(success, message) {
-    clearInterval(statusTimer);
-    clearInterval(jokeTimer);
-    clearInterval(progressTimer);
-    progress.style.width = "100%";
+    if (progressTimer) clearInterval(progressTimer);
+    setProgress(100);
     statusEl.innerHTML = success
       ? "All services ready, taking you to your dashboard… ✓"
       : `<span style="color:var(--accent)">Deploy failed:</span> ${message}`;
@@ -187,44 +201,90 @@
   const SERVICES_POLL_INTERVAL_MS = 5000;
   const SERVICES_POLL_MAX_MS = 25 * 60 * 1000;   // 25 minutes
 
+  // Hydrate one row per registered hot-tier service from the orchestrator's
+  // /api/services response + recent audit events. Returns the normalised
+  // shape the renderRows() consumer expects.
+  function normaliseServices(services, registered, recentEvents) {
+    return services
+      .filter(s =>
+        s.tier === "hot" &&
+        !s.control_plane &&
+        registered.includes(s.name)
+      )
+      .map(s => {
+        // Match orchestrator state names to our STATE_BADGES keys.
+        // Failure detection: scan recent audit events for session_autostart_failed
+        // on this service — surface the error so the operator sees the cause.
+        let state = s.status || s.state || "queued";
+        let error = null;
+        const lastFail = recentEvents.find(e =>
+          e.target === s.name && e.event_type === "session_autostart_failed"
+        );
+        if (lastFail && state !== "running") {
+          state = "error";
+          error = (lastFail.details && (lastFail.details.stderr || lastFail.details.error)) || "Start failed (see audit log)";
+        }
+        return {
+          name: s.name,
+          display_name: s.display_name,
+          layer: s.layer,
+          state: state,
+          error: error,
+        };
+      });
+  }
+
   async function waitForHotTierRunning(registeredServices) {
     const startedAt = performance.now();
     let lastRunningCount = -1;
+    let lastFailedCount = 0;
     while (performance.now() - startedAt < SERVICES_POLL_MAX_MS) {
-      let services;
+      let services = [];
+      let events = [];
       try {
-        const r = await fetch("/orchestrator/api/services", { credentials: "same-origin" });
-        if (!r.ok) { await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS)); continue; }
-        const data = await r.json();
-        services = (data && data.services) || [];
+        const [sRes, aRes] = await Promise.all([
+          fetch("/orchestrator/api/services", { credentials: "same-origin" }),
+          fetch("/orchestrator/api/audit?limit=50&offset=0", { credentials: "same-origin" }),
+        ]);
+        if (sRes.ok) services = ((await sRes.json()).services) || [];
+        if (aRes.ok) events = ((await aRes.json()).events) || [];
       } catch (_e) {
         await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS));
         continue;
       }
-      // Only track hot-tier services the operator just registered.
-      // Control-plane services (postgresql with control_plane=true) are
-      // always running and don't need a status check.
-      const hotTier = services.filter(s =>
-        s.tier === "hot" &&
-        !s.control_plane &&
-        registeredServices.includes(s.name)
-      );
-      if (hotTier.length === 0) {
+
+      const rows = normaliseServices(services, registeredServices, events);
+      if (rows.length === 0) {
         // Nothing to wait for (operator only picked cold-tier services).
         return { allRunning: true, services: [] };
       }
-      const running = hotTier.filter(s => s.status === "running");
-      if (running.length !== lastRunningCount) {
-        const stillStarting = hotTier.filter(s => s.status !== "running");
-        if (stillStarting.length > 0) {
-          statusEl.textContent =
-            `Pulling images + starting: ${stillStarting.map(s => s.display_name || s.name).join(", ")}…`;
+      renderRows(rows);
+
+      const running = rows.filter(r => r.state === "running").length;
+      const failed  = rows.filter(r => r.state === "error").length;
+      const total   = rows.length;
+
+      // Progress bar: 30% (deploy returned) + 70% × (running / total)
+      setProgress(30 + (70 * running / total));
+
+      if (running !== lastRunningCount || failed !== lastFailedCount) {
+        if (failed > 0) {
+          statusEl.innerHTML = `<span style="color:#dc2626">${failed} service(s) failed to start.</span> Check the rows below for details.`;
+        } else if (running === total) {
+          statusEl.textContent = "All services running — redirecting to dashboard…";
+        } else {
+          statusEl.textContent = `${running} of ${total} services running. Pulling images + starting the rest…`;
         }
-        lastRunningCount = running.length;
+        lastRunningCount = running;
+        lastFailedCount = failed;
       }
-      if (running.length === hotTier.length) {
-        return { allRunning: true, services: hotTier };
+
+      if (running === total) {
+        return { allRunning: true, services: rows };
       }
+      // Don't bail on failures — operator can still see partial-success
+      // state when they reach the dashboard. They'll know what failed
+      // from the rows below + per-service audit page.
       await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS));
     }
     return { allRunning: false, services: [] };

@@ -5,16 +5,22 @@
   <h1 class="page-title">Service status</h1>
   <p class="lede">Live state of every service in the OrcheStack catalogue. Refreshes every 10s.</p>
 
+  {# Both the KPI strip and the service grid refresh:
+       - On a 10s polling cycle (steady-state)
+       - On the custom `orchestack-grid-refresh` event, fired by the
+         start/stop endpoints via HX-Trigger response header so the
+         operator sees the updated state ~1-2s after clicking instead
+         of waiting up to 10s for the next poll. #}
   <div id="kpi-strip-container"
        hx-get="{{ url_for('kpi_strip_fragment') }}"
-       hx-trigger="every 10s"
+       hx-trigger="every 10s, orchestack-grid-refresh from:body"
        hx-swap="innerHTML">
     {% include '_kpi_strip_fragment.html' %}
   </div>
 
   <div id="services-grid"
        hx-get="{{ url_for('services_grid') }}"
-       hx-trigger="load delay:50ms, every 10s"
+       hx-trigger="load delay:50ms, every 10s, orchestack-grid-refresh from:body"
        hx-swap="innerHTML">
     <p class="muted" style="font-style: italic; font-size: 13px;">Loading service status…</p>
   </div>

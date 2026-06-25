@@ -16,7 +16,45 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Fixed (critical)
+
+- **Session-open HTTP request no longer blocks for 5–15 min waiting on
+  image pull.** `POST /api/sessions` (the endpoint behind every Open /
+  Start click) used to `await docker_ops.start_service()` synchronously,
+  blocking the HTTP response for the full duration of the
+  `docker compose up` — up to 15 min on first-pull of heavy images like
+  orchestack-airflow (~2.4 GB). The browser timed out or the operator
+  reloaded; either way the audit log showed `session_opened` with no
+  follow-up `session_autostart` event because the start was still in
+  flight. The dashboard's Open click felt like nothing was happening.
+  Refactored to fire-and-forget via `asyncio.create_task` — the response
+  returns immediately with `started: true` (optimistic), and the
+  background task writes `session_autostart` / `session_autostart_failed`
+  to the audit log when the start completes.
+
 ### Changed
+
+- **Deploy page redesigned with per-service status table.** Replaced the
+  joke carousel + rotating status text with a live table of every
+  hot-tier service being started — each row shows the service name,
+  current state (Queued / Pulling image / Running / Failed), and a
+  per-service error snippet when an autostart fails. The deploying page
+  polls both `/api/services` and `/api/audit` so it can surface
+  `session_autostart_failed` events as they happen, rather than waiting
+  silently for the 25-min cap. The progress bar now reflects the real
+  ratio of services-running to total-being-watched. Operators stop
+  wondering "is anything happening?" — they see exactly which image is
+  pulling and which service has hit an error.
+
+- **Service tiles update on the next 1–2 second polling cycle after
+  Start / Stop**, not the next 10s cycle. The dashboard's start + stop
+  endpoints now return an `HX-Trigger: orchestack-grid-refresh` header,
+  and the service grid + KPI strip both listen for that custom event
+  via `hx-trigger="… orchestack-grid-refresh from:body"`. Combined with
+  optimistic state rendering on the clicked card itself (returns
+  state="starting" / "stopped" immediately rather than waiting for the
+  orchestrator's view to update), the operator sees their click
+  reflected within the same paint cycle.
 
 - **`/setup/deploying.html` now waits for hot-tier services to be
   running before redirecting.** Previously the deploying page POSTed

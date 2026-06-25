@@ -1695,14 +1695,28 @@ async def services_grid_fragment(
 async def start_service_action(
     request: Request, name: str, user=Depends(require_user),
 ) -> HTMLResponse:
-    """Start `name` AND open a session for the operator. A bare docker-start with no session row leaves Open-sessions empty for the operator who just started the service — and the reconciler's idle check then stops the service after IDLE_THRESHOLD."""
+    """Start `name` AND open a session for the operator. A bare docker-start with no session row leaves Open-sessions empty for the operator who just started the service — and the reconciler's idle check then stops the service after IDLE_THRESHOLD.
+
+    Optimistically renders the card in state="starting" so the operator sees
+    immediate feedback. The actual start now runs in a background task on
+    the orchestrator side (no longer blocks the HTTP response), so by the
+    time we render here the orchestrator still reports state="stopped" —
+    optimistic override + grid auto-poll reconcile to the true state in
+    the next 10-second cycle.
+
+    The HX-Trigger header tells the surrounding grid to refresh itself
+    immediately (don't wait for the next 10s poll), so the operator sees
+    state transitions as soon as the orchestrator records them.
+    """
     try:
         await orchestrator.open_session(
             name, auto_start=True, user_id=user.get("user_id"),
         )
     except httpx.HTTPError as e:
         log.warning("start_service(%s) via open_session failed: %s", name, e)
-    return await _render_card(request, name)
+    response = await _render_card(request, name, optimistic_state="starting")
+    response.headers["HX-Trigger"] = "orchestack-grid-refresh"
+    return response
 
 
 # ===========================================================================
@@ -1711,12 +1725,18 @@ async def start_service_action(
 @app.post("/api/dashboard/services/{name}/stop", response_class=HTMLResponse,
            name="stop_service_action")
 async def stop_service_action(request: Request, name: str) -> HTMLResponse:
-    """Tell the orchestrator to stop `name`, return the updated card."""
+    """Tell the orchestrator to stop `name`, return the updated card.
+
+    Optimistic state="stopped" + HX-Trigger for grid refresh — same pattern
+    as start_service_action.
+    """
     try:
         await orchestrator.stop_service(name)
     except httpx.HTTPError as e:
         log.warning("stop_service(%s) failed: %s", name, e)
-    return await _render_card(request, name)
+    response = await _render_card(request, name, optimistic_state="stopped")
+    response.headers["HX-Trigger"] = "orchestack-grid-refresh"
+    return response
 
 
 # ===========================================================================
@@ -2077,8 +2097,17 @@ async def logout_action(request: Request) -> Response:
 # ===========================================================================
 #  Helpers
 # ===========================================================================
-async def _render_card(request: Request, name: str) -> HTMLResponse:
-    """Look up a service and render its card fragment. Renders inert stopped+unmanaged card if service vanished, so HTMX still gets valid HTML to swap."""
+async def _render_card(
+    request: Request, name: str, optimistic_state: str | None = None,
+) -> HTMLResponse:
+    """Look up a service and render its card fragment. Renders inert stopped+unmanaged card if service vanished, so HTMX still gets valid HTML to swap.
+
+    `optimistic_state` overrides the orchestrator-reported state. Used by the
+    start/stop action endpoints to render an immediate optimistic transition
+    (e.g. "starting") instead of the still-current orchestrator state, because
+    the background autostart hasn't completed yet by the time we render.
+    The grid's regular 10s polling reconciles to the true state shortly after.
+    """
     try:
         svc = await orchestrator.get_service(name)
     except httpx.HTTPError as e:
@@ -2091,6 +2120,10 @@ async def _render_card(request: Request, name: str) -> HTMLResponse:
             "layer": None, "state": "stopped", "container": None,
             "managed": False,
         }
+
+    if optimistic_state is not None:
+        svc = dict(svc)
+        svc["state"] = optimistic_state
 
     return templates.TemplateResponse(
         "_service_card_fragment.html",

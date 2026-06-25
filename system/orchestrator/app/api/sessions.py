@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -142,47 +143,70 @@ async def open_session(req: SessionOpenRequest) -> dict[str, object]:
     if req.auto_start:
         meta = config.SERVICE_CATALOGUE[req.service]
         if meta.get("managed", False):
-            result = await docker_ops.start_service(req.service)
-            started = result.ok
-            await audit.write(
-                "session_autostart" if result.ok else "session_autostart_failed",
-                service_name=req.service, user_id=user_id,
-                details={"returncode": result.returncode, "stderr": result.short_stderr},
-            )
-
-            # Auto-pin cold-tier services on Open (4hr default) so closing the
-            # dashboard tab doesn't let the reconciler kill an in-use tool.
-            # Skip already-pinned services so a longer manual pin isn't shortened.
-            if result.ok and meta.get("tier") == "cold":
-                existing_pin = await db.fetchval(
-                    "SELECT 1 FROM platform.service_pinning "
-                    "WHERE service_name = $1 AND "
-                    "(expires_at IS NULL OR expires_at > now())",
-                    req.service,
-                )
-                if not existing_pin:
-                    auto_pin_expires = (
-                        datetime.now(timezone.utc) + timedelta(hours=4)
-                    )
-                    await db.execute(
-                        """
-                        INSERT INTO platform.service_pinning
-                            (service_name, pinned_by_user_id, pinned_at,
-                              expires_at, reason)
-                        VALUES ($1, $2, now(), $3, $4)
-                        ON CONFLICT (service_name) DO NOTHING
-                        """,
-                        req.service, user_id, auto_pin_expires,
-                        "auto-pin on Open (4hr default)",
-                    )
+            # Fire-and-forget background task. Previously this awaited
+            # start_service synchronously, which blocked the HTTP response
+            # for the full duration of the docker compose up (up to 15min
+            # on first-pull of heavy images like orchestack-airflow at
+            # 2.4 GB). The browser's HTMX request would time out or the
+            # operator would give up and reload, leaving the orchestrator
+            # mid-pull with no operator feedback.
+            #
+            # Now: kick off start_service in the background, return
+            # immediately. The dashboard's service grid (which polls
+            # /api/services every few seconds) will see the
+            # starting → running transition. The audit log gets
+            # session_autostart or session_autostart_failed when the
+            # background task completes. Service-pinning for cold-tier
+            # services also moves into the background task.
+            async def _run_autostart() -> None:
+                try:
+                    result = await docker_ops.start_service(req.service)
                     await audit.write(
-                        "service_auto_pinned",
+                        "session_autostart" if result.ok else "session_autostart_failed",
                         service_name=req.service, user_id=user_id,
-                        details={
-                            "expires_at": auto_pin_expires.isoformat(),
-                            "trigger": "session_open",
-                        },
+                        details={"returncode": result.returncode, "stderr": result.short_stderr},
                     )
+                    if result.ok and meta.get("tier") == "cold":
+                        existing_pin = await db.fetchval(
+                            "SELECT 1 FROM platform.service_pinning "
+                            "WHERE service_name = $1 AND "
+                            "(expires_at IS NULL OR expires_at > now())",
+                            req.service,
+                        )
+                        if not existing_pin:
+                            auto_pin_expires = (
+                                datetime.now(timezone.utc) + timedelta(hours=4)
+                            )
+                            await db.execute(
+                                """
+                                INSERT INTO platform.service_pinning
+                                    (service_name, pinned_by_user_id, pinned_at,
+                                      expires_at, reason)
+                                VALUES ($1, $2, now(), $3, $4)
+                                ON CONFLICT (service_name) DO NOTHING
+                                """,
+                                req.service, user_id, auto_pin_expires,
+                                "auto-pin on Open (4hr default)",
+                            )
+                            await audit.write(
+                                "service_auto_pinned",
+                                service_name=req.service, user_id=user_id,
+                                details={
+                                    "expires_at": auto_pin_expires.isoformat(),
+                                    "trigger": "session_open",
+                                },
+                            )
+                except Exception as e:
+                    await audit.write(
+                        "session_autostart_failed",
+                        service_name=req.service, user_id=user_id,
+                        details={"error": f"{type(e).__name__}: {e}"},
+                    )
+
+            asyncio.create_task(_run_autostart(), name=f"autostart:{req.service}")
+            # Optimistic — the background task will write the real
+            # success/failure audit event when it finishes.
+            started = True
         else:
             # Service is catalogued but not "managed" (no compose snippet);
             # record the session anyway, nothing to start.
