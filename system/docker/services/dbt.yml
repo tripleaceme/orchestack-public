@@ -75,13 +75,35 @@ services:
         # to run with "could not find profile named '<name>'". So
         # clone the repo first, THEN read the profile name and write
         # the profile.
+        # DBT project resolution. Three cases:
+        #
+        #   (a) /usr/app/dbt/.git exists AND DBT_REPO_URL is set
+        #       → fetch + reset hard, picks up the operator's latest commit
+        #   (b) DBT_REPO_URL is set BUT no .git in /usr/app/dbt
+        #       → clean stale content (if any) and clone fresh. The previous
+        #         form just ran `git clone X /usr/app/dbt` which FAILED with
+        #         "destination path already exists and is not an empty
+        #         directory" when the volume had leftover content from a
+        #         partial previous run — the container then restart-looped
+        #         because no dbt_project.yml ever landed.
+        #   (c) DBT_REPO_URL empty AND no dbt_project.yml on disk yet
+        #       → write a minimal demo project (covered by the elif below)
         if [ -n "$$DBT_REPO_URL" ]; then
           if [ -d /usr/app/dbt/.git ]; then
             cd /usr/app/dbt && git fetch && git reset --hard "origin/$${DBT_REPO_BRANCH:-main}" || true
           else
-            git clone -b "$${DBT_REPO_BRANCH:-main}" "$$DBT_REPO_URL" /usr/app/dbt || true
+            echo "[orchestack] cleaning /usr/app/dbt (no .git) before clone"
+            # Wipe contents WITHOUT removing the mountpoint itself (volume).
+            find /usr/app/dbt -mindepth 1 -delete 2>/dev/null || true
+            (git clone -b "$${DBT_REPO_BRANCH:-main}" "$$DBT_REPO_URL" /usr/app/dbt 2>&1 | tail -5 || echo "[orchestack] dbt clone failed (check DBT_REPO_URL includes a PAT for private repos)")
+            # If the clone failed (private repo without PAT, network error,
+            # etc.) we still need SOMETHING at /usr/app/dbt or dbt will
+            # restart-loop. Fall through to the demo-project block so the
+            # container at least comes up; the operator fixes DBT_REPO_URL
+            # via Edit Config later.
           fi
-        elif [ ! -f /usr/app/dbt/dbt_project.yml ]; then
+        fi
+        if [ ! -f /usr/app/dbt/dbt_project.yml ]; then
           mkdir -p /usr/app/dbt/models
           cat > /usr/app/dbt/dbt_project.yml <<'PROJECT'
         name: orchestack_demo

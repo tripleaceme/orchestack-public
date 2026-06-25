@@ -25,31 +25,33 @@ services:
       # pre-start hook) but can be overridden via AIRFLOW_DB_USER in .env.
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
         postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow_admin}:${AIRFLOW_DB_PASSWORD:-}@orchestack-postgres:5432/airflow_db
-      # Webserver subpath for Traefik
+      # Airflow 3.x renamed [webserver] → [api]. We set BOTH the new
+      # keys (which actually do something) and the legacy [webserver]
+      # keys (which Airflow falls back to with a DeprecationWarning).
+      # Keeping both means upgrades from older OrcheStack installs
+      # continue working without operator intervention.
+      AIRFLOW__API__BASE_URL: http://localhost/app/airflow
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost/app/airflow
-      AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: 'True'
-      AIRFLOW__WEBSERVER__PROXY_FIX_X_PROTO: '1'
-      AIRFLOW__WEBSERVER__PROXY_FIX_X_HOST: '1'
-      AIRFLOW__WEBSERVER__PROXY_FIX_X_FOR: '1'
-      AIRFLOW__WEBSERVER__PROXY_FIX_X_PORT: '1'
-      AIRFLOW__WEBSERVER__PROXY_FIX_X_PREFIX: '1'
-      # CSRF + session cookie fixes.
-      #
-      # Without an explicit SECRET_KEY, Airflow generates a new random
-      # one on every container start — which invalidates every existing
-      # session cookie AND breaks any CSRF token mid-form-submit. Result
-      # is "Bad Request: The CSRF session token is missing" when the
-      # operator submits the login form across a container restart.
-      # Setting it explicitly makes sessions + CSRF tokens stable.
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?AIRFLOW_SECRET_KEY must be set in .env}
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?AIRFLOW_SECRET_KEY must be set in .env}
+      AIRFLOW__API__ENABLE_PROXY_FIX: 'True'
+      AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: 'True'
+      AIRFLOW__API__PROXY_FIX_X_PROTO: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PROTO: '1'
+      AIRFLOW__API__PROXY_FIX_X_HOST: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_HOST: '1'
+      AIRFLOW__API__PROXY_FIX_X_FOR: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_FOR: '1'
+      AIRFLOW__API__PROXY_FIX_X_PORT: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PORT: '1'
+      AIRFLOW__API__PROXY_FIX_X_PREFIX: '1'
+      AIRFLOW__WEBSERVER__PROXY_FIX_X_PREFIX: '1'
       # We serve Airflow over plain HTTP behind Traefik in dev. Cookie
       # Secure flag would require HTTPS; default-False allows the
-      # cookie to be sent over HTTP. Production deployments with
-      # HTTPS-terminating reverse proxies can override to True.
+      # cookie to be sent over HTTP.
+      AIRFLOW__API__COOKIE_SECURE: 'False'
       AIRFLOW__WEBSERVER__COOKIE_SECURE: 'False'
-      # SameSite=Lax is the right default for a subpath-deployed UI
-      # behind the dashboard's auth chain — CSRF tokens are protected,
-      # form posts from the dashboard's own origin still work.
+      AIRFLOW__API__COOKIE_SAMESITE: 'Lax'
       AIRFLOW__WEBSERVER__COOKIE_SAMESITE: 'Lax'
       # First-run admin user — read by our entrypoint wrapper below.
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
@@ -58,23 +60,28 @@ services:
       # DAGs git repo (optional) — synced by a git-sync sidecar
       AIRFLOW_DAGS_REPO_URL:    ${AIRFLOW_DAGS_REPO_URL:-}
       AIRFLOW_DAGS_REPO_BRANCH: ${AIRFLOW_DAGS_REPO_BRANCH:-main}
+    # NOTE on the YAML: every command must be on a SINGLE YAML line so
+    # the `>` folded scalar joins them with spaces, not newlines. The
+    # previous form put `airflow users create --role Admin` on one line
+    # and `--username "$x"` on the next more-indented line — `>` then
+    # preserved the newline between them, splitting the command in
+    # bash's view. The result was `users create` running with no email/
+    # username/firstname/lastname/password args. Keep multi-arg
+    # commands as one long line per YAML line.
     command: >
       bash -c '
         airflow db migrate &&
-        airflow users create --role Admin
-          --username "$${_AIRFLOW_WWW_USER_USERNAME}"
-          --email "$${_AIRFLOW_WWW_USER_EMAIL}"
-          --firstname Admin --lastname User
-          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
+        airflow users create --role Admin --username "$${_AIRFLOW_WWW_USER_USERNAME}" --email "$${_AIRFLOW_WWW_USER_EMAIL}" --firstname Admin --lastname User --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
         if [ -n "$${AIRFLOW_DAGS_REPO_URL}" ]; then
           if [ -d /opt/airflow/dags/.git ]; then
             cd /opt/airflow/dags && git fetch && git reset --hard origin/$${AIRFLOW_DAGS_REPO_BRANCH:-main} || true;
           else
-            git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $${AIRFLOW_DAGS_REPO_URL} /opt/airflow/dags-clone &&
-            cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ || true;
+            rm -rf /opt/airflow/dags-clone &&
+            (git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $${AIRFLOW_DAGS_REPO_URL} /opt/airflow/dags-clone 2>&1 | tail -5 || echo "[orchestack] dags clone failed (check AIRFLOW_DAGS_REPO_URL includes a PAT for private repos)") &&
+            (cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ 2>/dev/null || true);
           fi;
         fi;
-        airflow scheduler & airflow webserver
+        airflow scheduler & airflow api-server
       '
     networks:
       - orchestack-net

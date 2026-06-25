@@ -16,6 +16,48 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Fixed (Airflow 3 + dbt container restart-loops)
+
+- **Airflow restart-looped on first start** because the compose snippet
+  still ran `airflow webserver`, which Airflow 3 removed in favour of
+  `airflow api-server`. Compounded by a YAML folding bug — the `>`
+  block scalar preserves newlines before more-indented continuation
+  lines, which silently split the `airflow users create --role Admin`
+  command from its `--username`, `--email`, `--firstname`, `--lastname`,
+  `--password` args. Bash then ran each arg as a standalone command
+  (`/bin/bash: line 7: --password: command not found`) and `users create`
+  itself failed with "missing required arguments." Three fixes:
+  1. `airflow webserver` → `airflow api-server` at the end of the
+     entrypoint
+  2. All multi-arg commands (notably `users create`) put on a single
+     YAML line so the folded scalar joins them with spaces instead of
+     preserving newlines
+  3. Added `AIRFLOW__API__*` environment variables alongside the legacy
+     `AIRFLOW__WEBSERVER__*` ones — Airflow 3 reads from `[api]` and
+     falls back to `[webserver]` with a DeprecationWarning. Setting
+     both keeps both code paths happy + silences upgrade noise.
+  4. DAG repo clone is now resilient to a stale `dags-clone` directory
+     and prints a clearer failure message when the URL lacks a PAT.
+
+- **dbt container restart-looped with**
+  `No dbt_project.yml found at expected path /usr/app/dbt/dbt_project.yml`
+  on every restart after a previous partial run had populated the volume.
+  The entrypoint's clone logic ran `git clone X /usr/app/dbt` which fails
+  with `destination path already exists and is not an empty directory`
+  when the volume is non-empty (any leftover from a previous attempt
+  triggered this). The fallback demo-project block was inside an `elif`,
+  so it never fired when `DBT_REPO_URL` was set + the clone failed.
+  Fixes:
+  1. When `DBT_REPO_URL` is set but `/usr/app/dbt` has no `.git`,
+     `find ... -delete` clears the directory's contents (without
+     removing the mountpoint itself) before retrying the clone.
+  2. The demo-project fallback moved out of `elif` to a plain `if`, so
+     it fires even when a clone attempt failed. The container always
+     comes up with SOMETHING usable; the operator fixes `DBT_REPO_URL`
+     via Edit Config when ready.
+  3. Clearer error message when the clone fails (suggests adding a
+     PAT to the URL for private repos).
+
 ### Fixed (critical)
 
 - **Session-open HTTP request no longer blocks for 5–15 min waiting on
