@@ -1415,6 +1415,17 @@ load_task = PythonVirtualenvOperator(
 └── macros/                 # custom Jinja macros</pre>
 <p>OrcheStack's only requirement: the <code class="inline">profile:</code> name in <code class="inline">dbt_project.yml</code> must match what's in your generated <code class="inline">profiles.yml</code>. The dbt service entrypoint generates <code class="inline">profiles.yml</code> using your project's profile name — set the project's <code class="inline">profile:</code> to something like <code class="inline">orchestack_warehouse</code> for consistency with the Airflow Connection that Cosmos uses, or any other name as long as it matches what you set in the dashboard.</p>
 
+<div class="callout">
+  <p><strong>⚠ DBT_DATABASE and DBT_SCHEMA — what dbt creates and what it doesn't.</strong>
+  Operators sometimes set <code class="inline">DBT_DATABASE</code> to a name different from <code class="inline">WAREHOUSE_DB_NAME</code> in the Configure step (e.g. to separate raw landing from production marts at the database level). That works — but with one strict rule:</p>
+  <ul>
+    <li><strong>dbt creates schemas, never databases.</strong> If you set <code class="inline">DBT_DATABASE</code> to anything that doesn't already exist as a PostgreSQL database, <code class="inline">dbt run</code> fails on first invocation with <code class="inline">FATAL: database "&lt;name&gt;" does not exist</code>. dbt's role permissions include <code class="inline">CREATE</code> on a database, but the database itself must be pre-existing.</li>
+    <li><strong>Create the database manually before starting the dbt service.</strong> Connect to PostgreSQL as <code class="inline">orchestack_admin</code> (via pgAdmin or <code class="inline">docker exec orchestack-postgres psql</code>) and run <code class="inline">CREATE DATABASE my_analytics_db OWNER warehouse_admin;</code>. Then set <code class="inline">DBT_DATABASE</code> to that name in the Configure step (or update <code class="inline">.env</code> + restart the dbt service if you're past Configure).</li>
+    <li><strong>For <code class="inline">DBT_SCHEMA</code>, the opposite holds — dbt creates schemas automatically</strong> via <code class="inline">CREATE SCHEMA IF NOT EXISTS</code> on first run, so any name there works without pre-creation.</li>
+  </ul>
+  <p>The 90% pattern stays: leave <code class="inline">DBT_DATABASE = WAREHOUSE_DB_NAME</code> (one database, two schemas — <code class="inline">raw</code> and <code class="inline">marts</code>). Cross-database separation is an over-engineering for SME scale; cross-schema is sufficient.</p>
+</div>
+
 <h2 id="running-from-airflow">Running dbt from Airflow with Cosmos</h2>
 <p>This is the production pattern. Cosmos parses your dbt project's manifest at DAG-parse time and generates <strong>one Airflow task per model and per test</strong>, preserving dbt's dependency DAG inside Airflow's. When a model fails, the specific failed-model task lights up red — not a single opaque "dbt build" task.</p>
 <pre>from pathlib import Path

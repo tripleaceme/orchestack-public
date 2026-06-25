@@ -414,7 +414,13 @@ async def _ensure_pgadmin_servers_json() -> None:
     # UPDATEs. Admins who need direct access can add the connection manually.
     if warehouse_db and pipeline_user:
         entry = {
-            "Name":          warehouse_db,
+            # Static server label — describes WHAT it is (the OrcheStack
+            # warehouse server) rather than naming it after the default
+            # database it contains. Operators were confused when their
+            # warehouse database name (e.g. `raw_data`) appeared as the
+            # server name in pgAdmin's navigator — the server holds many
+            # databases, not just the warehouse one.
+            "Name":          "OrcheStack warehouse",
             "Group":         "OrcheStack",
             "Host":          "orchestack-postgres",
             "Port":          5432,

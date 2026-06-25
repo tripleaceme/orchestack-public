@@ -203,6 +203,44 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             "credentials_error": credentials_error,
         },
     )
+
+    # Auto-start hot-tier services in the background. The wizard's
+    # Configure copy promises "the images will be pulled and services
+    # created" — kick off start_service for every registered hot-tier
+    # service so by the time the operator reaches the dashboard the
+    # tiles are at minimum in "Starting" state (rather than uniformly
+    # "Stopped" with the operator unsure what to do). Cold-tier services
+    # remain on-demand: the operator opens them from the dashboard when
+    # they actually need them.
+    #
+    # Fire-and-forget — we don't await the start tasks because pulling
+    # heavy images can take 10+ minutes and we'd rather not block the
+    # /deploy response. The dashboard's service grid polls
+    # /orchestrator/api/services and reflects starting/running state
+    # as the background tasks complete.
+    try:
+        import asyncio
+        from .. import docker_ops, config as _conf
+        hot_tier_to_start = [
+            svc for svc in registered
+            if svc in _conf.SERVICE_CATALOGUE
+            and _conf.SERVICE_CATALOGUE[svc].get("tier") == "hot"
+            and not _conf.SERVICE_CATALOGUE[svc].get("control_plane", False)
+        ]
+        if hot_tier_to_start:
+            log.info(
+                "post-deploy: kicking off background start for hot-tier services: %s",
+                hot_tier_to_start,
+            )
+            for svc in hot_tier_to_start:
+                asyncio.create_task(
+                    docker_ops.start_service(svc),
+                    name=f"post-deploy-start:{svc}",
+                )
+    except Exception as e:
+        # Never let an auto-start failure poison the deploy response.
+        log.warning("post-deploy auto-start scheduling failed: %s", e)
+
     return {
         "status": "ready",
         "warehouse_db": name,

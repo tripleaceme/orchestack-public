@@ -73,13 +73,13 @@ DEFAULT_USER_ID: int = 1
 # can actually start/stop it).
 SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
-    "pgadmin":      {"tier": "cold", "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True, "requires": ["postgresql"]},
+    "pgadmin":      {"tier": "hot",  "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True, "requires": ["postgresql"]},
     # MinIO's console doesn't support subpath deployment reliably (their
     # 2024+ SPA assumes /api/v1 at root). external_url sends the operator
     # to localhost:9001 instead of /app/minio. The S3 API on 9000 stays
     # internal to the docker network — Airbyte/dbt reach it as
     # orchestack-minio:9000.
-    "minio":        {"tier": "hot",  "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
+    "minio":        {"tier": "cold", "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
     "dbt": {
         "tier": "cold", "display_name": "dbt Core",
         "layer": "transformation", "managed": True,
@@ -127,11 +127,11 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # cleanly under Traefik's /app/airflow subpath (unlike MinIO/Airbyte
     # whose React SPAs emit absolute-root asset paths), so no external_url
     # override is needed.
-    "airflow":      {"tier": "hot",  "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
+    "airflow":      {"tier": "cold", "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
     # — same subpath-incompatibility class as MinIO. external_url sends
     # operators to host port 8001 instead of the broken /app/airbyte subpath.
-    "airbyte":      {"tier": "hot",  "display_name": "Airbyte",             "layer": "ingestion",    "managed": True, "external_url": "http://{host}:8001"},
+    "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": True, "external_url": "http://{host}:8001"},
     # OpenMetadata: React SPA emits absolute-root asset paths that don't
     # survive Traefik's stripprefix middleware. WEB_CONF_URI is supposed to
     # control this in OM 1.6.x but doesn't — the webpack publicPath is

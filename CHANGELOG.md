@@ -16,6 +16,53 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Changed
+
+- **Service tier classification revised.** `pgadmin` moved from cold to
+  hot (operators reach for it dozens of times a session; the cold-start
+  delay was annoying). `minio`, `airflow`, and `airbyte` moved from
+  hot to cold (their resident memory cost is high enough that "always
+  on" pushed the 8 GB envelope; cold-start cost is acceptable when
+  they're not in continuous use). The new hot tier is exactly the
+  three services operators interact with every day:
+  PostgreSQL, Metabase, pgAdmin. Catalogue edit in
+  `system/orchestrator/app/config.py`; the dashboard's tier badges and
+  the reconciler honour the new classification automatically.
+
+- **pgAdmin server label.** The pre-configured server in pgAdmin's
+  navigator used to be named after `WAREHOUSE_DB_NAME` (e.g. `raw_data`),
+  which confused operators because the server hosts multiple databases.
+  The label is now the fixed string `"OrcheStack warehouse"`. The
+  underlying connection is unchanged.
+
+- **`.env` template extended** to include the four wizard-written keys
+  that were previously being appended at the bottom under "Added by
+  the setup wizard" (`DBT_DATABASE`, `DBT_SCHEMA`,
+  `AIRFLOW_DAGS_REPO_PATH`, `MINIO_BUCKET`). They now have placeholder
+  entries in their respective service sections, so the wizard updates
+  them in place rather than appending — preserving the by-service
+  grouping the .env.example template establishes.
+
+- **Hot-tier services auto-start in the background after deploy.** The
+  setup wizard's "Create services" used to register services in the
+  platform DB and then exit; operators reached the dashboard and saw
+  every tile as `Stopped`, unsure whether to wait or to click each
+  one. The deploy endpoint now schedules `start_service` in the
+  background for every registered hot-tier service (postgresql,
+  metabase, pgadmin) so by the time the operator reaches the dashboard
+  the tiles are at minimum in "Starting" state. Fire-and-forget — the
+  /deploy response doesn't block on image pulls, which can take 10+ min
+  on slow links. Cold-tier services remain on-demand: operators open
+  them when they need them.
+
+- **dbt operator docs** now include an explicit callout on
+  `DBT_DATABASE` vs `DBT_SCHEMA` semantics — dbt creates schemas (any
+  name works without pre-creation) but does NOT create databases (must
+  pre-create in PostgreSQL before starting dbt if you point
+  `DBT_DATABASE` at a name different from `WAREHOUSE_DB_NAME`). The
+  Configure step's DBT_DATABASE hint carries the same warning.
+
+
 First patch release. Closes both install-time bugs surfaced during
 end-to-end verification of v0.1.0, plus a fifth round of operator-
 visible polish discovered while walking a second operator through a
