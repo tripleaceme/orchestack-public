@@ -14,14 +14,53 @@ Entries omit categories that have no changes for that release.
 Pending changes will be listed here and rolled into the next tagged
 release.
 
-## [0.1.1] — 2026-06-23
+## [0.1.1] — 2026-06-25
 
 First patch release. Closes both install-time bugs surfaced during
-end-to-end verification of v0.1.0. Operators upgrade with
+end-to-end verification of v0.1.0, plus a fifth round of operator-
+visible polish discovered while walking a second operator through a
+fresh install. Operators upgrade with
 `docker compose pull && docker compose up -d` — no destructive
 changes, no `.env` edits required.
 
 ### Fixed
+
+- **Airflow service start timeout** — bumped from 300 s to 900 s in
+  `system/orchestrator/app/docker_ops.py`. The orchestack-airflow image
+  is ~2.4 GB and its base apache/airflow image is ~2.3 GB; on slower
+  connections the first-pull plus container create exceeded the
+  previous 5-minute cap, leaving the service stuck with a
+  `session_autostart_failed` audit event and no operator-facing
+  signal. The new 15-minute cap accommodates first-pull on typical
+  African residential broadband. Cached starts remain sub-second.
+
+- **`WAREHOUSE_DB_NAME` validation error message** — when an operator
+  typed a hyphenated name (e.g. `raw-data`), the wizard rejected it
+  with the bare regex pattern in the error. The error now explains
+  what's allowed (letters, digits, underscores; start with letter;
+  3–31 chars) and shows a concrete corrected example (`raw_data`).
+  The validation itself is unchanged — hyphenated identifiers force
+  PostgreSQL quoting in every downstream tool's connection string and
+  reliably break dbt and Airflow when they hit them.
+
+- **Wizard placeholders + admin-email defaults removed** — the signup
+  form previously placeholder'd a real name (`Ayoade Adegbite`,
+  `ayoade`, `you@company.ng`); replaced with `John Doe`, `johndoe`,
+  `you@example.com`. The Configure step's Metabase and pgAdmin
+  sections previously pre-filled `metabase_admin@orchestack.local`
+  and `pgadmin_admin@orchestack.local` into the admin-email fields;
+  removed both defaults so operators see empty fields with
+  `you@example.com`-style placeholders and consciously enter a real
+  address. (Operators were leaving the defaults in place and then
+  forgetting which credential signed in to which tool.)
+
+- **Metabase admin-password field clearer + warned** — the field's
+  hint + placeholder now explicitly call out Metabase's
+  "not too common" password rule and warn against typing your email
+  as the password (which Metabase silently rejects with a confusing
+  `400 password is too common` response that names the email in the
+  payload). No validation change — Metabase enforces its own rule;
+  this is just clearer guidance.
 
 - **[#1](https://github.com/tripleaceme/orchestack-public/issues/1)** —
   Airflow now starts independently of dbt. Removed the `external: true`

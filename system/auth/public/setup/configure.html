@@ -303,7 +303,7 @@
         <ul>
           <li><strong>The project name + profile come from your repo.</strong> Whatever your <code>dbt_project.yml</code> says is the <code>name:</code> and <code>profile:</code>. OrcheStack reads the file at container start and generates a matching <code>profiles.yml</code>. You don't need to enter the project name here.</li>
           <li><strong>dbt runs against the <code>prod</code> target by default.</strong> The generated <code>profiles.yml</code> wires a single output named <code>prod</code> pointing at the database and schema above. <code>dbt run</code> (no <code>--target</code> flag) uses this; Airflow's <code>BashOperator(bash_command='dbt run')</code> uses this. The credentials and connection details for the <code>prod</code> target are exactly the fields you fill in here.</li>
-          <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_ayoade</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared schema stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
+          <li>Before developers start writing models, the admin should create separate dev schemas (e.g. <code>dev_john</code>, <code>dev_alice</code>) so local work doesn't overwrite the shared schema stakeholders read from (<a href="/docs/guides/dbt-dev-schemas.html"><strong>see dbt dev schemas</strong></a>).</li>
         </ul>
       `,
     },
@@ -390,11 +390,12 @@
       desc: "BI for stakeholders. Your admin account is what you'll use to sign in to Metabase itself. Metabase uses an email-shaped identifier as the login, no mail is ever sent unless you configure SMTP yourself.",
       fields: [
         { name: "METABASE_ADMIN_EMAIL", label: "Admin login (email format)", type: "email",
-          default: "metabase_admin@orchestack.local",
+          placeholder: "you@example.com",
           required: true,
-          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. OrcheStack's naming convention is service_admin@orchestack.local so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer (e.g. your work address)." },
+          hint: "Metabase's login identifier. Must look like an email but is only used to sign in. Pick something operator-meaningful (your own work address, or service_admin@your-company.com). Leave blank to skip the in-wizard hint — Metabase's UI also asks for it on first browser visit." },
         { name: "METABASE_ADMIN_PASSWORD", label: "Admin password", type: "password", required: true,
-          hint: "Metabase admin password. Can differ from your OrcheStack platform login." },
+          placeholder: "Strong password (12+ chars; not your email)",
+          hint: "Metabase admin password — REQUIRED. Metabase enforces its own password rules (12+ chars and 'not too common' — avoid dictionary words, your email, etc.). If Metabase rejects your password, the in-app setup falls back and you'll have to reset via Metabase's UI on first visit." },
       ],
     },
 
@@ -431,11 +432,12 @@
       desc: "Credentials are only for the pgAdmin UI login itself. pgAdmin uses an <strong>email-shaped identifier</strong> as its login username.",
       fields: [
         { name: "PGADMIN_DEFAULT_EMAIL", label: "Admin login (email format)", type: "email",
-          default: "pgadmin_admin@orchestack.local",
+          placeholder: "you@example.com",
           required: true,
-          hint: "pgAdmin's login identifier. Must look like an email (the app refuses to start if it doesn't), but it's never used to send mail. OrcheStack's naming convention is service_admin@orchestack.local so admin emails are consistent across every tool in the catalogue. Override with any valid email if you prefer." },
+          hint: "pgAdmin's login identifier. Must look like an email (the app refuses to start if it doesn't), but it's never used to send mail. Pick your own work address or any operator-meaningful email." },
         { name: "PGADMIN_DEFAULT_PASSWORD", label: "Admin password", type: "password", required: true,
-          hint: "pgAdmin login password. Min 12 characters recommended." },
+          placeholder: "Strong password (12+ chars; not your email)",
+          hint: "pgAdmin login password. Min 12 characters; avoid your email or any common word." },
       ],
     },
     "Adminer": {

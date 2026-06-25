@@ -54,7 +54,13 @@ def _validate_warehouse_db_inputs(creds: dict[str, str]) -> tuple[str, str, str]
     if not _SAFE_IDENT.fullmatch(user):
         raise HTTPException(400, f"WAREHOUSE_DB_USER {user!r} must match {_SAFE_IDENT.pattern}")
     if not _SAFE_IDENT.fullmatch(name):
-        raise HTTPException(400, f"WAREHOUSE_DB_NAME {name!r} must match {_SAFE_IDENT.pattern}")
+        raise HTTPException(
+            400,
+            f"WAREHOUSE_DB_NAME {name!r} is not a valid PostgreSQL identifier. "
+            f"Use letters, digits and underscores only — no hyphens, dots, or spaces. "
+            f"Start with a letter; 3–31 chars total. Example: 'data_warehouse', "
+            f"'raw_data' (NOT 'raw-data'). Internal regex: {_SAFE_IDENT.pattern}",
+        )
     if len(password) < 12:
         raise HTTPException(400, "WAREHOUSE_DB_PASSWORD must be at least 12 chars")
     return user, name, password

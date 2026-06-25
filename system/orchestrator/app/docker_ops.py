@@ -1499,7 +1499,11 @@ async def start_service(service: str) -> CommandResult:
             log.warning("pre-start hook for %s failed: %s", service, e)
 
     up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
-    res = await asyncio.to_thread(_run_sync, up_args, 300)
+    # 900s (15 min) tolerates the first-pull of OrcheStack's heaviest
+    # images on slow connections — orchestack-airflow is ~2.4 GB and
+    # airbyte's container stack adds another ~3 GB. Cached starts are
+    # sub-second, so the higher cap costs nothing in steady state.
+    res = await asyncio.to_thread(_run_sync, up_args, 900)
 
     if res.ok:
         _schedule_post_start_hook(service)
@@ -1523,7 +1527,7 @@ async def start_service(service: str) -> CommandResult:
         )
         return res
 
-    retry = await asyncio.to_thread(_run_sync, up_args, 300)
+    retry = await asyncio.to_thread(_run_sync, up_args, 900)
     if retry.ok:
         _schedule_post_start_hook(service)
     return retry
