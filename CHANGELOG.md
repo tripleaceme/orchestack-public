@@ -16,6 +16,49 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Fixed (Traefik routing + Metabase bootstrap-lockout recovery)
+
+- **`/app/dbt-terminal/` (and any other service subpath) returned the
+  dashboard's branded 404 instead of routing to the service container.**
+  The dashboard router used `PathPrefix(`/app`)` with no explicit
+  priority. Traefik's default priority — "longer rule wins" — meant
+  per-service routes whose rules were shorter than the dashboard's
+  rule-length actually outranked the service route, even when those
+  routes set `priority=200` explicitly. The fix sets
+  `traefik.http.routers.dashboard.priority=1` on the dashboard
+  service in `system/docker/docker-compose.yml`, making the dashboard
+  the explicit last-resort match. Any per-service route with
+  `priority > 1` (convention is 200) trumps it cleanly. Affects
+  `/app/dbt-terminal/`, `/app/ge-terminal/`, and any future
+  in-container shell endpoint we add via the same Traefik label pattern.
+
+- **Metabase bootstrap auto-recovers when the operator's password is
+  rejected.** Metabase 0.51 has its own password validator that rejects
+  "too common" or "too short" values with a 400 response. The setup
+  token is consumed regardless of the validation outcome, so a single
+  failed attempt left the operator with no recovery path short of
+  dropping `metabase_db` — the symptom of which was the in-browser
+  Metabase setup page asking the operator to set a fresh admin password
+  after they'd already set one through the wizard. The bootstrap hook
+  now detects a `400 password is...` response, generates a strong
+  random password via `secrets.token_urlsafe(20)`, persists it to
+  `METABASE_ADMIN_PASSWORD` in `.env`, re-fetches a fresh setup token,
+  and retries the setup POST. On success, the audit log writes a
+  `metabase_bootstrap_recovered` event containing the generated
+  password and the operator-action note "Sign in to Metabase with
+  admin email + the generated_password above, then change it from
+  Settings > Account."
+
+- **Front-end check rejects email-shaped passwords on admin password
+  fields.** The Configure form now scans `METABASE_ADMIN_PASSWORD`,
+  `PGADMIN_DEFAULT_PASSWORD`, `AIRFLOW_ADMIN_PASSWORD`,
+  `OPENMETADATA_ADMIN_PASSWORD`, and `MINIO_ROOT_PASSWORD` for values
+  that match the email regex before submit, and shows an explicit
+  alert ("looks like an email — but it's in the password field…") if
+  any does. Catches the trap before it becomes a downstream-tool
+  rejection (which the operator only sees in the audit log a minute
+  later when the bootstrap hook fires).
+
 ### Fixed (Airflow 3 + dbt container restart-loops)
 
 - **Airflow restart-looped on first start** because the compose snippet

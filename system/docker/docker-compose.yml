@@ -185,6 +185,21 @@ services:
       - traefik.http.middlewares.dashboard-strip.stripprefix.prefixes=/app
       - traefik.http.routers.dashboard.middlewares=dashboard-strip@docker
       - traefik.http.services.dashboard.loadbalancer.server.port=8000
+      # CATCH-ALL priority. The dashboard's PathPrefix(`/app`) matches
+      # EVERYTHING under /app, including subpaths owned by other services
+      # (e.g. /app/airflow, /app/metabase, /app/dbt-terminal, /app/pgadmin).
+      # Without an explicit low priority here, Traefik's default —
+      # "longer rule wins" — let the dashboard sometimes outrank per-
+      # service routes whose explicit priority was set BELOW the
+      # dashboard's rule length, producing the dashboard's branded 404
+      # at e.g. /app/dbt-terminal/ instead of routing to the dbt
+      # container's ttyd on port 7681.
+      #
+      # Setting priority=1 makes the dashboard the LAST-RESORT match.
+      # Per-service routes need only set priority > 1 to take precedence;
+      # convention is priority=200 (used by every service .yml in
+      # system/docker/services/). 200 > 1 cleanly.
+      - traefik.http.routers.dashboard.priority=1
 
   # ==========================================================================
   # 5. orchestrator — Service-lifecycle daemon.

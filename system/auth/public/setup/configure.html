@@ -723,6 +723,43 @@
       e.preventDefault();
       const creds = {};
 
+      // Reject email-shaped passwords on the admin-password fields that
+      // are downstream-tool admin credentials (Metabase, pgAdmin,
+      // OpenMetadata, Airflow, MinIO). Operators sometimes type their
+      // OWN email into the password field by mistake; downstream tools
+      // then either reject the password (Metabase: "password is too
+      // common", silently consuming its single setup-token in the
+      // process) or accept it and become a credential the operator
+      // doesn't remember setting. Surface the trap before submit so the
+      // operator sees the cause rather than the symptom.
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const ADMIN_PASSWORD_FIELDS = [
+        "METABASE_ADMIN_PASSWORD",
+        "PGADMIN_DEFAULT_PASSWORD",
+        "AIRFLOW_ADMIN_PASSWORD",
+        "OPENMETADATA_ADMIN_PASSWORD",
+        "MINIO_ROOT_PASSWORD",
+      ];
+      const emailLikePw = Array.from(form.querySelectorAll('input[type=password]'))
+        .find(inp =>
+          inp.name && ADMIN_PASSWORD_FIELDS.includes(inp.name) &&
+          inp.value && EMAIL_RE.test(inp.value.trim())
+        );
+      if (emailLikePw) {
+        const panelIdx = parseInt(
+          emailLikePw.closest('.svc-panel')?.dataset.idx ?? '0', 10);
+        if (window.__setupShow) window.__setupShow(panelIdx);
+        emailLikePw.focus();
+        alert(
+          `"${emailLikePw.value}" looks like an email — but it's in the ` +
+          `password field. Downstream tools (Metabase, pgAdmin, etc.) ` +
+          `enforce password rules and will reject an email-shaped value, ` +
+          `which can lock the operator out without a recovery path. ` +
+          `Please pick a real password (12+ chars; not your email) before ` +
+          `continuing.`);
+        return;
+      }
+
       // Validate type=email fields BEFORE collecting credentials.
       //
       // The <form> carries `novalidate` (see the form tag in the static
@@ -733,7 +770,6 @@
       // pgAdmin on startup ("'Admin_pg' does not appear to be a valid
       // email address"). We re-instate the check here, surfacing the
       // bad field by jumping to its tab + focusing it.
-      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const badEmail = Array.from(form.querySelectorAll('input[type=email]'))
         .find(inp => inp.name && inp.value && !EMAIL_RE.test(inp.value.trim()));
       if (badEmail) {

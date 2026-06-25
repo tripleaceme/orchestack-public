@@ -1093,17 +1093,185 @@ async def _bootstrap_metabase() -> None:
                 "metabase bootstrap: /api/setup returned %d: %s",
                 r.status_code, r.text[:500],
             )
-            await audit.write(
-                "metabase_bootstrap_failed",
-                service_name="metabase",
-                user_id=None,
-                details={
-                    "phase":  "setup",
-                    "status": r.status_code,
-                    "body":   r.text[:500],
-                },
-            )
-            return
+
+            # Password-rejection recovery. Metabase 0.51 returns 400 with
+            # response bodies like:
+            #   {"errors":{"password":"password is too common."}}
+            #   {"errors":{"password":"password is too short."}}
+            # when the operator's chosen password fails Metabase's own
+            # validator. Operators sometimes type their email or a short
+            # dictionary word; the setup_token in their browser session is
+            # then gone after the failed attempt (Metabase consumes it on
+            # the first POST regardless of the validation outcome), so the
+            # operator has NO recovery path short of dropping metabase_db.
+            #
+            # Auto-recover by generating a strong random password,
+            # persisting it to .env, and surfacing the new password to the
+            # operator via the audit log. They sign in with the audit-
+            # logged password, then change it from Metabase's profile UI.
+            try:
+                body_text = (r.text or "").lower()
+                is_password_problem = (
+                    r.status_code == 400 and
+                    ("password" in body_text and (
+                        "too common" in body_text or
+                        "too short" in body_text or
+                        "password is" in body_text
+                    ))
+                )
+            except Exception:
+                is_password_problem = False
+
+            if is_password_problem:
+                import secrets as _secrets
+                generated_pw = _secrets.token_urlsafe(20)
+                log.warning(
+                    "metabase bootstrap: password rejected by Metabase — "
+                    "generating a recovery password and persisting it to .env"
+                )
+
+                # Try to update .env so the next start (and the operator's
+                # Edit Config view) reflect the new password.
+                env_persisted = False
+                try:
+                    from pathlib import Path
+                    env_path = Path(config.ENV_FILE)
+                    if env_path.exists():
+                        lines = env_path.read_text().splitlines()
+                        found = False
+                        for i, line in enumerate(lines):
+                            if line.startswith("METABASE_ADMIN_PASSWORD="):
+                                lines[i] = f"METABASE_ADMIN_PASSWORD={generated_pw}"
+                                found = True
+                                break
+                        if not found:
+                            lines.append(f"METABASE_ADMIN_PASSWORD={generated_pw}")
+                        env_path.write_text("\n".join(lines) + "\n")
+                        env_persisted = True
+                except Exception as e:
+                    log.warning(
+                        "metabase bootstrap: could not persist generated "
+                        "password to .env: %s", e,
+                    )
+
+                # Re-fetch the setup token (Metabase consumed the first one
+                # on the failed POST). The properties endpoint serves a
+                # fresh token until Metabase decides setup is complete.
+                fresh_token: str | None = None
+                for _ in range(15):
+                    try:
+                        pr = await client.get(
+                            f"{base}/api/session/properties", timeout=10.0,
+                        )
+                        if pr.status_code == 200:
+                            j = pr.json()
+                            tok = j.get("setup-token")
+                            if tok:
+                                fresh_token = tok
+                                break
+                    except httpx.HTTPError:
+                        pass
+                    await asyncio.sleep(2)
+
+                if fresh_token is None:
+                    log.warning(
+                        "metabase bootstrap: could not re-fetch setup-token "
+                        "after password rejection — operator must drop "
+                        "metabase_db to retry"
+                    )
+                    await audit.write(
+                        "metabase_bootstrap_failed",
+                        service_name="metabase",
+                        user_id=None,
+                        details={
+                            "phase":  "setup_password_rejected",
+                            "status": r.status_code,
+                            "body":   r.text[:500],
+                            "recovery_attempted": False,
+                            "recovery_note": (
+                                "Metabase rejected the operator-supplied "
+                                "password and the setup token is gone. "
+                                "Drop the metabase_db database and restart "
+                                "Metabase to retry bootstrap."
+                            ),
+                        },
+                    )
+                    return
+
+                retry_payload = dict(setup_payload)
+                retry_payload["token"] = fresh_token
+                retry_payload["user"] = dict(setup_payload["user"])
+                retry_payload["user"]["password"] = generated_pw
+                try:
+                    r2 = await client.post(
+                        f"{base}/api/setup", json=retry_payload, timeout=60.0,
+                    )
+                except httpx.HTTPError as e:
+                    log.warning(
+                        "metabase bootstrap: retry POST /api/setup raised: %s", e,
+                    )
+                    await audit.write(
+                        "metabase_bootstrap_failed",
+                        service_name="metabase", user_id=None,
+                        details={"phase": "setup_retry", "error": str(e)},
+                    )
+                    return
+
+                if r2.status_code in (200, 201, 204):
+                    log.info(
+                        "metabase bootstrap: recovered with generated password "
+                        "(operator-supplied password was rejected)"
+                    )
+                    await audit.write(
+                        "metabase_bootstrap_recovered",
+                        service_name="metabase",
+                        user_id=None,
+                        details={
+                            "phase":  "setup_retry",
+                            "status": r2.status_code,
+                            "original_failure": r.text[:300],
+                            "env_persisted":    env_persisted,
+                            # Surface the new password to the operator. This
+                            # IS sensitive — but the alternative is the
+                            # operator being locked out. They'll change it via
+                            # Metabase's profile UI on first sign-in.
+                            "generated_password": generated_pw,
+                            "operator_action_required": (
+                                "Sign in to Metabase with admin email + the "
+                                "generated_password above, then change it "
+                                "from Settings > Account."
+                            ),
+                        },
+                    )
+                    # Fall through to the warehouse-registration step below.
+                else:
+                    log.warning(
+                        "metabase bootstrap: retry also failed (%d): %s",
+                        r2.status_code, r2.text[:300],
+                    )
+                    await audit.write(
+                        "metabase_bootstrap_failed",
+                        service_name="metabase",
+                        user_id=None,
+                        details={
+                            "phase":  "setup_retry",
+                            "status": r2.status_code,
+                            "body":   r2.text[:300],
+                        },
+                    )
+                    return
+            else:
+                await audit.write(
+                    "metabase_bootstrap_failed",
+                    service_name="metabase",
+                    user_id=None,
+                    details={
+                        "phase":  "setup",
+                        "status": r.status_code,
+                        "body":   r.text[:500],
+                    },
+                )
+                return
 
         log.info("metabase bootstrap: /api/setup succeeded (status %d)", r.status_code)
         await audit.write(
