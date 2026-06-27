@@ -95,7 +95,16 @@ services:
       # operator's models. The dbt service owns RW; Airflow can only read.
       - dbt-repo:/opt/airflow/dbt-project:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/app/airflow/health > /dev/null || curl -sf http://localhost:8080/health > /dev/null || exit 1"]
+      # Airflow 3 moved the health endpoint to /api/v2/monitor/health.
+      # The pre-3 paths (/health, /app/airflow/health) both 404 on
+      # Airflow 3's api-server, so the previous probe always reported
+      # unhealthy — even when api-server was serving requests fine.
+      # The base_url config affects how Airflow generates URLs in
+      # responses, NOT the internal listen path, so probing the api
+      # endpoint at the root works regardless of base_url. Fallback to
+      # the legacy /health for forward-compat if/when we bump back to
+      # an older Airflow line.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/v2/monitor/health > /dev/null || curl -sf http://localhost:8080/health > /dev/null || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 18

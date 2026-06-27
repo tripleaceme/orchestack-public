@@ -16,6 +16,21 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Fixed (Airflow 3 health endpoint)
+
+- **Airflow container reported unhealthy forever** because the
+  healthcheck still probed `/app/airflow/health` and `/health` —
+  Airflow 2 paths that 404 on Airflow 3. Airflow 3 moved the API
+  health endpoint to `/api/v2/monitor/health`; updated both the
+  compose snippet's healthcheck and the orchestrator dashboard's
+  per-service ready-probe to use the new path. The `base_url` config
+  affects the URLs Airflow generates in responses but not the
+  internal listen path, so probing the endpoint at the root works
+  regardless of `AIRFLOW__API__BASE_URL`. Effect: api-server-was-
+  serving-fine-but-still-marked-unhealthy goes away; the dashboard
+  tile transitions to Running once Airflow actually completes its
+  startup.
+
 ### Fixed (Traefik routing + Metabase bootstrap-lockout recovery)
 
 - **`/app/dbt-terminal/` (and any other service subpath) returned the

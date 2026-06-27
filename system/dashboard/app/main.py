@@ -1885,9 +1885,12 @@ async def service_ready_probe(
 
     _SERVICE_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
-        # Airflow webserver enforces BASE_URL — /health returns 404 when
-        # AIRFLOW__WEBSERVER__BASE_URL is a subpath; actual endpoint is BASE_URL+/health.
-        "airflow":      ("orchestack-airflow",      8080, "/app/airflow/health"),
+        # Airflow 3 moved the API health endpoint to /api/v2/monitor/health.
+        # The base_url config affects the URLs Airflow GENERATES in responses
+        # (redirects, links), NOT the internal listen path — so probing the
+        # endpoint at the root works regardless of base_url. Previously this
+        # was /app/airflow/health which 404s on Airflow 3.
+        "airflow":      ("orchestack-airflow",      8080, "/api/v2/monitor/health"),
         # Multi-container deployment; airbyte-server is the right gate — webapp's
         # nginx returns 200 before the API is up, so probing the webapp would race.
         "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),
