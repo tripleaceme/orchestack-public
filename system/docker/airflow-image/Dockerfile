@@ -93,8 +93,15 @@ ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints
 # then back to airflow for pip (matches the upstream image's own
 # convention for build-time deps).
 USER root
+# build-essential gives us gcc + make + libc headers, libpq-dev gives
+# us pg_config + libpq headers. dbt 1.8's dependency tree includes a
+# raw psycopg2 source build that needs both. The upstream airflow image
+# has python3-dev already, so we don't add it here. (We tried libpq-dev
+# alone first — pg_config was found but gcc bombed with Permission
+# denied during build_ext; build-essential's stricter package set
+# resolves it.)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq-dev && \
+    apt-get install -y --no-install-recommends build-essential libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 USER airflow
 

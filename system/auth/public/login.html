@@ -45,12 +45,6 @@
     </a>
     <h1>Welcome back</h1>
     <p class="sub">Log in to manage your data platform.</p>
-
-    {# The canonical login form lives at /app/login (dashboard-served);
-       login state is owned by the orchestrator + propagated via a cookie
-       that needs the dashboard's Path=/ scope. This page is kept only so
-       old links (marketing site, bookmarks) don't 404; the JS below
-       redirects on load. #}
     <form id="login-form" action="/app/login" method="GET">
       <div class="form-group">
         <label for="l-identifier">Username or email</label>
