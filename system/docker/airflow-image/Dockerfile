@@ -40,27 +40,38 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 #   - Reproducibility: every operator pulling :0.1.0 gets the same
 #     exact dbt + cosmos versions
 #
-# Version pins:
-#   - dbt-core 1.8.x          : last dbt line whose deps fit cleanly on
-#                               Airflow 2.10 (1.9+ jumped to protobuf 5,
-#                               1.10 to protobuf 6). Cosmos 1.14 supports
-#                               dbt 1.5–1.10 so dropping to 1.8 keeps
-#                               orchestration intact. Bump back to 1.10
-#                               when we move back to Airflow 3.
-#   - dbt-postgres 1.8.x      : matches dbt-core minor (dbt convention)
-#   - astronomer-cosmos 1.14.x: current stable; supports dbt 1.5–1.10 AND
-#                               both Airflow 2.10+ and 3.x.
+# Version pins — picked to satisfy a four-way constraint we hit while
+# reverting from Airflow 3 to 2.10:
+#   (1) Airflow 2.10.5's constraint file pins protobuf==4.25.6
+#   (2) dbt-core's protobuf requirement climbed minor-by-minor:
+#         1.8.0  → protobuf >=4,<5   ← only patch that allows protobuf 4
+#         1.8.1+ → protobuf >=5,<6
+#         1.9.*  → protobuf >=5,<6 (or 6 for 1.9.9+)
+#         1.10.* → protobuf >=6,<7
+#   (3) dbt-common (a separate package dbt-core pulls in) has its OWN
+#         protobuf ratchet — latest dbt-common 1.38 wants protobuf 6.
+#   (4) cosmos must support BOTH our Airflow version AND our dbt version.
 #
-# Why the CUSTOM (protobuf-stripped) constraint file: Airflow's published
-# constraint file pins every transitive — without it pip explodes into
-# ResolutionTooDeep when resolving foreign packages like dbt + cosmos.
-# But the vanilla file also pins `protobuf==4.25.6` (Airflow's tested
-# floor), and dbt 1.8 requires `protobuf>=5,<6` — so pip then dies with
-# ResolutionImpossible. We `grep -v ^protobuf==` the constraint file so
-# dbt's protobuf 5 wins for the install; every OTHER Airflow transitive
-# stays locked, so resolution still converges in one pass. Airflow 2.10
-# tolerates protobuf 5.x at runtime (the 4.25 pin is a tested-stability
-# floor, not a hard ABI break).
+# Solution:
+#   - dbt-core == 1.8.0          : exact pin — only patch that allows
+#                                  protobuf 4. dbt 1.8.0 is the May-2024
+#                                  release, the very first 1.8.
+#   - dbt-postgres == 1.8.0      : matching dbt-core patch (dbt convention)
+#   - dbt-common < 1.10          : floor below the dbt-common protobuf-5
+#                                  bump; pip picks the highest <1.10 patch
+#                                  that satisfies dbt-core 1.8.0's >=1.0.4
+#                                  floor on dbt-common.
+#   - dbt-adapters < 1.10        : same reasoning as dbt-common.
+#   - astronomer-cosmos 1.8.*    : the pin from the ORIGINAL working
+#                                  a6621e80 commit — known compatible with
+#                                  dbt 1.8 and Airflow 2.10. Cosmos was
+#                                  later bumped to 1.14 to fix an Airflow 3
+#                                  import issue we no longer have.
+#
+# Constraint file: use Airflow's vanilla constraint file unmodified —
+# it pins protobuf==4.25.6 which now matches dbt-core 1.8.0's >=4,<5
+# requirement. No need to strip the protobuf pin (that workaround was
+# for dbt 1.8.1+ which wants protobuf 5; we no longer ship those).
 ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
@@ -79,14 +90,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 USER airflow
 
-RUN curl -fsSL "${CONSTRAINT_URL}" \
-      | grep -v "^protobuf==" \
-      > /tmp/orchestack-constraints.txt && \
-    pip install --no-cache-dir --constraint /tmp/orchestack-constraints.txt \
-        "dbt-core>=1.8,<1.9" \
-        "dbt-postgres>=1.8,<1.9" \
-        "astronomer-cosmos>=1.14,<1.15" && \
-    rm /tmp/orchestack-constraints.txt
+RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
+        "dbt-core==1.8.0" \
+        "dbt-postgres==1.8.0" \
+        "dbt-common<1.10" \
+        "dbt-adapters<1.10" \
+        "astronomer-cosmos>=1.8,<1.9"
 
 # Build-time verification: container build fails if dbt or cosmos
 # can't be imported. Catches version-pin breaks at build time, not
