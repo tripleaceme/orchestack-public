@@ -16,6 +16,25 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
+### Added (Operator-facing upgrade flow)
+
+- **`upgrade.sh`** now ships inside the runtime bundle. Backs up
+  `.env` to a timestamped `.env.bak.<ts>`, downloads the latest
+  release tarball, replaces `docker-compose.yml`, `services/`,
+  `traefik/`, `postgres-init/`, `INSTALL.md`, and `.env.example` in
+  place, preserves your `.env`, then runs `docker compose pull && up -d`.
+  Idempotent + safe to re-run.
+- **`INSTALL.md`** now has an **Upgrading** section explaining the
+  two-part release artefact model (Docker images vs. bundled
+  compose snippets) — the gap that caused the recent regression
+  where stale `airflow.yml` kept reproducing already-fixed bugs.
+- The two-part model is intrinsic to the design: shipping per-
+  service compose snippets as code-in-image would force every
+  managed-service change to rebuild the orchestrator image; keeping
+  them in the bundle lets operators (and us) update one without the
+  other. The upgrade script makes the cost — running both updates —
+  invisible.
+
 ### Fixed (Airflow 3 health endpoint)
 
 - **Airflow container reported unhealthy forever** because the

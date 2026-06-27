@@ -99,6 +99,10 @@ jobs:
           # Per-service compose snippets — added in M2.3. One YAML file per
           # managed cold/hot-tier tool. Mounted read-only by the orchestrator.
           cp system/docker/services/*.yml              "${BUNDLE}/services/"
+          # Operator-facing upgrade script. Sourced from scripts/ so the
+          # script is reviewable in the repo + version-controlled.
+          cp scripts/upgrade.sh                        "${BUNDLE}/upgrade.sh"
+          chmod +x                                     "${BUNDLE}/upgrade.sh"
 
           # Embed the version so the operator can run `cat VERSION` to know
           # what they extracted.
@@ -138,11 +142,49 @@ jobs:
           only if you want to contribute, fork, or rebuild the images
           yourself.
 
-          ## Updating
+          ## Upgrading
 
-          Download the next release tarball and overwrite the files —
-          \`docker compose pull && docker compose up -d\` picks up new images.
-          Keep your \`.env\` file; never overwrite it during an update.
+          OrcheStack splits its release artefacts in two places:
+          - **Docker images** (auth, dashboard, orchestrator, airflow, ge) — pulled via \`docker compose pull\`
+          - **Per-service compose snippets** (\`services/*.yml\`), \`docker-compose.yml\`, \`traefik/\`, \`postgres-init/\` — live in this tarball, NOT in any image
+
+          So upgrading requires BOTH steps. Use the bundled
+          \`upgrade.sh\` to do both in one command:
+
+          \`\`\`sh
+          ./upgrade.sh
+          \`\`\`
+
+          The script:
+          1. Backs up your \`.env\` to \`.env.bak.<timestamp>\`
+          2. Downloads the latest runtime bundle from GitHub Releases
+          3. Replaces \`docker-compose.yml\`, \`services/\`, \`traefik/\`, \`postgres-init/\`, and \`INSTALL.md\` with the new versions
+          4. Preserves your \`.env\` unchanged
+          5. Runs \`docker compose pull\` to fetch new images
+          6. Runs \`docker compose up -d\` to restart with the new config + images
+
+          Manual equivalent if you'd rather not run a script:
+
+          \`\`\`sh
+          cp .env /tmp/orchestack-env.bak           # back up
+          curl -fsSL -o /tmp/runtime.tar.gz https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz
+          tar xzf /tmp/runtime.tar.gz -C /tmp       # extract to staging
+          cp /tmp/orchestack-runtime-*/{docker-compose.yml,INSTALL.md} ./
+          cp -r /tmp/orchestack-runtime-*/{services,traefik,postgres-init} ./
+          docker compose pull
+          docker compose up -d
+          \`\`\`
+
+          ## What survives an upgrade
+
+          - Your \`.env\` (passwords, REPO URLs, custom settings) — never touched
+          - The OrcheStack platform DB — preserved in the \`orchestack-postgres-data\` docker volume
+          - Per-service state (Metabase dashboards, Airflow connections, dbt project files) — preserved in their named volumes
+          - Audit log, user accounts, role permissions — all in the platform DB
+
+          ## What DOESN'T survive a "fresh-start" reinstall
+
+          \`docker compose down -v\` (the \`-v\` flag) drops every named volume — that wipes the platform DB, every service's state, every credential. Only run \`-v\` when you intentionally want a totally clean install.
 
           ## Documentation
 
