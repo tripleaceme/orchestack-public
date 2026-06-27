@@ -68,10 +68,18 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 #                                  later bumped to 1.14 to fix an Airflow 3
 #                                  import issue we no longer have.
 #
-# Constraint file: use Airflow's vanilla constraint file unmodified —
-# it pins protobuf==4.25.6 which now matches dbt-core 1.8.0's >=4,<5
-# requirement. No need to strip the protobuf pin (that workaround was
-# for dbt 1.8.1+ which wants protobuf 5; we no longer ship those).
+# Constraint file: Airflow's vanilla file with TWO transitives stripped:
+#   - protobuf  (Airflow pins ==4.25.6; matches dbt 1.8.0 directly, but
+#                some dbt sub-deps want a different patch within 4.x —
+#                stripping lets pip pick whatever satisfies dbt)
+#   - isodate   (Airflow pins one version; every dbt-common from 1.0.2
+#                onward wants <0.7,>=0.6 — stripping lets dbt pick)
+# Every OTHER Airflow transitive stays locked, so the resolver still
+# converges fast (no ResolutionTooDeep). Airflow 2.10 tolerates both
+# protobuf 4.x patch variations and isodate 0.6.x at runtime — the
+# constraint file is a tested-stability floor, not a hard ABI gate.
+# If a future build surfaces a NEW conflict, add the package name to
+# the grep below; the failure mode is loud (pip ResolutionImpossible).
 ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
@@ -90,12 +98,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 USER airflow
 
-RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
+RUN curl -fsSL "${CONSTRAINT_URL}" \
+      | grep -vE "^(protobuf|isodate)==" \
+      > /tmp/orchestack-constraints.txt && \
+    pip install --no-cache-dir --constraint /tmp/orchestack-constraints.txt \
         "dbt-core==1.8.0" \
         "dbt-postgres==1.8.0" \
         "dbt-common<1.10" \
         "dbt-adapters<1.10" \
-        "astronomer-cosmos>=1.8,<1.9"
+        "astronomer-cosmos>=1.8,<1.9" && \
+    rm /tmp/orchestack-constraints.txt
 
 # Build-time verification: container build fails if dbt or cosmos
 # can't be imported. Catches version-pin breaks at build time, not
