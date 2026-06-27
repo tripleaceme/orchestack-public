@@ -64,6 +64,21 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+
+# libpq-dev is needed at build time for pip to build psycopg2 from sdist
+# (something in dbt 1.8's transitive tree pulls in the non-binary
+# psycopg2 sdist even though dbt-postgres itself depends on
+# psycopg2-binary). Without libpq-dev the build dies with
+# `pg_config executable not found`. The base airflow:2.10.5 image
+# runs as the unprivileged `airflow` user; switch to root for apt-get
+# then back to airflow for pip (matches the upstream image's own
+# convention for build-time deps).
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+USER airflow
+
 RUN curl -fsSL "${CONSTRAINT_URL}" \
       | grep -v "^protobuf==" \
       > /tmp/orchestack-constraints.txt && \
