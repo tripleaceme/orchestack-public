@@ -151,6 +151,24 @@
     </div>
   </div>
 
+  {# Per-service caveat banner, e.g. "Airflow is cold-tier — schedules won't
+     fire unless pinned." Renders only when the catalogue entry has a
+     scheduling_warning set. Yellow palette (warn-banner) rather than red
+     because it's informational, not an error. #}
+  {% if svc.get('scheduling_warning') %}
+  <div class="warn-banner" style="
+    background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 18px;
+    display: flex; gap: 12px; align-items: flex-start; font-size: 13px;
+    line-height: 1.5;">
+    <span style="font-size: 18px; line-height: 1; flex-shrink: 0;">⚠️</span>
+    <div>
+      <strong style="display: block; margin-bottom: 2px;">Heads up</strong>
+      {{ svc.scheduling_warning }}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="twocol">
 
     <!-- Left column: Recent activity + Open sessions -->
@@ -289,6 +307,104 @@
           <div class="font-mono" style="font-size: 12px; color: var(--text-2);">password set via post-start hook</div>
         </div>
       </div>
+
+      {# Danger Zone — Disable + Remove. Admin-only; control-plane services
+         (postgresql) can't be torn down so the card is hidden for them. #}
+      {% if user and 'Admin' in (user.roles or []) and service and service.configured and not service.control_plane %}
+      <div class="surface pin-card" id="danger-zone-card"
+           style="border-color: #fca5a5; margin-top: 12px;">
+        <div class="surface-head" style="background: #fef2f2;">
+          <h2 style="color: #991b1b;">Danger zone</h2>
+        </div>
+        <div class="surface-body">
+          <p style="font-size: 12px; color: var(--text-2); margin: 0 0 12px;">
+            Stop offering this service to operators, or remove it entirely.
+            <strong>Disable</strong> is reversible (data is preserved); <strong>Remove</strong> drops the
+            configuration row and optionally wipes data.
+          </p>
+
+          {# Disable — stops the container, preserves config + volumes. #}
+          <button type="button" class="btn btn-sm"
+                  style="width: 100%; margin-bottom: 8px; border-color: #fca5a5; color: #991b1b;"
+                  onclick="orchestackDisableService('{{ service.name }}', '{{ service.display_name|e }}')">
+            Disable {{ service.display_name }}
+          </button>
+
+          {# Remove — drops the DB row. Modal lets operator opt into volume wipe. #}
+          <button type="button" class="btn btn-sm btn-danger"
+                  style="width: 100%;"
+                  onclick="orchestackRemoveService('{{ service.name }}', '{{ service.display_name|e }}')">
+            Remove {{ service.display_name }}…
+          </button>
+        </div>
+      </div>
+
+      {# Inline JS rather than a separate file: this card is the only caller
+         of these helpers, and modals avoid pulling in a UI lib for one feature.
+         confirm()/prompt() are intentionally simple — operators reading the
+         confirmation are admins and the audit trail captures every call. #}
+      <script>
+        async function orchestackDisableService(name, displayName) {
+          if (!confirm(
+            "Disable " + displayName + "?\n\n" +
+            "• The container will be stopped and removed\n" +
+            "• Volumes (Metabase dashboards, dbt project, etc.) are PRESERVED\n" +
+            "• The dashboard tile will disappear\n" +
+            "• Re-enable later from Setup → Add more services\n\n" +
+            "This is reversible. Continue?"
+          )) return;
+          const resp = await fetch("/app/api/dashboard/services/" + name + "/disable", {
+            method: "POST",
+            credentials: "include",
+          });
+          if (!resp.ok) {
+            const body = await resp.text();
+            alert("Disable failed (HTTP " + resp.status + "): " + body);
+            return;
+          }
+          // Redirect to dashboard — the disabled service is no longer
+          // navigable so staying on this page would 404 the next refresh.
+          window.location.href = "/app/";
+        }
+
+        async function orchestackRemoveService(name, displayName) {
+          const wipe = confirm(
+            "REMOVE " + displayName + "?\n\n" +
+            "This drops the configuration row and tears down the container.\n\n" +
+            "Click OK to ALSO wipe " + displayName + "'s data volumes (irreversible).\n" +
+            "Click CANCEL to keep the volumes (you can reconfigure later)."
+          );
+          // Use a second prompt to confirm the irreversible action so the
+          // operator actually types something deliberate — a stray OK click
+          // doesn't ship 100 GB of dashboards to /dev/null.
+          if (wipe) {
+            const typed = prompt(
+              "WIPE DATA — Type the service name (" + name + ") to confirm. " +
+              "This deletes every volume the service owned. Irreversible."
+            );
+            if (typed !== name) {
+              alert("Volume wipe cancelled. Service NOT removed (typed name didn't match).");
+              return;
+            }
+          } else {
+            // User cancelled the data-wipe prompt — confirm they still want
+            // to remove the config row without touching volumes.
+            if (!confirm("Remove " + displayName + "'s configuration but KEEP its data volumes? Continue?")) {
+              return;
+            }
+          }
+
+          const url = "/app/api/dashboard/services/" + name + "?wipe_volumes=" + (wipe ? "true" : "false");
+          const resp = await fetch(url, { method: "DELETE", credentials: "include" });
+          if (!resp.ok) {
+            const body = await resp.text();
+            alert("Remove failed (HTTP " + resp.status + "): " + body);
+            return;
+          }
+          window.location.href = "/app/";
+        }
+      </script>
+      {% endif %}
     </div>
   </div>
 {% endblock %}

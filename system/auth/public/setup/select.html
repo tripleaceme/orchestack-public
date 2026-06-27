@@ -217,6 +217,12 @@
     'admin-ui': 'admin_ui',
   };
 
+  // Populated by syncFromServer alongside `prior` — maps wizardLayer →
+  // canonical service name (e.g. "minio"), used by the Replace flow to
+  // call the disable endpoint. Kept as a separate global so we don't
+  // have to thread it through every prior-consuming code path.
+  let serverPriorNames = {};
+
   async function syncFromServer(prior) {
     // Pull installed_services from the orchestrator. Server-side state is
     // the authoritative answer to "what's deployed" — localStorage can
@@ -231,10 +237,12 @@
       const data = await res.json();
       const services = (data && data.services) || [];
       const serverPrior = {};
+      serverPriorNames = {};
       for (const svc of services) {
         if (!svc.configured || !svc.layer) continue;
         const wizardLayer = SERVER_TO_WIZARD_LAYER[svc.layer] || svc.layer;
         serverPrior[wizardLayer] = svc.display_name || svc.name;
+        serverPriorNames[wizardLayer] = svc.name;
       }
       // Persist back to localStorage so future loads stay consistent.
       const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -303,6 +311,70 @@
         if (labelEl && !labelEl.querySelector('.add-mode-tag')) {
           tag.classList.add('add-mode-tag');
           labelEl.appendChild(tag);
+        }
+
+        // Replace link — unlocks the dropdown so the operator can pick a
+        // different tool for this layer. Calls the disable endpoint
+        // (preserves data) so the swap is non-destructive. The new pick
+        // becomes the canonical service on form submit; the old service
+        // can be brought back by the operator later via Enable in the
+        // dashboard's setup flow.
+        const layerName = sel.name;
+        const svcName = serverPriorNames[layerName];
+        if (svcName) {
+          const replaceLink = document.createElement('a');
+          replaceLink.href = '#';
+          replaceLink.textContent = 'Replace';
+          replaceLink.style.cssText =
+            'margin-left:10px; font-size:11px; color: var(--navy); ' +
+            'text-decoration: underline; cursor: pointer;';
+          replaceLink.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            if (!confirm(
+              'Replace ' + priorPick + '?\n\n' +
+              '• ' + priorPick + ' will be DISABLED (container stopped, data preserved)\n' +
+              '• You can pick a different tool for this layer below\n' +
+              '• ' + priorPick + ' can be re-enabled later from Setup → Add more\n\n' +
+              'Continue?'
+            )) return;
+            replaceLink.textContent = 'Disabling…';
+            replaceLink.style.pointerEvents = 'none';
+            try {
+              const resp = await fetch(
+                '/app/api/dashboard/services/' + svcName + '/disable',
+                { method: 'POST', credentials: 'same-origin' },
+              );
+              if (!resp.ok) {
+                alert('Disable failed (HTTP ' + resp.status + '). The dropdown stays locked.');
+                replaceLink.textContent = 'Replace';
+                replaceLink.style.pointerEvents = '';
+                return;
+              }
+            } catch (e) {
+              alert('Disable request failed: ' + e.message);
+              replaceLink.textContent = 'Replace';
+              replaceLink.style.pointerEvents = '';
+              return;
+            }
+            // Successfully disabled — unlock the row in place. No reload
+            // because the operator's other in-flight selections shouldn't
+            // be discarded.
+            sel.disabled = false;
+            sel.style.opacity = '';
+            sel.style.cursor = '';
+            sel.value = sel.options[0] ? sel.options[0].value : '';
+            const tagEl = labelEl && labelEl.querySelector('.add-mode-tag');
+            if (tagEl) tagEl.remove();
+            replaceLink.remove();
+            // Also clear the localStorage cached pick so a refresh doesn't
+            // immediately re-lock the row from stale client state.
+            const ls = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+            if (ls.selections) {
+              delete ls.selections[layerName];
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(ls));
+            }
+          });
+          if (labelEl) labelEl.appendChild(replaceLink);
         }
       }
     });

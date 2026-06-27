@@ -16,24 +16,62 @@ release.
 
 ## [0.1.1] — 2026-06-25
 
-### Added (Operator-facing upgrade flow)
+### Changed (Airflow 2.10 instead of Airflow 3)
 
-- **`upgrade.sh`** now ships inside the runtime bundle. Backs up
-  `.env` to a timestamped `.env.bak.<ts>`, downloads the latest
-  release tarball, replaces `docker-compose.yml`, `services/`,
-  `traefik/`, `postgres-init/`, `INSTALL.md`, and `.env.example` in
-  place, preserves your `.env`, then runs `docker compose pull && up -d`.
-  Idempotent + safe to re-run.
-- **`INSTALL.md`** now has an **Upgrading** section explaining the
-  two-part release artefact model (Docker images vs. bundled
-  compose snippets) — the gap that caused the recent regression
-  where stale `airflow.yml` kept reproducing already-fixed bugs.
-- The two-part model is intrinsic to the design: shipping per-
-  service compose snippets as code-in-image would force every
-  managed-service change to rebuild the orchestrator image; keeping
-  them in the bundle lets operators (and us) update one without the
-  other. The upgrade script makes the cost — running both updates —
-  invisible.
+- **Reverted from Apache Airflow 3.2 to 2.10.5.** OrcheStack's target
+  users are first-time Airflow operators — every Airflow tutorial on
+  Stack Overflow, Astronomer Academy, Marc Lamberti's videos, etc.
+  shows the Airflow 2 UI. The Airflow 3 React rewrite makes those
+  resources misleading. Cosmos 1.14 supports both 2.10+ and 3.x, so
+  the operator gets a familiar UI without losing dbt-orchestration
+  capability. We'll bump back to 3.x when ecosystem docs catch up.
+  Touches: base image (`apache/airflow:2.10.5-python3.12`), compose
+  command (`airflow webserver` instead of `api-server`), healthcheck
+  back to `/health`, dashboard ready-probe back to `/health`, dropped
+  the `AIRFLOW__API__*` env vars that only Airflow 3 reads.
+
+### Added (Operator can disconnect / replace a service)
+
+- **Disable + Remove + Replace are now first-class operations.**
+  Previously the `installed_services.enabled` column was dead code:
+  once an operator picked MinIO, they were stuck with it forever.
+  This release wires up three operator actions:
+  - **Disable** (`POST /api/services/{name}/disable`) — stops the
+    container, sets `enabled=FALSE` in `installed_services`, closes
+    open sessions. Volumes preserved. Reversible via Enable.
+    Disabled service disappears from the dashboard grid.
+  - **Enable** (`POST /api/services/{name}/enable`) — flips the
+    flag back to TRUE. Does NOT auto-start (operator controls the
+    timing).
+  - **Remove** (`DELETE /api/services/{name}?wipe_volumes=bool`) —
+    drops the row + tears down the compose project. Optional volume
+    wipe behind a typed-name confirmation in the UI so a stray
+    click can't ship dashboards / connections / dbt project files
+    to /dev/null.
+  - **Replace** — wizard's add-more page (`/setup/select?mode=add`)
+    now shows a "Replace" link next to each locked dropdown.
+    Clicking it disables the current pick (preserves data) and
+    unlocks the dropdown so the operator can pick a different tool
+    for the layer.
+- **Danger Zone** card on the service-detail page surfaces Disable
+  and Remove. Admin-only (`Admin` role required). Control-plane
+  services (PostgreSQL) are exempt — their lifecycle is the platform's.
+- **Audit events** added: `service_disabled`, `service_enabled`,
+  `service_removed` (the last captures the `wipe_volumes` flag).
+
+### Added (Cold-tier scheduling warning)
+
+- **Catalogue entries can now carry a `scheduling_warning` string**
+  that surfaces as a yellow banner at the top of the service-detail
+  page. Airflow is the first carrier: cold-tier services sleep after
+  10 minutes of no activity, but Airflow's whole job is to fire
+  schedules at specific times. A cold Airflow won't fire an 8 AM DAG
+  unless someone Opens it within the prior 10 minutes — or the
+  operator pins it. The banner points the operator at the Pin card
+  for the workaround. Long-term, a v0.2 feature will read DAG
+  schedules out of Airflow's metadata DB and auto-wake briefly
+  before each scheduled run; for now, pin is the answer.
+
 
 ### Fixed (Airflow 3 health endpoint)
 

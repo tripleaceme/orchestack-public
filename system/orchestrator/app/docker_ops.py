@@ -1738,6 +1738,34 @@ async def stop_service(service: str) -> CommandResult:
     )
 
 
+async def remove_service(service: str, *, wipe_volumes: bool = False) -> CommandResult:
+    """Tear down a service's compose project (containers + network).
+
+    With wipe_volumes=False (default): `docker compose down --remove-orphans`
+    — containers stopped + removed, named volumes PRESERVED. Re-running
+    `up` later restores the service with all its prior state (Metabase
+    dashboards, Airflow connections, etc.). Pairs with the Disable
+    operator action which sets enabled=FALSE in installed_services
+    without losing data.
+
+    With wipe_volumes=True: adds `-v`, which ALSO drops every named
+    volume defined in the compose file. Irreversible — every Metabase
+    dashboard / Airflow connection / dbt project file is gone. Pairs
+    with the Remove operator action when the operator explicitly opts
+    into data deletion.
+
+    Note: doesn't drop the service's per-tool database inside
+    orchestack-postgres (e.g. metabase_db, airflow_db). Those live in
+    the platform postgres volume which we never touch from here —
+    keeps the operator from accidentally nuking their warehouse data
+    by removing a tool that shares the platform postgres.
+    """
+    cmd = _service_compose_args(service, need_env=False) + ["down", "--remove-orphans"]
+    if wipe_volumes:
+        cmd.append("-v")
+    return await asyncio.to_thread(_run_sync, cmd, 120)
+
+
 async def list_running_services() -> list[dict[str, str]]:
     """List every managed service container currently running.
 

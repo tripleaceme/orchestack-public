@@ -1775,6 +1775,76 @@ async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
 
 
 # ===========================================================================
+#  HTMX action: disable / enable / remove a configured service
+# ===========================================================================
+@app.post("/api/dashboard/services/{name}/disable", name="disable_service_action")
+async def disable_service_action(
+    request: Request, name: str, user=Depends(require_user),
+) -> JSONResponse:
+    """Admin-only: stop a service + flip enabled=FALSE; preserves volumes.
+
+    Returns a JSON body the browser uses to decide what to do next
+    (redirect to dashboard, surface an error). Volume cleanup happens
+    in the orchestrator; the dashboard just brokers the request.
+    """
+    if "Admin" not in (user.get("roles") or []):
+        return JSONResponse({"error": "admin role required"}, status_code=403)
+    try:
+        result = await orchestrator.disable_service(name)
+    except httpx.HTTPError as e:
+        log.warning("disable_service(%s) failed: %s", name, e)
+        return JSONResponse(
+            {"error": "orchestrator call failed", "detail": str(e)},
+            status_code=502,
+        )
+    return JSONResponse(result)
+
+
+@app.post("/api/dashboard/services/{name}/enable", name="enable_service_action")
+async def enable_service_action(
+    request: Request, name: str, user=Depends(require_user),
+) -> JSONResponse:
+    """Admin-only: flip enabled=TRUE; does NOT auto-start the service."""
+    if "Admin" not in (user.get("roles") or []):
+        return JSONResponse({"error": "admin role required"}, status_code=403)
+    try:
+        result = await orchestrator.enable_service(name)
+    except httpx.HTTPError as e:
+        log.warning("enable_service(%s) failed: %s", name, e)
+        return JSONResponse(
+            {"error": "orchestrator call failed", "detail": str(e)},
+            status_code=502,
+        )
+    return JSONResponse(result)
+
+
+@app.delete("/api/dashboard/services/{name}", name="delete_service_action")
+async def delete_service_action(
+    request: Request, name: str,
+    wipe_volumes: bool = False,
+    user=Depends(require_user),
+) -> JSONResponse:
+    """Admin-only: drop config row + tear down. wipe_volumes opt-in.
+
+    The browser-side confirm flow (in service_detail.html) gates
+    wipe_volumes=True behind a typed service-name confirmation, so by
+    the time the request hits this route the operator has explicitly
+    opted in. The orchestrator's own audit log captures the wipe flag.
+    """
+    if "Admin" not in (user.get("roles") or []):
+        return JSONResponse({"error": "admin role required"}, status_code=403)
+    try:
+        result = await orchestrator.delete_service(name, wipe_volumes=wipe_volumes)
+    except httpx.HTTPError as e:
+        log.warning("delete_service(%s, wipe=%s) failed: %s", name, wipe_volumes, e)
+        return JSONResponse(
+            {"error": "orchestrator call failed", "detail": str(e)},
+            status_code=502,
+        )
+    return JSONResponse(result)
+
+
+# ===========================================================================
 #  Session lifecycle (Open / heartbeat / close)
 # ===========================================================================
 @app.post("/api/dashboard/services/{name}/open", name="open_service_session")
@@ -1885,12 +1955,12 @@ async def service_ready_probe(
 
     _SERVICE_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
-        # Airflow 3 moved the API health endpoint to /api/v2/monitor/health.
-        # The base_url config affects the URLs Airflow GENERATES in responses
-        # (redirects, links), NOT the internal listen path — so probing the
-        # endpoint at the root works regardless of base_url. Previously this
-        # was /app/airflow/health which 404s on Airflow 3.
-        "airflow":      ("orchestack-airflow",      8080, "/api/v2/monitor/health"),
+        # Airflow 2 serves health at /health on the webserver. Probing
+        # the endpoint at the root works regardless of
+        # AIRFLOW__WEBSERVER__BASE_URL — that config only affects URLs
+        # Airflow generates in responses (redirects, links), not the
+        # internal listen path.
+        "airflow":      ("orchestack-airflow",      8080, "/health"),
         # Multi-container deployment; airbyte-server is the right gate — webapp's
         # nginx returns 200 before the API is up, so probing the webapp would race.
         "airbyte":      ("orchestack-airbyte-server", 8001, "/api/v1/health"),

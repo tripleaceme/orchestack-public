@@ -1,8 +1,16 @@
 # OrcheStack Airflow image.
 #
-# Apache Airflow 3 with dbt-core, dbt-postgres, and astronomer-cosmos
+# Apache Airflow 2.10 with dbt-core, dbt-postgres, and astronomer-cosmos
 # preinstalled so the operator's first DAG can drive dbt with per-model
 # task granularity without any runtime pip-install.
+#
+# Why Airflow 2 (not 3): OrcheStack's target users are first-time Airflow
+# operators. Every Airflow tutorial on Stack Overflow, Astronomer Academy,
+# Marc Lamberti's videos, etc. shows the Airflow 2 UI — the 3.x React
+# rewrite makes those resources misleading. Airflow 2.10 is actively
+# patched and Cosmos 1.14 supports both 2.10+ and 3.x, so the operator
+# gets a familiar UI without losing dbt-orchestration capability.
+# We'll bump to 3.x when ecosystem docs catch up.
 #
 # Build context: this folder (system/docker/airflow-image/).
 #
@@ -13,10 +21,10 @@
 # tags (the release.yml docker-publish matrix sets both :latest and the
 # semver tag on every image at once).
 
-FROM apache/airflow:3.2.2-python3.12
+FROM apache/airflow:2.10.5-python3.12
 
 LABEL org.opencontainers.image.title="orchestack-airflow" \
-      org.opencontainers.image.description="Apache Airflow 3 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack" \
+      org.opencontainers.image.description="Apache Airflow 2.10 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack" \
       org.opencontainers.image.vendor="OrcheStack" \
       org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
       org.opencontainers.image.documentation="https://orchestack.africa" \
@@ -35,10 +43,10 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 # Version pins:
 #   - dbt-core 1.10.x         : 1.10 is the line cosmos 1.14 supports
 #   - dbt-postgres 1.10.x     : matches dbt-core minor (dbt convention)
-#   - astronomer-cosmos 1.14.x: current stable; required for Airflow 3.x
-#                               (1.8 series doesn't initialise cleanly
-#                               on Airflow 3 — DAG import fails at
-#                               airflow.configuration init)
+#   - astronomer-cosmos 1.14.x: current stable; supports Airflow 2.10+
+#                               AND 3.x, so the pin survives our planned
+#                               future bump back to Airflow 3 without
+#                               churning this Dockerfile.
 #
 # Bump cadence: review on each OrcheStack semver bump. Patch versions
 # float within minor (the "1.10.x" pattern); minor bumps are deliberate

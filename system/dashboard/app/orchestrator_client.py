@@ -38,6 +38,31 @@ class OrchestratorClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def disable_service(self, name: str) -> dict[str, object]:
+        # Longer timeout: disable runs `compose down` which can take ~30s
+        # if the container has slow shutdown hooks.
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.post(f"{self.base_url}/api/services/{name}/disable")
+            resp.raise_for_status()
+            return resp.json()
+
+    async def enable_service(self, name: str) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{self.base_url}/api/services/{name}/enable")
+            resp.raise_for_status()
+            return resp.json()
+
+    async def delete_service(self, name: str, *, wipe_volumes: bool = False) -> dict[str, object]:
+        # Volume wipe can take longer for large volumes (Airflow logs, Airbyte
+        # workspace cache); keep the timeout generous.
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            resp = await client.delete(
+                f"{self.base_url}/api/services/{name}",
+                params={"wipe_volumes": str(wipe_volumes).lower()},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     async def health(self) -> dict[str, object]:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{self.base_url}/api/health")

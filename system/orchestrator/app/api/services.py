@@ -1,8 +1,10 @@
-"""Service control endpoints — list, start, stop."""
+"""Service control endpoints — list, start, stop, disable, enable, delete."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from .. import audit, config, db, docker_ops
 
@@ -73,6 +75,11 @@ async def list_services() -> dict[str, object]:
                 {k: v for k, v in a.items() if k != "ready_probe"}
                 for a in meta.get("actions", [])
             ] or None,
+            # Optional per-service caveat that the dashboard renders as a
+            # banner on the detail page. Set when a service's tier
+            # classification has a known footgun the operator should know
+            # about (e.g. cold-tier Airflow + scheduled DAGs).
+            "scheduling_warning": meta.get("scheduling_warning"),
         })
     return {"services": items}
 
@@ -136,3 +143,131 @@ async def stop_service(name: str) -> dict[str, object]:
             "stderr": result.short_stderr,
         })
     return {"ok": True, "service": name, "state": "stopped"}
+
+
+@router.post("/{name}/disable")
+async def disable_service(name: str) -> dict[str, object]:
+    """Disable a service: stop it, flip enabled=FALSE, preserve config + volumes.
+
+    Disable is the cheap reversible counterpart to Delete. The compose
+    project is torn down (containers + network removed; volumes kept),
+    the row in platform.installed_services has enabled flipped to FALSE
+    so the dashboard hides the tile + the post-deploy auto-start loop
+    skips it, and any open sessions are closed. The operator's .env
+    entries for the service stay put. Re-enable restores everything
+    bit-for-bit.
+    """
+    if name not in config.SERVICE_CATALOGUE:
+        raise HTTPException(404, f"unknown service: {name}")
+    if config.SERVICE_CATALOGUE[name].get("control_plane"):
+        raise HTTPException(400, "control-plane services cannot be disabled")
+
+    # remove_service runs `compose down` without -v, so volumes survive.
+    teardown = await docker_ops.remove_service(name, wipe_volumes=False)
+    # Even if teardown fails (container may already be stopped/gone), we
+    # still flip the DB flag — the catalogue+DB are the source of truth
+    # for "is this service offered." A failed teardown just leaves
+    # orphan containers the operator can reap; it doesn't undo the disable.
+    await db.fetch(
+        "UPDATE platform.installed_services SET enabled = FALSE WHERE name = $1",
+        name,
+    )
+    closed = await db.fetch(
+        "UPDATE platform.service_sessions SET closed_at = now() "
+        "WHERE service_name = $1 AND closed_at IS NULL RETURNING id",
+        name,
+    )
+    await audit.write(
+        "service_disabled",
+        service_name=name,
+        details={
+            "teardown_ok": teardown.ok,
+            "teardown_stderr": teardown.short_stderr if not teardown.ok else None,
+            "sessions_closed": len(closed),
+        },
+    )
+    return {"ok": True, "service": name, "state": "disabled"}
+
+
+@router.post("/{name}/enable")
+async def enable_service(name: str) -> dict[str, object]:
+    """Re-enable a previously-disabled service. Does NOT auto-start it.
+
+    Sets enabled=TRUE so the dashboard tile reappears + auto-start
+    eligibility returns. The operator brings the service up with the
+    usual Open / Start click. We deliberately don't auto-start on
+    enable because Disable → Enable should be a quiet operation — the
+    operator decides when to consume resources again.
+    """
+    if name not in config.SERVICE_CATALOGUE:
+        raise HTTPException(404, f"unknown service: {name}")
+    row = await db.fetch(
+        "SELECT enabled FROM platform.installed_services WHERE name = $1",
+        name,
+    )
+    if not row:
+        raise HTTPException(404, f"service {name} was never configured")
+    await db.fetch(
+        "UPDATE platform.installed_services SET enabled = TRUE WHERE name = $1",
+        name,
+    )
+    await audit.write("service_enabled", service_name=name, details={})
+    return {"ok": True, "service": name, "state": "enabled"}
+
+
+@router.delete("/{name}")
+async def delete_service(
+    name: str,
+    wipe_volumes: Annotated[bool, Query()] = False,
+) -> dict[str, object]:
+    """Remove a service entirely: tear down + drop config row.
+
+    With wipe_volumes=False: the compose project is torn down (containers
+    + network) but named volumes survive. Re-configuring the service via
+    the setup wizard restores its prior state.
+
+    With wipe_volumes=True: the named volumes are dropped too — every
+    dashboard, connection, and project file the service held is gone.
+    Irreversible. The dashboard's confirm modal must obtain explicit
+    operator opt-in for wipe_volumes=True (a checkbox, not a default).
+
+    Either way, the row in platform.installed_services is deleted and
+    any open sessions are closed. Per-tool databases inside
+    orchestack-postgres (metabase_db, airflow_db, etc.) are NOT
+    dropped — those live on the platform postgres volume and would
+    require a separate operator action to wipe.
+    """
+    if name not in config.SERVICE_CATALOGUE:
+        raise HTTPException(404, f"unknown service: {name}")
+    if config.SERVICE_CATALOGUE[name].get("control_plane"):
+        raise HTTPException(400, "control-plane services cannot be removed")
+
+    teardown = await docker_ops.remove_service(name, wipe_volumes=wipe_volumes)
+    # Best-effort: even if teardown failed, drop the DB row so the
+    # service can be re-configured from scratch. The orphan containers
+    # the operator can clean up manually if needed.
+    await db.fetch(
+        "DELETE FROM platform.installed_services WHERE name = $1",
+        name,
+    )
+    closed = await db.fetch(
+        "UPDATE platform.service_sessions SET closed_at = now() "
+        "WHERE service_name = $1 AND closed_at IS NULL RETURNING id",
+        name,
+    )
+    await audit.write(
+        "service_removed",
+        service_name=name,
+        details={
+            "wipe_volumes": wipe_volumes,
+            "teardown_ok": teardown.ok,
+            "teardown_stderr": teardown.short_stderr if not teardown.ok else None,
+            "sessions_closed": len(closed),
+        },
+    )
+    return {
+        "ok": True,
+        "service": name,
+        "state": "removed",
+        "volumes_wiped": wipe_volumes,
+    }

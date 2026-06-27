@@ -127,7 +127,22 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # cleanly under Traefik's /app/airflow subpath (unlike MinIO/Airbyte
     # whose React SPAs emit absolute-root asset paths), so no external_url
     # override is needed.
-    "airflow":      {"tier": "cold", "display_name": "Apache Airflow",      "layer": "orchestration","managed": True},
+    # scheduling_warning surfaces as a banner on the dashboard tile +
+    # service-detail page. Airflow is the canonical case: cold-tier
+    # services sleep after 10 min idle, but Airflow's whole job is to
+    # fire schedules at specific times. A cold Airflow can't fire an
+    # 8 AM DAG because it's not running at 8 AM. The fix today is to
+    # pin Airflow from the dashboard; a v0.2 feature will read DAG
+    # schedules + auto-wake briefly before each scheduled run.
+    "airflow":      {
+        "tier": "cold", "display_name": "Apache Airflow", "layer": "orchestration", "managed": True,
+        "scheduling_warning": (
+            "Airflow runs cold-tier — it sleeps after 10 minutes of no "
+            "activity, which means scheduled DAGs won't fire while it's "
+            "asleep. Pin Airflow from the Keep warm card if you rely on "
+            "scheduled DAGs."
+        ),
+    },
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
     # — same subpath-incompatibility class as MinIO. external_url sends
     # operators to host port 8001 instead of the broken /app/airbyte subpath.
