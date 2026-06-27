@@ -41,17 +41,21 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 #     exact dbt + cosmos versions
 #
 # Version pins:
-#   - dbt-core 1.9.x          : dbt 1.10 bumped its protobuf requirement
-#                               to >=6.0,<7.0 (April 2026), which collides
-#                               with Airflow 2.10.5's constraint-file pin
-#                               of protobuf==4.25.6. The resolver explodes
-#                               into ResolutionImpossible because EVERY
-#                               1.10.x patch carries the protobuf 6 dep.
-#                               dbt 1.9.x stays on protobuf 4/5 → resolves
-#                               cleanly. We'll bump back to 1.10 once
-#                               Airflow's constraints relax (or we move
-#                               back to Airflow 3, which uses protobuf 5+).
-#   - dbt-postgres 1.9.x      : matches dbt-core minor (dbt convention)
+#   - dbt-core 1.8.x          : dbt's protobuf dependency has crept up
+#                               minor-by-minor:
+#                                 1.10.* → protobuf>=6,<7   (incompatible)
+#                                 1.9.9+ → protobuf>=6,<7   (incompatible)
+#                                 1.9.0–1.9.8 → protobuf>=5,<6 (incompatible)
+#                                 1.8.x  → protobuf>=4,<5   ← matches Airflow's
+#                                                              4.25.6 constraint
+#                               Airflow 2.10.5's constraint file pins
+#                               protobuf==4.25.6 (a strict 4.x), so dbt 1.8 is
+#                               the most recent line that resolves cleanly. We'll
+#                               bump to 1.10 either when (a) Airflow's
+#                               constraints relax — unlikely on 2.10's
+#                               maintenance branch — or (b) we move back to
+#                               Airflow 3, which uses protobuf 5+.
+#   - dbt-postgres 1.8.x      : matches dbt-core minor (dbt convention)
 #   - astronomer-cosmos 1.14.x: current stable; supports dbt 1.5–1.10 AND
 #                               both Airflow 2.10+ and 3.x — survives both
 #                               our planned future dbt bump AND a future
@@ -73,8 +77,8 @@ ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
 RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
-        "dbt-core>=1.9,<1.10" \
-        "dbt-postgres>=1.9,<1.10" \
+        "dbt-core>=1.8,<1.9" \
+        "dbt-postgres>=1.8,<1.9" \
         "astronomer-cosmos>=1.14,<1.15"
 
 # Build-time verification: container build fails if dbt or cosmos
