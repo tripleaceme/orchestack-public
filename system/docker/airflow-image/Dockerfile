@@ -51,7 +51,19 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 # Bump cadence: review on each OrcheStack semver bump. Patch versions
 # float within minor (the "1.10.x" pattern); minor bumps are deliberate
 # decisions that get a CHANGELOG entry.
-RUN pip install --no-cache-dir \
+#
+# Why the constraint file: Airflow publishes a per-version constraint
+# file that pins every transitive dep to a tested compatible version.
+# Without it, pip's resolver explores the cross-product of our open
+# pins (dbt 1.10.*, cosmos 1.14.*) × every cosmos transitive (jinja2,
+# pendulum, sqlparse, ...) × Airflow's own peer constraints and gives
+# up with `ResolutionTooDeep: 200000`. Airflow's constraint file is the
+# canonical fix — it locks transitives, our direct pins decide dbt +
+# cosmos, and the resolver converges in one pass.
+ARG AIRFLOW_VERSION=2.10.5
+ARG PYTHON_VERSION=3.12
+ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
         "dbt-core>=1.10,<1.11" \
         "dbt-postgres>=1.10,<1.11" \
         "astronomer-cosmos>=1.14,<1.15"
