@@ -41,45 +41,37 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
 #     exact dbt + cosmos versions
 #
 # Version pins:
-#   - dbt-core 1.8.x          : dbt's protobuf dependency has crept up
-#                               minor-by-minor:
-#                                 1.10.* → protobuf>=6,<7   (incompatible)
-#                                 1.9.9+ → protobuf>=6,<7   (incompatible)
-#                                 1.9.0–1.9.8 → protobuf>=5,<6 (incompatible)
-#                                 1.8.x  → protobuf>=4,<5   ← matches Airflow's
-#                                                              4.25.6 constraint
-#                               Airflow 2.10.5's constraint file pins
-#                               protobuf==4.25.6 (a strict 4.x), so dbt 1.8 is
-#                               the most recent line that resolves cleanly. We'll
-#                               bump to 1.10 either when (a) Airflow's
-#                               constraints relax — unlikely on 2.10's
-#                               maintenance branch — or (b) we move back to
-#                               Airflow 3, which uses protobuf 5+.
+#   - dbt-core 1.8.x          : last dbt line whose deps fit cleanly on
+#                               Airflow 2.10 (1.9+ jumped to protobuf 5,
+#                               1.10 to protobuf 6). Cosmos 1.14 supports
+#                               dbt 1.5–1.10 so dropping to 1.8 keeps
+#                               orchestration intact. Bump back to 1.10
+#                               when we move back to Airflow 3.
 #   - dbt-postgres 1.8.x      : matches dbt-core minor (dbt convention)
 #   - astronomer-cosmos 1.14.x: current stable; supports dbt 1.5–1.10 AND
-#                               both Airflow 2.10+ and 3.x — survives both
-#                               our planned future dbt bump AND a future
-#                               Airflow re-bump without churning this file.
+#                               both Airflow 2.10+ and 3.x.
 #
-# Bump cadence: review on each OrcheStack semver bump. Patch versions
-# float within minor (the "1.10.x" pattern); minor bumps are deliberate
-# decisions that get a CHANGELOG entry.
-#
-# Why the constraint file: Airflow publishes a per-version constraint
-# file that pins every transitive dep to a tested compatible version.
-# Without it, pip's resolver explores the cross-product of our open
-# pins (dbt 1.10.*, cosmos 1.14.*) × every cosmos transitive (jinja2,
-# pendulum, sqlparse, ...) × Airflow's own peer constraints and gives
-# up with `ResolutionTooDeep: 200000`. Airflow's constraint file is the
-# canonical fix — it locks transitives, our direct pins decide dbt +
-# cosmos, and the resolver converges in one pass.
+# Why the CUSTOM (protobuf-stripped) constraint file: Airflow's published
+# constraint file pins every transitive — without it pip explodes into
+# ResolutionTooDeep when resolving foreign packages like dbt + cosmos.
+# But the vanilla file also pins `protobuf==4.25.6` (Airflow's tested
+# floor), and dbt 1.8 requires `protobuf>=5,<6` — so pip then dies with
+# ResolutionImpossible. We `grep -v ^protobuf==` the constraint file so
+# dbt's protobuf 5 wins for the install; every OTHER Airflow transitive
+# stays locked, so resolution still converges in one pass. Airflow 2.10
+# tolerates protobuf 5.x at runtime (the 4.25 pin is a tested-stability
+# floor, not a hard ABI break).
 ARG AIRFLOW_VERSION=2.10.5
 ARG PYTHON_VERSION=3.12
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
-RUN pip install --no-cache-dir --constraint "${CONSTRAINT_URL}" \
+RUN curl -fsSL "${CONSTRAINT_URL}" \
+      | grep -v "^protobuf==" \
+      > /tmp/orchestack-constraints.txt && \
+    pip install --no-cache-dir --constraint /tmp/orchestack-constraints.txt \
         "dbt-core>=1.8,<1.9" \
         "dbt-postgres>=1.8,<1.9" \
-        "astronomer-cosmos>=1.14,<1.15"
+        "astronomer-cosmos>=1.14,<1.15" && \
+    rm /tmp/orchestack-constraints.txt
 
 # Build-time verification: container build fails if dbt or cosmos
 # can't be imported. Catches version-pin breaks at build time, not
