@@ -110,23 +110,114 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Operations</a> › Upgrading OrcheStack</div>
     <h1>Upgrading OrcheStack</h1>
-    <p class="lede">How to safely move from one OrcheStack version to the next without losing data or breaking your pipelines.</p>
+    <p class="lede">A single command — <code class="inline">./upgrade.sh</code> — moves an OrcheStack install to the latest release. This page covers what the script does, what survives the upgrade, and how to roll back if something breaks.</p>
 
-<h2 id="versioning">Versioning</h2>
-<p>OrcheStack follows semantic versioning. Docker images are pinned by tag in <code class="inline">docker-compose.yml</code> — never use <code class="inline">:latest</code> in production.</p>
+<h2 id="quick-path">The quick path</h2>
+<p>From inside your runtime install directory (the one that has <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code>):</p>
+<pre><code>cd orchestack-runtime-X.Y.Z
+./upgrade.sh</code></pre>
+<p>That's it. The script handles everything below. You don't normally need to read the rest of this page unless something goes wrong, or you want to know what's happening under the hood.</p>
 
-<h2 id="upgrade-steps">Upgrade steps</h2>
+<h2 id="release-artefacts">Why upgrades have two parts</h2>
+<p>An OrcheStack release ships in <strong>two artefacts</strong>, and an upgrade has to pull both:</p>
+<ul>
+  <li><strong>Docker images</strong> — <code class="inline">orchestack-auth</code>, <code class="inline">orchestack-orchestrator</code>, <code class="inline">orchestack-dashboard</code>, <code class="inline">orchestack-airflow</code>, <code class="inline">orchestack-ge</code>. Pulled with <code class="inline">docker compose pull</code>.</li>
+  <li><strong>The runtime bundle</strong> — <code class="inline">docker-compose.yml</code>, the per-service compose snippets in <code class="inline">services/</code>, Traefik config in <code class="inline">traefik/</code>, postgres init SQL in <code class="inline">postgres-init/</code>. Lives in the release tarball on GitHub, NOT inside any image.</li>
+</ul>
+<p><code class="inline">docker compose pull</code> alone only handles the images. Running it without re-extracting the bundle leaves you on the old compose files, which is how operators have ended up with already-fixed bugs re-appearing after they thought they'd upgraded. The bundled <code class="inline">upgrade.sh</code> exists to do both halves correctly in one go.</p>
+
+<h2 id="what-the-script-does">What <code class="inline">upgrade.sh</code> does, step by step</h2>
 <ol>
-  <li>Read the release notes at <a href="https://github.com/tripleaceme/OrcheStack/releases">github.com/tripleaceme/OrcheStack/releases</a> for breaking changes.</li>
-  <li>Take a full backup (see <a href="backup-restore.html">Backup &amp; restore</a>).</li>
-  <li>Edit <code class="inline">docker-compose.yml</code> to bump image tags.</li>
-  <li>Run <code class="inline">docker compose pull</code> to fetch the new images.</li>
-  <li>Run <code class="inline">docker compose up -d</code>. Services with migrations will run them at startup.</li>
-  <li>Verify the dashboard loads and the nightly DAG succeeds on its next run.</li>
+  <li><strong>Pre-flight check.</strong> Verifies it's running from inside an install directory (has <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code>), and that Docker is running. Bails early with a clear error if not.</li>
+  <li><strong>Backs up your <code class="inline">.env</code></strong> to <code class="inline">.env.bak.&lt;timestamp&gt;</code>. Your passwords, repo URLs (with PATs), and custom settings are preserved verbatim.</li>
+  <li><strong>Downloads the latest release tarball</strong> from <code class="inline">https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz</code> to a staging directory.</li>
+  <li><strong>Replaces runtime config files in place:</strong> <code class="inline">docker-compose.yml</code>, <code class="inline">services/</code>, <code class="inline">traefik/</code>, <code class="inline">postgres-init/</code>, <code class="inline">INSTALL.md</code>, <code class="inline">VERSION</code>, <code class="inline">upgrade.sh</code> itself, and <code class="inline">.env.example</code>. Your <code class="inline">.env</code> is left alone.</li>
+  <li><strong>Pulls new Docker images</strong> — <code class="inline">docker compose pull</code>. Can take several minutes on first pull of heavy images like <code class="inline">orchestack-airflow</code> (~2.4 GB).</li>
+  <li><strong>Restarts the stack</strong> — <code class="inline">docker compose up -d</code>. Containers recreate against the new images and new compose config.</li>
 </ol>
 
+<h2 id="what-survives">What survives an upgrade</h2>
+<p>The upgrade replaces <strong>config</strong>, never touches <strong>state</strong>:</p>
+<ul>
+  <li><strong>Your <code class="inline">.env</code></strong> — passwords, repo URLs with PATs, custom variables. All preserved.</li>
+  <li><strong>The OrcheStack platform database</strong> — user accounts, roles, audit log, installed-services registry. Lives in the <code class="inline">orchestack-postgres-data</code> Docker volume.</li>
+  <li><strong>Per-service state</strong> — Metabase dashboards, Airflow DAG metadata + connections, dbt project files, MinIO buckets, OpenMetadata catalog. Each lives in its own named Docker volume which the upgrade doesn't touch.</li>
+  <li><strong>Operator-added files</strong> — anything you added to the install directory that the bundle doesn't ship is left alone.</li>
+</ul>
+
+<h2 id="what-doesnt-survive">What doesn't survive a <em>fresh-start</em> reinstall</h2>
+<p>The upgrade itself preserves state. But if you ever need a totally clean install:</p>
+<pre><code>docker compose down -v</code></pre>
+<p>The <code class="inline">-v</code> flag drops every named volume — that wipes the platform DB, every service's state, every credential. Run this only when you intentionally want a from-scratch install. The upgrade script never uses this flag.</p>
+
+<h2 id="manual-equivalent">Manual equivalent</h2>
+<p>If you prefer not to run the script (or you're upgrading from a version that didn't ship one), here's what it does in plain Docker commands:</p>
+<pre><code># 1. Back up .env
+cp .env /tmp/orchestack-env.bak
+
+# 2. Download the latest runtime bundle
+curl -fsSL -o /tmp/runtime.tar.gz \
+  https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz
+
+# 3. Extract to staging
+tar xzf /tmp/runtime.tar.gz -C /tmp
+
+# 4. Replace runtime config files
+cp /tmp/orchestack-runtime-*/{docker-compose.yml,INSTALL.md,upgrade.sh,VERSION,.env.example} ./
+cp -R /tmp/orchestack-runtime-*/services/. ./services/
+cp -R /tmp/orchestack-runtime-*/traefik/. ./traefik/
+cp -R /tmp/orchestack-runtime-*/postgres-init/. ./postgres-init/
+chmod +x ./upgrade.sh
+
+# 5. Pull new images + restart
+docker compose pull
+docker compose up -d</code></pre>
+
+<h2 id="verifying">Verifying the upgrade</h2>
+<p>After the script completes, give the control plane ~30 seconds to settle, then check:</p>
+<ol>
+  <li><strong>Version</strong> — <code class="inline">cat VERSION</code> should show the new release.</li>
+  <li><strong>Control plane health</strong> — <code class="inline">docker ps --filter "name=orchestack" --format "{{.Names}}: {{.Status}}"</code>. Every <code class="inline">orchestack-*</code> container should report <code class="inline">healthy</code> or <code class="inline">Up</code> (Traefik shows just <code class="inline">Up</code> — it has no healthcheck).</li>
+  <li><strong>Dashboard loads</strong> — visit <code class="inline">http://localhost/app/</code> and sign in with your existing operator account. The platform DB is preserved, so your account works as before.</li>
+  <li><strong>Services start</strong> — Open a previously-running service from the dashboard. The compose snippets for managed services were updated as part of the bundle, so any fixes in service config take effect on the next start.</li>
+</ol>
+
+<h2 id="versioning">Versioning</h2>
+<p>OrcheStack follows <a href="https://semver.org">semantic versioning</a> (MAJOR.MINOR.PATCH). Operator-facing images use <code class="inline">:latest</code> in <code class="inline">.env.example</code> by default — every release re-tags <code class="inline">:latest</code> in addition to the semver tag, so an upgrade naturally moves you to the latest published release of the line you're on. If you need to pin to a specific version, set <code class="inline">AUTH_TAG</code>, <code class="inline">ORCHESTRATOR_TAG</code>, <code class="inline">DASHBOARD_TAG</code>, <code class="inline">AIRFLOW_TAG</code>, and <code class="inline">GE_TAG</code> in your <code class="inline">.env</code> to the semver string (e.g. <code class="inline">AIRFLOW_TAG=0.1.1</code>).</p>
+<p>Release notes for every version are at <a href="https://github.com/tripleaceme/orchestack-public/releases">github.com/tripleaceme/orchestack-public/releases</a>. The <a href="https://github.com/tripleaceme/orchestack-public/blob/main/CHANGELOG.md">CHANGELOG</a> covers every fix and change in detail. Read both before upgrading across MINOR or MAJOR boundaries — PATCH upgrades within a MINOR are designed to be drop-in.</p>
+
 <h2 id="rollback">Rollback</h2>
-<p>If something breaks: revert <code class="inline">docker-compose.yml</code> to the previous tags, restore from backup, and file an issue.</p>
+<p>If the upgrade breaks something, you have two recovery paths.</p>
+
+<h3 id="rollback-images-only">Roll back images only (config breaking change)</h3>
+<p>If the new <strong>image</strong> is the culprit but the new <strong>compose config</strong> is fine, pin the image tags in <code class="inline">.env</code> to the previous version:</p>
+<pre><code>AUTH_TAG=0.1.0
+ORCHESTRATOR_TAG=0.1.0
+DASHBOARD_TAG=0.1.0
+AIRFLOW_TAG=0.1.0
+GE_TAG=0.1.0</code></pre>
+<p>Then <code class="inline">docker compose pull &amp;&amp; docker compose up -d</code>. The platform DB and volumes are unchanged, so your data + accounts come back as they were.</p>
+
+<h3 id="rollback-full">Full rollback (re-extract a prior bundle)</h3>
+<p>If the new <strong>compose config</strong> is incompatible with your setup, you need to put the old bundle back:</p>
+<pre><code># 1. Download the prior release's bundle (replace X.Y.Z with the version you want)
+curl -fsSL -o /tmp/runtime-old.tar.gz \
+  https://github.com/tripleaceme/orchestack-public/releases/download/vX.Y.Z/orchestack-runtime.tar.gz
+
+# 2. Extract over the install dir
+tar xzf /tmp/runtime-old.tar.gz -C /tmp
+cp /tmp/orchestack-runtime-X.Y.Z/docker-compose.yml ./
+cp -R /tmp/orchestack-runtime-X.Y.Z/services/. ./services/
+
+# 3. Restore the .env image-tag pins (Edit .env and set every *_TAG to vX.Y.Z)
+# 4. Pull + restart
+docker compose pull
+docker compose up -d</code></pre>
+<p>Rollbacks are uncommon — PATCH releases are explicitly designed to be drop-in safe. If you've rolled back, please <a href="https://github.com/tripleaceme/orchestack-public/issues">open an issue</a> with the version pair and what broke, so we can fix it for the next release.</p>
+
+<h2 id="backups-first">Before any MAJOR upgrade, take a backup</h2>
+<p>PATCH and MINOR upgrades within the same MAJOR are designed to be drop-in safe. MAJOR upgrades (1.x → 2.x, etc.) may include irreversible schema migrations to the platform DB.</p>
+<p>Always take a backup before a MAJOR upgrade — see <a href="backup-restore.html">Backup &amp; restore</a> for the procedure.</p>
 
     <div class="next-prev">
       <a href="backup-restore.html">
@@ -143,9 +234,16 @@
   <aside class="docs-toc">
     <div class="toc-title">On this page</div>
     <ul>
-      <li><a class="active" href="#versioning">Versioning</a></li>
-      <li><a href="#upgrade-steps">Upgrade steps</a></li>
+      <li><a class="active" href="#quick-path">The quick path</a></li>
+      <li><a href="#release-artefacts">Why upgrades have two parts</a></li>
+      <li><a href="#what-the-script-does">What upgrade.sh does</a></li>
+      <li><a href="#what-survives">What survives an upgrade</a></li>
+      <li><a href="#what-doesnt-survive">Fresh-start reinstall</a></li>
+      <li><a href="#manual-equivalent">Manual equivalent</a></li>
+      <li><a href="#verifying">Verifying the upgrade</a></li>
+      <li><a href="#versioning">Versioning</a></li>
       <li><a href="#rollback">Rollback</a></li>
+      <li><a href="#backups-first">Backups for MAJOR upgrades</a></li>
     </ul>
   </aside>
 
