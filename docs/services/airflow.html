@@ -159,7 +159,18 @@
 </ol>
 <p>If you need to rotate the PAT later: go to the Airflow tile's <strong>Edit config</strong> page, type a new PAT into the <strong>AIRFLOW_DAGS_REPO_PAT</strong> field (it's always blank on display — typing replaces the embedded PAT in the URL). Save, then Stop + Open the Airflow tile to re-clone.</p>
 
-<p><strong>Diagnosing clone failures:</strong> if Airflow starts but no DAGs appear, check the container logs — they print a multi-line block on clone failure with the specific cause (auth / not found / network). Operator URL: <code class="inline">/app/services/airflow</code> → Activity tab → look for the most recent <code class="inline">session_autostart_failed</code> event for the orchestrator-side error.</p>
+<div class="callout">
+  <p><strong>⚠ Permission gotcha — most common cause of "remote: Write access to repository not granted":</strong></p>
+  <p>GitHub's fine-grained-PAT system rejects clones with HTTP 403 even though <code class="inline">git clone</code> is read-only, when the token isn't granted the exact <em>Contents: Read</em> permission on the specific repo. Two things to double-check:</p>
+  <ul>
+    <li><strong>Permissions:</strong> under <em>Repository permissions</em>, set <code class="inline">Contents: Read-only</code>. Don't grant Write — clone doesn't need it and least-privilege keeps the blast radius small if the token leaks.</li>
+    <li><strong>Repository access:</strong> select <em>"Only select repositories"</em> and pick just your DAGs repo. The default <em>"All repositories"</em> often gets rejected by org-level policies. If the repo is org-owned, the org admin must approve the token from <code class="inline">https://github.com/organizations/&lt;org&gt;/settings/personal-access-tokens-pending</code> before it activates.</li>
+  </ul>
+</div>
+
+<p><strong>Diagnosing clone failures:</strong> if Airflow starts but no DAGs appear, check the container logs — they print a multi-line classified diagnostic block on failure (auth / not-found / network). Operator URL: <code class="inline">/app/services/airflow</code> → Activity tab → look for the most recent <code class="inline">session_autostart_failed</code> event for the orchestrator-side error. The orchestrator also writes a demo <code class="inline">orchestack_welcome</code> DAG to the volume on first start so you'll see <em>at least one</em> DAG in the Airflow UI — useful for confirming Airflow itself is functioning even when your repo clone has issues.</p>
+
+<p><strong>Repo layout:</strong> OrcheStack respects <code class="inline">AIRFLOW_DAGS_REPO_PATH</code> (default <code class="inline">dags</code>). DAGs at <code class="inline">your-repo/dags/*.py</code> get copied into the container's DAG folder as expected. If your DAGs live at the repo root instead, set <code class="inline">AIRFLOW_DAGS_REPO_PATH=.</code> in the wizard or Edit Config.</p>
 
 <h2 id="dbt-from-airflow">Running dbt from Airflow with Cosmos</h2>
 <p>Cosmos's <code class="inline">DbtDag</code> reads the operator's dbt project at DAG-parse time and generates one Airflow task per dbt model and per dbt test. The dbt DAG becomes visible inside the Airflow UI, and per-model failures surface with the correct task ID — no more "<code class="inline">dbt_build [FAILED]</code>, scroll the logs to find which model."</p>

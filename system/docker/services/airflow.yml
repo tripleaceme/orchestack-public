@@ -108,7 +108,26 @@ services:
               esac;
               echo "==============================================================================";
             else
-              cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ 2>/dev/null || true;
+              # 1. Clean stale operator DAGs (preserve welcome + .git).
+              #    Without this, removed-from-repo DAGs persist in the
+              #    volume across restarts, AND repeat clones into a
+              #    subdir-having repo create the famed dags/dags/ tree
+              #    of doom (parent dir filled with old copies; nested
+              #    subdir filled with new ones, all importable, all
+              #    triggering AirflowDagDuplicatedIdException).
+              find /opt/airflow/dags -mindepth 1 -maxdepth 1 \
+                   ! -name "orchestack_welcome.py" ! -name ".git" \
+                   -exec rm -rf {} + 2>/dev/null || true;
+              # 2. Copy from the operator's configured subdir (default
+              #    "dags" matching the GitHub-standard layout). If the
+              #    repo has the DAGs at root instead, AIRFLOW_DAGS_REPO_PATH
+              #    can be set to "." in .env.
+              DAGS_SUBDIR=$${AIRFLOW_DAGS_REPO_PATH:-dags};
+              if [ -d "/opt/airflow/dags-clone/$$DAGS_SUBDIR" ]; then
+                cp -r /opt/airflow/dags-clone/$$DAGS_SUBDIR/* /opt/airflow/dags/ 2>/dev/null || true;
+              else
+                cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ 2>/dev/null || true;
+              fi;
               echo "[orchestack] DAGs cloned successfully from $${AIRFLOW_DAGS_REPO_URL%@*}";
             fi;
           fi;

@@ -142,6 +142,15 @@
 
 <p><strong>Rotating the PAT later:</strong> from the dbt tile's Edit Config page, type a new value into the <strong>DBT_REPO_PAT</strong> field (always blank on display — typing replaces the embedded PAT in the URL). Save, then Stop + Open the dbt tile to re-clone.</p>
 
+<div class="callout">
+  <p><strong>⚠ Permission gotcha — most common cause of "remote: Write access to repository not granted":</strong></p>
+  <p>GitHub's fine-grained-PAT system rejects clones with HTTP 403 even though <code class="inline">git clone</code> is read-only, when the token isn't granted the exact <em>Contents: Read</em> permission on the specific repo. Two things to double-check:</p>
+  <ul>
+    <li><strong>Permissions:</strong> under <em>Repository permissions</em>, set <code class="inline">Contents: Read-only</code>. Don't grant Write — clone doesn't need it.</li>
+    <li><strong>Repository access:</strong> select <em>"Only select repositories"</em> and pick just your dbt repo. The default <em>"All repositories"</em> is often blocked by org policy. For org-owned repos, the org admin must approve the token from <code class="inline">https://github.com/organizations/&lt;org&gt;/settings/personal-access-tokens-pending</code>.</li>
+  </ul>
+</div>
+
 <h2 id="project-layout">Project layout</h2>
 <p>A typical dbt project looks like:</p>
 <pre>your-dbt-repo/

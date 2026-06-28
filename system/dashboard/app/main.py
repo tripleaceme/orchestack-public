@@ -577,6 +577,40 @@ async def _build_credentials_context(
         credentials = []
         error = str(e)
 
+    # Inject the synthetic *_REPO_PAT fields so the global Credentials
+    # page count matches what the per-service Edit Config pages show.
+    # The PAT itself isn't a .env key (consumed at write-time into
+    # the URL; see _concat_pat_into_repo_urls in orchestrator setup.py),
+    # so list_credentials doesn't return it. But operators expect a
+    # rotate-PAT affordance to appear here too — and a count mismatch
+    # between /credentials and Edit Config breaks the mental model of
+    # "this page shows me everything I can edit." Mirrors the same
+    # synthesis service_config_page does, in the same shape.
+    _PAT_SYNTH_PAIRS = (
+        ("AIRFLOW_DAGS_REPO_URL", "AIRFLOW_DAGS_REPO_PAT"),
+        ("DBT_REPO_URL",          "DBT_REPO_PAT"),
+    )
+    existing_keys = {c["key"] for c in credentials}
+    for url_key, pat_key in _PAT_SYNTH_PAIRS:
+        if pat_key in existing_keys:
+            continue
+        # Only synthesize when the corresponding URL is set — otherwise
+        # showing a PAT field for an unset repo would be noise.
+        url_is_set = any(
+            c["key"] == url_key and c.get("is_set") for c in credentials
+        )
+        if not url_is_set:
+            continue
+        credentials.append({
+            "key":          pat_key,
+            "value":        "",
+            "is_sensitive": True,
+            "is_readonly":  False,
+            "is_set":       False,
+            "synthetic":    "pat_for_url",
+            "synthetic_pair_url": url_key,
+        })
+
     for c in credentials:
         svc = _service_for_credential(c["key"])
         c["service"] = svc
@@ -656,12 +690,60 @@ async def credentials_update_action(
     user=Depends(require_admin),
 ) -> HTMLResponse:
     """Update one .env variable + re-render its table row. Service filter is threaded through the form so an edit doesn't snap the view back to All."""
-    try:
-        await orchestrator.update_credential(
-            key, value, actor_user_id=user.get("user_id"),
+    # Same masked-overwrite guard as service_config_save (bulk form):
+    # the row's password input renders the orchestrator's bullet-mask
+    # as its current `value`. A no-op save submits those bullets back;
+    # without this guard they'd be persisted as the new value.
+    if value and all(c == "•" for c in value):
+        # Surface as a no-op — re-render the existing row unchanged.
+        try:
+            data = await orchestrator.list_credentials(reveal=False)
+            credentials = data.get("credentials", [])
+        except (httpx.HTTPError, ValueError):
+            credentials = []
+        for c in credentials:
+            c["service"] = _service_for_credential(c["key"])
+        return templates.TemplateResponse(
+            "_credentials_table_fragment.html",
+            {"request": request, "credentials": credentials, "reveal": False,
+             "selected_service": service, "search": "", "error": None},
         )
-    except httpx.HTTPError as e:
-        log.warning("update_credential(%s) failed: %s", key, e)
+
+    # Intercept synthetic *_REPO_PAT keys — these aren't real .env keys;
+    # they re-write the corresponding *_REPO_URL with the new PAT
+    # embedded. Same shape as the service_config_save intercept.
+    _PAT_ROUTE_PAIRS = {
+        "AIRFLOW_DAGS_REPO_PAT": "AIRFLOW_DAGS_REPO_URL",
+        "DBT_REPO_PAT":          "DBT_REPO_URL",
+    }
+    if key in _PAT_ROUTE_PAIRS and value.strip():
+        url_key = _PAT_ROUTE_PAIRS[key]
+        try:
+            existing = (await orchestrator.list_credentials(reveal=True)).get("credentials", [])
+            cur_url = next((c.get("value", "") for c in existing if c["key"] == url_key), "")
+        except (httpx.HTTPError, ValueError):
+            cur_url = ""
+        if cur_url and cur_url.startswith("https://"):
+            # Strip any pre-embedded PAT then embed the new one.
+            if "@github.com" in cur_url:
+                cur_url = "https://github.com" + cur_url.split("@github.com", 1)[1]
+            if "https://github.com/" in cur_url:
+                rewritten = cur_url.replace("https://", f"https://{value.strip()}@", 1)
+                try:
+                    await orchestrator.update_credential(
+                        url_key, rewritten, actor_user_id=user.get("user_id"),
+                    )
+                except httpx.HTTPError as e:
+                    log.warning("update_credential(%s) via PAT intercept failed: %s", url_key, e)
+        # Don't fall through to the generic save — the PAT key isn't
+        # meant to land in .env on its own.
+    else:
+        try:
+            await orchestrator.update_credential(
+                key, value, actor_user_id=user.get("user_id"),
+            )
+        except httpx.HTTPError as e:
+            log.warning("update_credential(%s) failed: %s", key, e)
     try:
         data = await orchestrator.list_credentials(reveal=False)
         credentials = data.get("credentials", [])
