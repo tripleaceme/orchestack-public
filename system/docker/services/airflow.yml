@@ -48,16 +48,18 @@ services:
       # DAGs git repo (optional) — synced by a git-sync sidecar
       AIRFLOW_DAGS_REPO_URL:    ${AIRFLOW_DAGS_REPO_URL:-}
       AIRFLOW_DAGS_REPO_BRANCH: ${AIRFLOW_DAGS_REPO_BRANCH:-main}
-    # NOTE on the YAML: every command must be on a SINGLE YAML line so
-    # the `>` folded scalar joins them with spaces, not newlines. The
-    # previous form put `airflow users create --role Admin` on one line
-    # and `--username "$x"` on the next more-indented line — `>` then
-    # preserved the newline between them, splitting the command in
-    # bash's view. The result was `users create` running with no email/
-    # username/firstname/lastname/password args. Keep multi-arg
-    # commands as one long line per YAML line.
-    command: >
-      bash -c '
+    # LIST form (not `command: >`). The folded-scalar string form forces
+    # docker compose to tokenise the result with a shlex-like parser
+    # that chokes on (a) apostrophes inside the outer `bash -c '...'`
+    # and (b) any quoting shape compose-go's parser disagrees with —
+    # both of which we've hit. List form makes each element an exact
+    # argv entry; compose just exec's argv directly with no further
+    # parsing. The `|` block scalar in element 3 preserves newlines so
+    # we can write a long readable bash script without quoting tricks.
+    command:
+      - bash
+      - -c
+      - |
         airflow db migrate &&
         airflow users create --role Admin --username "$${_AIRFLOW_WWW_USER_USERNAME}" --email "$${_AIRFLOW_WWW_USER_EMAIL}" --firstname Admin --lastname User --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
         # Always provision a demo DAG so the volume isn't empty when the
@@ -112,7 +114,6 @@ services:
           fi;
         fi;
         airflow scheduler & airflow webserver
-      '
     networks:
       - orchestack-net
     volumes:
