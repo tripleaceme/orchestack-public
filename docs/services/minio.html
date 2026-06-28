@@ -113,7 +113,9 @@
     <p class="lede">S3-compatible object storage. The data lake layer — lands raw files alongside the warehouse, stays reachable for ML and DS consumers.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Hot.</strong> MinIO is lightweight (~200 MB) and stays running so external consumers (ML notebooks, DS pipelines, ad-hoc analysis) can access raw files at any time.</p>
+<p><strong>Cold.</strong> MinIO is lightweight (~200 MB) but classified cold because the typical consumption pattern is bursty (ad-hoc dataset pulls into notebooks, periodic ML training reads) rather than always-on. The orchestrator brings it up on first read access and stops it after the idle timeout. If you have a workload that needs MinIO available 24/7, pin it from the dashboard's Keep&nbsp;warm card.</p>
+
+<p><strong>Sign-in:</strong> MinIO's web console runs its own login. From the dashboard, open MinIO's <strong>Details · pin · activity</strong> page → in the <strong>Connection</strong> card click <strong>Reveal</strong> to surface the root user + password the wizard captured. Admin-only; the same credentials work as S3-style access key / secret for boto3 + DuckDB + Polars clients.</p>
 
 <h2 id="role">Role</h2>
 <p>MinIO is the "open end" of OrcheStack. Airbyte writes every sync to MinIO in parallel with PostgreSQL. The warehouse track (Airbyte → Postgres → dbt → Metabase) serves BI; the lake track (Airbyte → MinIO → external consumers) serves ML/DS use cases.</p>

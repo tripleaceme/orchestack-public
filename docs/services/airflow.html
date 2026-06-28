@@ -110,19 +110,20 @@
   <main class="docs-main">
     <div class="breadcrumb"><a href="../index.html">Docs</a> › <a href="../index.html">Services</a> › Apache Airflow</div>
     <h1>Apache Airflow</h1>
-    <p class="lede">OrcheStack ships Airflow 3 with dbt + astronomer-cosmos preinstalled. Author DAGs in your own Git repository; Airflow discovers and runs them on the cadence you set.</p>
+    <p class="lede">OrcheStack ships Airflow 2.10 with dbt + astronomer-cosmos preinstalled. Author DAGs in your own Git repository; Airflow discovers and runs them on the cadence you set.</p>
 
 <h2 id="tier">Tier</h2>
-<p>Hot tier. The Airflow webserver and scheduler stay running so the cron triggers fire reliably and the operator can reach the UI at any moment. Single-container LocalExecutor — task workers are in the same process, no separate worker pool.</p>
+<p><strong>Cold.</strong> The Airflow webserver + scheduler are stopped when nothing's actively using them; the orchestrator brings them up when an operator opens the tile. <strong>Important caveat for scheduled DAGs:</strong> a cold Airflow can't fire an 8 AM DAG because it's not running at 8 AM. If you rely on schedule-based runs, <strong>pin</strong> Airflow from its detail-page Keep&nbsp;warm card — pinned services are excluded from the cold-tier idle-stop reconciler. The dashboard surfaces a yellow banner on Airflow's detail page as a reminder.</p>
 
 <h2 id="what-ships-in-the-image">What ships in the image</h2>
-<p>Airflow 3.2 with three things baked in at build time so the operator never runs <code class="inline">pip install</code> at task time:</p>
+<p>Airflow 2.10.5 with three things baked in at build time so operators never run <code class="inline">pip install</code> at task time:</p>
 <ul>
-  <li><strong><code class="inline">dbt-core</code></strong> + <strong><code class="inline">dbt-postgres</code></strong> — for running dbt models against the warehouse</li>
-  <li><strong><code class="inline">astronomer-cosmos</code></strong> — turns the operator's dbt project into one Airflow task per model + per test</li>
+  <li><strong><code class="inline">dbt-core 1.8.0</code></strong> + <strong><code class="inline">dbt-postgres 1.8.0</code></strong> — for running dbt models against the warehouse. (Pinned to 1.8.0 because dbt 1.9+ requires <code class="inline">protobuf ≥5</code>, which conflicts with Airflow 2.10's pinned <code class="inline">protobuf 4.25.6</code>. We'll bump when we move back to Airflow 3.x.)</li>
+  <li><strong><code class="inline">astronomer-cosmos 1.8.x</code></strong> — turns the operator's dbt project into one Airflow task per model + per test</li>
   <li><strong>Airflow's HTTP provider</strong> — for triggering external tools (Airbyte, Fivetran, Metabase, Tableau, etc.) via their REST APIs</li>
 </ul>
 <p>Anything else the operator's DAGs need — <code class="inline">dlt</code>, <code class="inline">requests</code>, <code class="inline">pandas</code>, custom Python loaders — gets installed per-task via <code class="inline">PythonVirtualenvOperator</code> (see below).</p>
+<p>The image runs as the <code class="inline">root</code> user (Docker prints a warning about this on start; safe to ignore — Airflow 2's upstream image is intentionally root-by-default in single-container mode).</p>
 
 <h2 id="connections">Connections</h2>
 <p>Cosmos needs an Airflow Connection named <code class="inline">orchestack_warehouse</code> with the warehouse credentials. OrcheStack creates this connection automatically on first Airflow start through the orchestrator's post-start hook — no manual setup needed.</p>
@@ -137,12 +138,28 @@
 </table>
 
 <h2 id="dags-live-where">Where your DAGs live</h2>
-<p>DAG Python files live in <code class="inline">/opt/airflow/dags/</code> inside the Airflow container, backed by the <code class="inline">orchestack-airflow-dags</code> docker volume. Two ways to get DAGs in there:</p>
+<p>DAG Python files live in <code class="inline">/opt/airflow/dags/</code> inside the Airflow container, backed by the <code class="inline">orchestack-airflow-dags</code> docker volume. Two ways to populate it:</p>
 <ol>
-  <li><strong>Set <code class="inline">AIRFLOW_DAGS_REPO_URL</code> in your <code class="inline">.env</code></strong> — the Airflow entrypoint clones the repo on each start. Set <code class="inline">AIRFLOW_DAGS_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch. This is the recommended pattern for any team that uses Git.</li>
-  <li><strong>Bind-mount a host directory</strong> — for single-developer iteration. Replace the <code class="inline">airflow-dags</code> volume with a bind mount in the dbt service's compose snippet and Airflow picks up your local edits within 30 seconds.</li>
+  <li><strong>Paste a Git repo URL into the wizard</strong> (<code class="inline">AIRFLOW_DAGS_REPO_URL</code>) — the Airflow entrypoint clones the repo on each start. Set <code class="inline">AIRFLOW_DAGS_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch. <strong>This is the recommended pattern.</strong> If the repo is private, fill in the PAT field too (see next section).</li>
+  <li><strong>Bind-mount a host directory</strong> — for single-developer iteration. Replace the <code class="inline">airflow-dags</code> volume with a bind mount and Airflow picks up local edits within 30 seconds.</li>
 </ol>
 <p>Your dbt project files live in a separate location: <code class="inline">/opt/airflow/dbt-project/</code> inside the Airflow container (read-only). This is a mount of the same volume the dbt service uses, so populating your dbt project on the dbt side makes it visible to Airflow automatically. See the <a href="dbt.html">dbt Core</a> page for how to populate it.</p>
+
+<h2 id="private-repo-pat">Private DAG repo: creating a GitHub PAT</h2>
+<p>For private GitHub repos, OrcheStack embeds a Personal Access Token in the clone URL (the git client inside the container can't use any other auth flow). The wizard collects it as a separate field; you don't have to hand-craft the <code class="inline">https://&lt;PAT&gt;@github.com/...</code> URL — the backend concatenates it for you on save.</p>
+<ol>
+  <li>Go to <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens?type=beta</a> (fine-grained tokens). Click <strong>Generate new token</strong>.</li>
+  <li><strong>Token name:</strong> <code class="inline">orchestack-airflow-dags</code> (or whatever distinguishes it from your other PATs).</li>
+  <li><strong>Expiration:</strong> pick what your security policy demands. 90 days is a reasonable default for an on-prem deploy.</li>
+  <li><strong>Resource owner:</strong> the user or org that owns your DAGs repo.</li>
+  <li><strong>Repository access:</strong> <em>Only select repositories</em> → pick just the DAGs repo. Don't grant org-wide access.</li>
+  <li><strong>Permissions:</strong> under <em>Repository permissions</em>, set <code class="inline">Contents: Read-only</code>. Nothing else needs to be checked.</li>
+  <li>Click <strong>Generate token</strong> and copy it immediately (GitHub only shows it once).</li>
+  <li>In the OrcheStack setup wizard, paste the token into the <strong>GitHub Personal Access Token</strong> field next to your DAG repo URL. Submit. The backend rewrites the URL to <code class="inline">https://&lt;PAT&gt;@github.com/owner/repo.git</code> and writes the result to <code class="inline">.env</code>; the bare PAT key is never written separately.</li>
+</ol>
+<p>If you need to rotate the PAT later: go to the Airflow tile's <strong>Edit config</strong> page, type a new PAT into the <strong>AIRFLOW_DAGS_REPO_PAT</strong> field (it's always blank on display — typing replaces the embedded PAT in the URL). Save, then Stop + Open the Airflow tile to re-clone.</p>
+
+<p><strong>Diagnosing clone failures:</strong> if Airflow starts but no DAGs appear, check the container logs — they print a multi-line block on clone failure with the specific cause (auth / not found / network). Operator URL: <code class="inline">/app/services/airflow</code> → Activity tab → look for the most recent <code class="inline">session_autostart_failed</code> event for the orchestrator-side error.</p>
 
 <h2 id="dbt-from-airflow">Running dbt from Airflow with Cosmos</h2>
 <p>Cosmos's <code class="inline">DbtDag</code> reads the operator's dbt project at DAG-parse time and generates one Airflow task per dbt model and per dbt test. The dbt DAG becomes visible inside the Airflow UI, and per-model failures surface with the correct task ID — no more "<code class="inline">dbt_build [FAILED]</code>, scroll the logs to find which model."</p>
@@ -242,6 +259,7 @@ load_task = PythonVirtualenvOperator(
       <li><a href="#what-ships-in-the-image">What ships in the image</a></li>
       <li><a href="#connections">Connections</a></li>
       <li><a href="#dags-live-where">Where your DAGs live</a></li>
+      <li><a href="#private-repo-pat">Private DAG repo: PAT</a></li>
       <li><a href="#dbt-from-airflow">Running dbt from Airflow with Cosmos</a></li>
       <li><a href="#http-pattern">Triggering external tools (HttpOperator)</a></li>
       <li><a href="#python-pattern">Custom Python ingestion (PythonVirtualenvOperator)</a></li>

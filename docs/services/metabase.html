@@ -115,6 +115,8 @@
 <h2 id="tier">Tier</h2>
 <p><strong>Hot.</strong> Metabase stays running whenever it's enabled. Stakeholders need to open dashboards at any time — business hours, board meetings, ad-hoc exploration. Memory: ~1–1.5 GB.</p>
 
+<p><strong>Sign-in:</strong> Metabase runs its own session. The wizard captures the admin email + auto-generated password; from the dashboard, open Metabase's <strong>Details · pin · activity</strong> page → in the <strong>Connection</strong> card click <strong>Reveal</strong> to copy them. The first time you open Metabase after deploy, the orchestrator runs a bootstrap hook that calls Metabase's <code class="inline">/api/setup</code> with those credentials — if Metabase rejects the password (it has its own complexity rules), the hook auto-generates a strong replacement and writes it to <code class="inline">METABASE_ADMIN_PASSWORD</code> in <code class="inline">.env</code>; the Reveal flow always shows the current effective value.</p>
+
 <h2 id="role">Role</h2>
 <p>Metabase reads from the <code class="inline">marts</code> schema in PostgreSQL — the curated output of dbt. It does not read from <code class="inline">raw</code> (that's dbt's job) and it doesn't write anywhere.</p>
 

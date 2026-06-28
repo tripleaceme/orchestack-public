@@ -112,8 +112,11 @@
     <h1>pgAdmin</h1>
     <p class="lede">The PostgreSQL web UI for engineers — inspect tables, write ad-hoc SQL, review query plans. Starts on click, stops when idle.</p>
 
+
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
+<p><strong>Hot.</strong> pgAdmin stays running so engineers can reach the warehouse at any moment without waiting on an image pull or container start. Memory: ~500 MB. (Previously cold-tier; we promoted it to hot because the spin-up wait on every Open broke the "I just want to glance at a table" flow.)</p>
+
+<p><strong>Sign-in:</strong> pgAdmin runs its own session. From the dashboard, open pgAdmin's <strong>Details · pin · activity</strong> page → in the <strong>Connection</strong> card click <strong>Reveal</strong> to surface the email + password the wizard captured, then paste them into pgAdmin's sign-in form. Admin-only; every reveal lands in the audit log.</p>
 
 <h2 id="role">Role</h2>
 <p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection. Alternatives: <strong>Adminer</strong> (~50 MB, single-file PHP) or <strong>pgweb</strong> (~30 MB, read-only Go binary).</p>

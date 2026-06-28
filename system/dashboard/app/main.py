@@ -492,6 +492,21 @@ async def credentials_page(
     )
 
 
+# Maps a managed service to its admin-login .env key pair (email, password).
+# Used by the service-detail Connection card's "Reveal" affordance — the
+# operator clicks Reveal to fetch real values from the orchestrator's
+# credentials endpoint (admin-gated). Keys differ per service because
+# each tool's image follows a different convention (e.g. pgAdmin uses
+# PGADMIN_DEFAULT_*, MinIO uses MINIO_ROOT_*).
+SERVICE_LOGIN_KEYS: dict[str, tuple[str, str]] = {
+    "metabase":     ("METABASE_ADMIN_EMAIL",   "METABASE_ADMIN_PASSWORD"),
+    "pgadmin":      ("PGADMIN_DEFAULT_EMAIL",  "PGADMIN_DEFAULT_PASSWORD"),
+    "airflow":      ("AIRFLOW_ADMIN_EMAIL",    "AIRFLOW_ADMIN_PASSWORD"),
+    "openmetadata": ("OPENMETADATA_ADMIN_EMAIL", "OPENMETADATA_ADMIN_PASSWORD"),
+    "minio":        ("MINIO_ROOT_USER",        "MINIO_ROOT_PASSWORD"),
+}
+
+
 # Bucketing: longest matching prefix wins ("MB_DB_USER" → "Metabase"
 # not "Other"). List order is both prefix-match order AND dropdown order.
 CREDENTIAL_SERVICE_GROUPS: list[tuple[str, list[str]]] = [
@@ -1907,6 +1922,56 @@ async def delete_service_action(
             status_code=502,
         )
     return JSONResponse(result)
+
+
+@app.get("/api/dashboard/services/{name}/login-credentials",
+         name="service_login_credentials_action")
+async def service_login_credentials_action(
+    request: Request, name: str, user=Depends(require_user),
+) -> JSONResponse:
+    """Reveal admin email + password for a managed service. Admin-only.
+
+    Used by the service-detail page's Connection card to give operators
+    one-click access to credentials the wizard collected (or auto-
+    generated) for a service's built-in admin login. Each call hits
+    the orchestrator's credentials endpoint with reveal=True; we return
+    just the two keys for this service so we don't ship the whole .env
+    to the browser. The orchestrator's audit log captures the reveal
+    via its existing credentials.list audit event.
+
+    For OpenMetadata specifically this is the v0.1.x answer to "I
+    don't want to type my password into OM's sign-in form" — full
+    cross-origin auto-login needs the OM-under-Traefik-subpath
+    refactor we deferred. See docs/services/openmetadata.html.
+    """
+    if "Admin" not in (user.get("roles") or []):
+        return JSONResponse({"error": "admin role required"}, status_code=403)
+
+    key_pair = SERVICE_LOGIN_KEYS.get(name)
+    if not key_pair:
+        return JSONResponse(
+            {"error": f"no login credentials known for service '{name}'"},
+            status_code=404,
+        )
+    email_key, password_key = key_pair
+
+    try:
+        data = await orchestrator.list_credentials(reveal=True)
+    except httpx.HTTPError as e:
+        log.warning("login-credentials for %s — list_credentials failed: %s", name, e)
+        return JSONResponse(
+            {"error": "could not fetch credentials from orchestrator"},
+            status_code=502,
+        )
+
+    by_key = {c["key"]: c.get("value", "") for c in data.get("credentials", [])}
+    return JSONResponse({
+        "service":       name,
+        "email_key":     email_key,
+        "email":         by_key.get(email_key, ""),
+        "password_key":  password_key,
+        "password":      by_key.get(password_key, ""),
+    })
 
 
 # ===========================================================================

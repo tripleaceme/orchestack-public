@@ -301,12 +301,118 @@
         </div>
         <div class="surface-body">
           <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Operator URL</div>
-          <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; word-break: break-all;">{{ _tool_url }}</div>
+          <div class="font-mono" style="font-size: 12px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 12px; word-break: break-all; position: relative;">
+            <span id="conn-url">{{ _tool_url }}</span>
+            <button type="button"
+                    onclick="orchestackCopy('conn-url', this)"
+                    class="btn btn-sm"
+                    style="position: absolute; top: 4px; right: 4px; padding: 2px 8px; font-size: 11px;">Copy</button>
+          </div>
+
+          {# Login admin email + masked password with reveal toggle.
+             Only renders when this service has known admin-credential
+             keys (SERVICE_LOGIN_KEYS in main.py). Admins click Reveal
+             to fetch real values from the orchestrator; the password
+             stays masked until then. Copy buttons next to each field
+             so the operator doesn't have to re-type anything into the
+             tool's own sign-in form. #}
+          {% if user and 'Admin' in (user.roles or []) %}
+          <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
+            <span>Admin login</span>
+            <button type="button" id="creds-reveal-btn"
+                    onclick="orchestackRevealCreds('{{ service_name }}')"
+                    class="btn btn-sm"
+                    style="padding: 2px 10px; font-size: 11px; border-color: var(--navy); color: var(--navy);">
+              Reveal
+            </button>
+          </div>
+          <div id="creds-fields" style="display: none;">
+            <div style="font-size: 11px; color: var(--text-2); margin-bottom: 2px;">Email</div>
+            <div class="font-mono" style="font-size: 12px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; margin-bottom: 8px; position: relative;">
+              <span id="creds-email"></span>
+              <button type="button" onclick="orchestackCopy('creds-email', this)"
+                      class="btn btn-sm"
+                      style="position: absolute; top: 3px; right: 3px; padding: 1px 7px; font-size: 11px;">Copy</button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-2); margin-bottom: 2px;">Password</div>
+            <div class="font-mono" style="font-size: 12px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; position: relative; word-break: break-all;">
+              <span id="creds-password"></span>
+              <button type="button" onclick="orchestackCopy('creds-password', this)"
+                      class="btn btn-sm"
+                      style="position: absolute; top: 3px; right: 3px; padding: 1px 7px; font-size: 11px;">Copy</button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-2); margin-top: 8px; line-height: 1.45;">
+              {{ display_name }} runs its own sign-in. Use these credentials
+              when its form appears — OrcheStack can't auto-sign-in because
+              {{ display_name }} is served from a different origin
+              (cross-site localStorage restriction).
+            </div>
+          </div>
+          {% else %}
           <div style="font-size: 12px; color: var(--text-2); margin-bottom: 5px;">Login</div>
           <div class="font-mono" style="font-size: 12px;">{{ admin_email }}</div>
           <div class="font-mono" style="font-size: 12px; color: var(--text-2);">password set via post-start hook</div>
+          {% endif %}
         </div>
       </div>
+
+      {% if user and 'Admin' in (user.roles or []) %}
+      <script>
+        // Generic clipboard copy with visual confirm. Falls back to
+        // document.execCommand on browsers without async clipboard
+        // (rare but possible in dev environments behind self-signed certs).
+        function orchestackCopy(spanId, btn) {
+          const el = document.getElementById(spanId);
+          const text = (el && el.textContent || "").trim();
+          if (!text) return;
+          const restore = btn.textContent;
+          const ok = () => {
+            btn.textContent = "Copied";
+            setTimeout(() => { btn.textContent = restore; }, 1500);
+          };
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(ok).catch(() => {
+              btn.textContent = "Copy failed";
+              setTimeout(() => { btn.textContent = restore; }, 1500);
+            });
+          } else {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); ok(); }
+            catch (_) { btn.textContent = "Copy failed"; setTimeout(() => { btn.textContent = restore; }, 1500); }
+            document.body.removeChild(ta);
+          }
+        }
+
+        async function orchestackRevealCreds(serviceName) {
+          const btn = document.getElementById('creds-reveal-btn');
+          const fields = document.getElementById('creds-fields');
+          btn.disabled = true;
+          btn.textContent = "Loading…";
+          try {
+            const resp = await fetch(
+              "/app/api/dashboard/services/" + serviceName + "/login-credentials",
+              { credentials: "same-origin" },
+            );
+            if (!resp.ok) {
+              const body = await resp.text();
+              alert("Couldn't reveal credentials (HTTP " + resp.status + "): " + body);
+              btn.disabled = false; btn.textContent = "Reveal";
+              return;
+            }
+            const data = await resp.json();
+            document.getElementById('creds-email').textContent = data.email || '(not set)';
+            document.getElementById('creds-password').textContent = data.password || '(not set)';
+            fields.style.display = 'block';
+            btn.style.display = 'none';
+          } catch (e) {
+            alert("Reveal failed: " + e.message);
+            btn.disabled = false; btn.textContent = "Reveal";
+          }
+        }
+      </script>
+      {% endif %}
 
       {# Danger Zone — Disable + Remove. Admin-only; control-plane services
          (postgresql) can't be torn down so the card is hidden for them. #}

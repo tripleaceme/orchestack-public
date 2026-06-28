@@ -121,10 +121,26 @@
 <h2 id="populating-your-project">Populating your dbt project</h2>
 <p>Your dbt project lives in the <code class="inline">orchestack-dbt-repo</code> docker volume, mounted into the dbt service container at <code class="inline">/usr/app/dbt</code> (read-write) and into the Airflow container at <code class="inline">/opt/airflow/dbt-project</code> (read-only). Two ways to populate it:</p>
 <ol>
-  <li><strong>Set <code class="inline">DBT_REPO_URL</code> in your <code class="inline">.env</code></strong> (or via the dashboard's Edit Config page). The dbt service entrypoint clones the repo on next start. Set <code class="inline">DBT_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch.</li>
+  <li><strong>Paste a Git repo URL into the wizard</strong> (<code class="inline">DBT_REPO_URL</code>). The dbt service entrypoint clones the repo on next start. Set <code class="inline">DBT_REPO_BRANCH</code> if you want a non-<code class="inline">main</code> branch. <strong>If the repo is private, also fill in the PAT field</strong> — see <a href="#private-repo-pat">Private project repo: PAT</a> below.</li>
   <li><strong>Use the in-browser dbt terminal</strong> — open the dbt service tile in the dashboard, click "Open Terminal", and run <code class="inline">git clone &lt;your-repo-url&gt; .</code> inside <code class="inline">/usr/app/dbt</code>. Iteration via direct edits works for solo development; teams should prefer Git-based flow for review and history.</li>
 </ol>
-<p>If neither path is configured, the dbt service container writes a minimal demo project on first start so the dbt-docs server has something to render. Replace it with your own.</p>
+<p>If neither path is configured, the dbt service container writes a minimal demo project on first start so the dbt-docs server has something to render — <strong>one model called <code class="inline">warehouse_tables</code></strong> that lists the warehouse's catalog. If your wizard URL was set but clone silently failed (private repo, no PAT), you'll see this demo project rather than yours; check the dbt container logs for the clone-failure block.</p>
+
+<h2 id="private-repo-pat">Private project repo: creating a GitHub PAT</h2>
+<p>OrcheStack collects the Personal Access Token as a separate wizard field; the backend concatenates it into the URL at write-time (<code class="inline">https://&lt;PAT&gt;@github.com/owner/repo.git</code>). You never hand-craft that URL.</p>
+<ol>
+  <li>Go to <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens?type=beta</a>. Click <strong>Generate new token</strong>.</li>
+  <li><strong>Token name:</strong> <code class="inline">orchestack-dbt</code>.</li>
+  <li><strong>Expiration:</strong> 90 days is a reasonable default; rotate from the dashboard's Edit Config page when it expires.</li>
+  <li><strong>Resource owner:</strong> the user or org that owns the dbt repo.</li>
+  <li><strong>Repository access:</strong> <em>Only select repositories</em> → just the dbt repo. Don't grant org-wide.</li>
+  <li><strong>Permissions:</strong> <code class="inline">Contents: Read-only</code> under <em>Repository permissions</em>. Nothing else.</li>
+  <li>Generate → copy the token immediately (GitHub shows it once).</li>
+  <li>Paste it into the OrcheStack wizard's <strong>GitHub Personal Access Token</strong> field next to the dbt repo URL. Submit; the backend rewrites + writes to <code class="inline">.env</code>; the bare PAT is dropped from the credential payload.</li>
+</ol>
+<p>If you also configured Airflow with a DAGs repo from the same GitHub account, you can reuse the same PAT — or generate one per service for finer-grained revocation.</p>
+
+<p><strong>Rotating the PAT later:</strong> from the dbt tile's Edit Config page, type a new value into the <strong>DBT_REPO_PAT</strong> field (always blank on display — typing replaces the embedded PAT in the URL). Save, then Stop + Open the dbt tile to re-clone.</p>
 
 <h2 id="project-layout">Project layout</h2>
 <p>A typical dbt project looks like:</p>
@@ -224,6 +240,7 @@ dbt docs generate &amp;&amp; dbt docs serve    # rebuild + serve the dbt-docs si
       <li><a class="active" href="#tier">Tier</a></li>
       <li><a href="#role">Role in the pipeline</a></li>
       <li><a href="#populating-your-project">Populating your dbt project</a></li>
+      <li><a href="#private-repo-pat">Private repo: PAT</a></li>
       <li><a href="#project-layout">Project layout</a></li>
       <li><a href="#running-from-airflow">Running dbt from Airflow with Cosmos</a></li>
       <li><a href="#running-from-terminal">Running dbt from the terminal (interactively)</a></li>

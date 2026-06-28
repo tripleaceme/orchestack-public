@@ -113,20 +113,58 @@
     <p class="lede">Column-level lineage, data catalog, glossary. Auto-ingests from Airbyte, dbt, and PostgreSQL to show how data flows end to end.</p>
 
 <h2 id="tier">Tier</h2>
-<p><strong>Cold.</strong> OpenMetadata is heavy (~2–3 GB RAM) and stakeholders rarely open it. Engineers open it when they need to understand lineage — OrcheStack spins it up on click and stops it when idle.</p>
+<p><strong>Cold.</strong> OpenMetadata is a three-container stack (server + Elasticsearch + ingestion) totalling ~6&nbsp;GB of images and ~3&nbsp;GB of RAM when running. Stakeholders rarely open it; engineers open it when they need to understand lineage. OrcheStack pulls its images during deploy so first Open from the dashboard is instant, then spins the stack up on demand and stops it when idle.</p>
 
 <h2 id="role">Role</h2>
-<p>OpenMetadata pulls metadata from every stage (Airbyte sources, PostgreSQL schemas, dbt models, Metabase dashboards) to produce column-level lineage graphs. It answers the question: "If I change this column, what breaks downstream?"</p>
+<p>OpenMetadata pulls metadata from every stage (Airbyte sources, PostgreSQL schemas, dbt models, Metabase dashboards) to produce column-level lineage graphs. It answers the question: <em>"if I change this column, what breaks downstream?"</em></p>
+
+<h2 id="first-start">First start</h2>
+<p>Even with images pre-pulled, the first start of OpenMetadata takes 5–10 minutes on a typical laptop because:</p>
+<ol>
+  <li>Elasticsearch boots and waits to report healthy (~60–90&nbsp;s).</li>
+  <li>The OpenMetadata server then runs schema migrations against its application DB on the shared <code class="inline">orchestack-postgres</code> (~2–3&nbsp;min on first install, <code class="inline">~5&nbsp;s</code> on warm starts).</li>
+  <li>The server starts and waits for ES to index its system catalogue.</li>
+  <li>The <code class="inline">openmetadata-ingestion</code> sidecar comes up last (it bundles OpenMetadata's own Airflow for metadata ingestion — distinct from the Apache Airflow service you configured for business DAGs).</li>
+</ol>
+<p>While this is happening, the dashboard tile reports <em>Starting</em>. If it sits there beyond 30 minutes, check the audit log for <code class="inline">session_autostart_failed</code> events; the orchestrator caps OpenMetadata's start at 1800&nbsp;s (30&nbsp;min) before reporting failure.</p>
+
+<h2 id="signing-in">Signing in</h2>
+<p>OpenMetadata has its own login screen at <code class="inline">/signin</code>. OrcheStack <strong>can't auto-sign-in</strong> to OpenMetadata in v0.1.x because OpenMetadata is served on a different origin from the OrcheStack dashboard — same-origin restrictions prevent us from writing its session token into your browser. We'll fix this in a later milestone (it requires running OpenMetadata behind a reverse-proxy that rewrites its SPA asset paths, and we've deferred that work to v0.2).</p>
+<p>For now, OrcheStack gives you one-click access to the credentials from the dashboard:</p>
+<ol>
+  <li>From the dashboard grid, open OpenMetadata's <strong>Details · pin · activity</strong> page (link at the bottom of the tile).</li>
+  <li>In the <strong>Connection</strong> card on the right, click <strong>Reveal</strong>. Admin email and password appear with <strong>Copy</strong> buttons next to each.</li>
+  <li>Copy the email → click <strong>Open</strong> → paste into OpenMetadata's email field. Repeat for password.</li>
+</ol>
+<p>Only admins can reveal credentials (the orchestrator enforces this server-side). Every reveal is captured in the audit log.</p>
 
 <h2 id="configuration">Configuration</h2>
-<ul>
-  <li><strong>Admin email and password</strong> — for the OpenMetadata web UI</li>
-  <li><strong>JWT secret</strong> — 32+ characters, used for internal API authentication</li>
-  <li><strong>Backend PostgreSQL</strong> — OrcheStack stores OpenMetadata's state in the <code class="inline">openmetadata</code> schema of the base PostgreSQL</li>
-</ul>
+<table>
+  <thead><tr><th>.env key</th><th>What it controls</th></tr></thead>
+  <tbody>
+    <tr><td><code class="inline">OPENMETADATA_ADMIN_EMAIL</code></td><td>Email you sign in with at the OpenMetadata UI.</td></tr>
+    <tr><td><code class="inline">OPENMETADATA_ADMIN_PASSWORD</code></td><td>Matching password. Captured by the wizard; revealable from the Connection card.</td></tr>
+    <tr><td><code class="inline">OPENMETADATA_DB_USER</code> / <code class="inline">_PASSWORD</code></td><td>Credentials for OpenMetadata's <em>own</em> application database (<code class="inline">openmetadata_db</code> in the shared <code class="inline">orchestack-postgres</code>). OpenMetadata uses these to read/write its entity records, lineage, and glossary terms. Separate from your warehouse DB.</td></tr>
+    <tr><td><code class="inline">OPENMETADATA_JWT_SECRET</code></td><td>32+ characters. Signs the JWTs OpenMetadata issues to its React UI. Auto-generated by the wizard.</td></tr>
+    <tr><td><code class="inline">OPENMETADATA_FERNET_KEY</code></td><td>Auto-generated. Encrypts secrets that OpenMetadata's bundled ingestion Airflow stores in its own metadata DB. Lose this key and your ingestion connection passwords become unrecoverable.</td></tr>
+  </tbody>
+</table>
+<p>All of these are editable later from <strong>Edit config</strong> on the OpenMetadata tile.</p>
 
 <h2 id="when-to-use">When to open it</h2>
 <p>Typical triggers: before a schema change (to check downstream impact), after a pipeline failure (to see which models are affected), during an audit (to document data provenance).</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<dl>
+  <dt><strong>"Pulling…" forever on the dashboard, then "Failed to start"</strong></dt>
+  <dd>Combined image size is ~6&nbsp;GB. On residential broadband the default 60-minute pull cap can be exceeded. Check the audit log for <code class="inline">service_pull_failed</code>; the underlying images can be pulled manually with <code class="inline">docker compose -f services/openmetadata.yml -p orchestack-service-openmetadata pull</code> from the install directory (no orchestrator timeout that way).</dd>
+
+  <dt><strong>Sign-in fails with "invalid credentials"</strong></dt>
+  <dd>OpenMetadata 1.6.x validates passwords against its own rules at first-start (min length, no common patterns). If your wizard password was rejected the bootstrap hook auto-generates a strong replacement and writes it to <code class="inline">OPENMETADATA_ADMIN_PASSWORD</code> in <code class="inline">.env</code>. Use the Reveal flow above to read the actual current password.</dd>
+
+  <dt><strong>Dashboard shows "Stopped" but the OpenMetadata UI still loads</strong></dt>
+  <dd>Polling lag — the orchestrator reconciles state every 30&nbsp;s. The UI you're seeing is the running container; the dashboard will catch up on the next tick.</dd>
+</dl>
 
     <div class="next-prev">
       <a href="metabase.html">
@@ -145,8 +183,11 @@
     <ul>
       <li><a class="active" href="#tier">Tier</a></li>
       <li><a href="#role">Role</a></li>
+      <li><a href="#first-start">First start</a></li>
+      <li><a href="#signing-in">Signing in</a></li>
       <li><a href="#configuration">Configuration</a></li>
       <li><a href="#when-to-use">When to open it</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
     </ul>
   </aside>
 
