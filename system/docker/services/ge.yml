@@ -17,7 +17,12 @@
 
 services:
   ge:
-    image: tripleaceme/orchestack-ge:0.18.21-1
+    # GE_TAG defaults to :latest (CI publishes :latest + the semver tag
+    # for every OrcheStack release). Previously this was hardcoded to
+    # `0.18.21-1` — a tag that was never published; every pull failed
+    # with `manifest unknown`. Switched to the same ${TAG:-latest}
+    # pattern as orchestack-airflow.
+    image: tripleaceme/orchestack-ge:${GE_TAG:-latest}
     container_name: orchestack-ge
     restart: unless-stopped
     entrypoint: ["/bin/bash", "-c"]

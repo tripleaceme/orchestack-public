@@ -328,6 +328,46 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
 # .env file persistence — line-preserving update with backup
 # ---------------------------------------------------------------------------
 _VAR_REF_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+_GITHUB_URL_RE = re.compile(r"^https://github\.com/")
+
+
+def _concat_pat_into_repo_urls(incoming: dict[str, str]) -> dict[str, str]:
+    """Concatenate per-service PATs into the corresponding *_REPO_URL.
+
+    The wizard captures a plain HTTPS GitHub URL plus a separate PAT
+    field (e.g. AIRFLOW_DAGS_REPO_URL + AIRFLOW_DAGS_REPO_PAT) — this
+    function rewrites the URL to embed the PAT inline, since git's
+    credential helper isn't available inside the service containers
+    and the only auth path is the URL-embedded-PAT pattern:
+
+      https://<PAT>@github.com/owner/repo.git
+
+    Then the *_REPO_PAT key is REMOVED from the dict so the bare PAT
+    never lands in .env on its own (where it'd be a second place to
+    leak it from). The PAT-embedded URL is the only place it lives.
+
+    Only rewrites github.com URLs — SSH URLs (git@github.com:...) and
+    GitLab/Bitbucket variants pass through unchanged because their
+    auth mechanisms are different (SSH key, deploy-token-in-URL).
+    Empty PAT or URL stays as-is.
+    """
+    pairs = (
+        ("AIRFLOW_DAGS_REPO_URL", "AIRFLOW_DAGS_REPO_PAT"),
+        ("DBT_REPO_URL",          "DBT_REPO_PAT"),
+    )
+    out = dict(incoming)
+    for url_key, pat_key in pairs:
+        url = out.get(url_key, "")
+        pat = out.get(pat_key, "")
+        if url and pat and _GITHUB_URL_RE.match(url) and "@github.com" not in url:
+            # Insert <PAT>@ right after https:// — the PAT in the URL
+            # username field is git's HTTPS auth convention.
+            out[url_key] = url.replace("https://", f"https://{pat}@", 1)
+        # Always drop the PAT key — either consumed or empty, but never
+        # written to .env on its own. PAT-embedded URLs are the single
+        # source of truth.
+        out.pop(pat_key, None)
+    return out
 
 
 def _resolve_credential_placeholders(incoming: dict[str, str]) -> dict[str, str]:
@@ -390,6 +430,17 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
     }
     if not incoming:
         return []
+
+    # Concatenate per-service PATs into the corresponding *_REPO_URL
+    # BEFORE placeholder resolution. The wizard collects URL + PAT as
+    # separate fields so the operator can paste each cleanly (and so
+    # the PAT field can be type=password). The git client inside the
+    # service containers needs the PAT embedded in the URL — there's
+    # no git credential helper available there. Rewrites to:
+    #   https://<PAT>@github.com/owner/repo.git
+    # The PAT key itself is dropped so the bare token never lands in
+    # .env on its own.
+    incoming = _concat_pat_into_repo_urls(incoming)
 
     # Resolve ${VAR} and *** placeholders in credential values.
     # The configure-page wizard captures derived values as templates —
