@@ -9,69 +9,471 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
+    /* ---------------------------------------------------------------
+       Login page mirrors OpenMetadata's split-screen Sign In layout:
+       form on the left half, marketing hero on the right half. The
+       OM page uses light-blue/purple accents; OrcheStack uses its
+       own navy palette but keeps the same visual rhythm so operators
+       moving between the two tools feel at home.
+    --------------------------------------------------------------- */
     :root {
-      --navy: #0f2a44; --navy-2: #1c3554;
-      --accent: #b45309;
-      --bg: #fafbfc; --surface: #ffffff; --border: #e5e9ef;
-      --text: #0f172a; --text-2: #64748b;
+      --navy:        #0f2a44;
+      --navy-2:      #1c3554;
+      --navy-light:  #4a6a8e;
+      --accent:      #2563eb;     /* button blue — matches OM's CTA */
+      --accent-2:    #1d4ed8;
+      --bg:          #fafbfc;
+      --surface:     #ffffff;
+      --border:      #e5e9ef;
+      --text:        #0f172a;
+      --text-2:      #64748b;
+      --hero-bg-1:   #f0f5fb;     /* light-blue gradient start */
+      --hero-bg-2:   #e6eef9;     /* light-blue gradient mid */
+      --hero-bg-3:   #dbe6f6;     /* light-blue gradient end */
+      --required:    #dc2626;     /* the red asterisk OM uses */
     }
-    html, body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-    body { background: var(--bg); color: var(--text); }
-    .brand-mark {
+    html, body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    body { background: var(--surface); margin: 0; }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(380px, 38%) 1fr;
+      min-height: 100vh;
+    }
+    /* On narrow screens fall back to stacked layout; hero panel
+       collapses to a slim banner above the form so the form still
+       lands above the fold. */
+    @media (max-width: 768px) {
+      .split { grid-template-columns: 1fr; }
+      .split .hero { min-height: 200px; padding: 32px 24px; }
+      .split .hero-illustration { display: none; }
+      .split .hero-dots { display: none; }
+    }
+
+    /* ---- Left panel: form ------------------------------------------ */
+    .form-panel {
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 48px 56px;
+      background: var(--surface);
+    }
+    .form-panel .inner { width: 100%; max-width: 360px; }
+    .form-panel .brand {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 24px;
+      justify-content: center;
+    }
+    .form-panel .brand-mark {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 40px; height: 40px;
-      background: var(--navy); color: white;
-      border-radius: 10px; font-weight: 800; font-size: 22px;
+      width: 56px; height: 56px;
+      background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+      color: white;
+      border-radius: 14px;
+      font-weight: 900; font-size: 30px;
+      letter-spacing: -0.02em;
     }
+    .form-panel .brand-name {
+      font-weight: 800;
+      font-size: 28px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .form-panel .brand-name .a { color: var(--navy); }
+    .form-panel .brand-name .b {
+      color: var(--accent);
+      display: block;
+    }
+
+    .form-panel .tagline {
+      text-align: center;
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+      font-weight: 400;
+      margin: 0 auto 36px;
+      max-width: 320px;
+    }
+
+    .form-panel label .req {
+      color: var(--required);
+      margin-right: 3px;
+      font-weight: 600;
+    }
+    .form-panel label .lbl {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .form-panel .form-row { margin-bottom: 16px; }
+    .form-panel input[type="text"],
+    .form-panel input[type="email"],
+    .form-panel input[type="password"] {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-sizing: border-box;
+    }
+    .form-panel input[type="text"]:focus,
+    .form-panel input[type="email"]:focus,
+    .form-panel input[type="password"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    /* Password field with eye toggle — same visual as OM */
+    .form-panel .password-wrap { position: relative; }
+    .form-panel .password-wrap .toggle {
+      position: absolute;
+      right: 10px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none; padding: 4px;
+      cursor: pointer; color: var(--text-2);
+      display: flex; align-items: center;
+    }
+    .form-panel .password-wrap .toggle:hover { color: var(--text); }
+    .form-panel .password-wrap input { padding-right: 36px; }
+
+    .form-panel .submit {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .form-panel .submit:hover { background: var(--accent-2); }
+    .form-panel .submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .form-panel .forgot {
+      display: block;
+      text-align: center;
+      margin-top: 18px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .form-panel .or-divider {
+      display: flex; align-items: center;
+      margin: 22px 0;
+      color: var(--text-2);
+      font-size: 13px;
+    }
+    .form-panel .or-divider::before,
+    .form-panel .or-divider::after {
+      content: ""; flex: 1; height: 1px; background: var(--border);
+    }
+    .form-panel .or-divider::before { margin-right: 14px; }
+    .form-panel .or-divider::after  { margin-left:  14px; }
+
+    .form-panel .alt {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .form-panel .alt a {
+      color: var(--accent);
+      font-weight: 500;
+      text-decoration: none;
+      margin-left: 6px;
+    }
+    .form-panel .alt a:hover { text-decoration: underline; }
+
+    .form-panel .alert {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    /* ---- Right panel: marketing hero ------------------------------ */
+    .hero {
+      position: relative;
+      background:
+        radial-gradient(ellipse at top right,
+          rgba(255,255,255,0.6) 0%,
+          transparent 60%),
+        linear-gradient(135deg,
+          var(--hero-bg-1) 0%,
+          var(--hero-bg-2) 50%,
+          var(--hero-bg-3) 100%);
+      padding: 80px 64px 60px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .hero h1 {
+      font-size: 44px;
+      font-weight: 800;
+      color: var(--navy);
+      letter-spacing: -0.025em;
+      margin: 0 0 18px;
+      text-align: center;
+    }
+    .hero p {
+      max-width: 620px;
+      text-align: center;
+      color: var(--navy-light);
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 0 0 44px;
+    }
+
+    /* Decorative dashboard "preview" — a CSS-only stack of cards that
+       evokes the dashboard grid the operator will land on after they
+       sign in. Mimics OM's hero screenshot without needing a bitmap. */
+    .hero-illustration {
+      position: relative;
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 40px;
+    }
+    .preview {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 22px 50px -18px rgba(15, 42, 68, 0.18),
+                  0 8px 18px -8px rgba(15, 42, 68, 0.10);
+      border: 1px solid rgba(255,255,255,0.6);
+      padding: 18px 20px;
+      font-family: 'Inter', sans-serif;
+    }
+    .preview .preview-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview .preview-head .title {
+      font-size: 13px; font-weight: 700; color: var(--navy);
+    }
+    .preview .preview-head .dots {
+      display: flex; gap: 4px;
+    }
+    .preview .preview-head .dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border);
+    }
+    .preview .preview-head .dots span:first-child { background: #ef4444; }
+    .preview .preview-head .dots span:nth-child(2) { background: #f59e0b; }
+    .preview .preview-head .dots span:nth-child(3) { background: #10b981; }
+    .preview .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .preview .preview-tile {
+      background: #f7f9fc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 11px;
+      font-size: 11px;
+    }
+    .preview .preview-tile .tile-name {
+      font-weight: 600; color: var(--navy);
+      margin-bottom: 6px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .preview .preview-tile .tile-name .pill {
+      font-size: 9px; padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .preview .preview-tile .tile-name .pill.hot {
+      background: #fef3c7; color: #92400e;
+    }
+    .preview .preview-tile .tile-name .pill.cold {
+      background: #dbeafe; color: #1e40af;
+    }
+    .preview .preview-tile .tile-status {
+      font-size: 10.5px; color: var(--text-2);
+      display: flex; align-items: center; gap: 4px;
+    }
+    .preview .preview-tile .tile-status.running { color: #047857; }
+    .preview .preview-tile .tile-status .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    }
+
+    /* Stacked, slightly-offset "next page" hint behind the main preview */
+    .preview.shadow {
+      position: absolute; inset: 0;
+      transform: translate(18px, 18px);
+      opacity: 0.5;
+      z-index: 0;
+    }
+    .hero-illustration .main { position: relative; z-index: 1; }
+
+    .hero-dots {
+      display: flex; gap: 8px;
+    }
+    .hero-dots span {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: rgba(15, 42, 68, 0.18);
+      transition: background 0.2s;
+    }
+    .hero-dots span.active { background: var(--navy); width: 28px; border-radius: 5px; }
   </style>
 </head>
-<body class="min-h-screen flex items-center justify-center px-4">
+<body>
 
-  <div class="w-full max-w-sm bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-sm p-8">
-    <div class="flex items-center gap-3 mb-6">
-      <span class="brand-mark">O</span>
-      <div>
-        <div class="font-semibold text-[var(--navy)] tracking-tight">OrcheStack</div>
-        <div class="text-xs text-[var(--text-2)]">Sign in to your control plane</div>
+  <div class="split">
+
+    <!-- LEFT: form ============================================== -->
+    <section class="form-panel">
+      <div class="inner">
+
+        <div class="brand">
+          <div class="brand-mark">O</div>
+          <div class="brand-name">
+            <span class="a">Orche</span>
+            <span class="b">Stack</span>
+          </div>
+        </div>
+
+        <p class="tagline">
+          Containerised open-source data platform.
+          Ingest, transform, analyse — all on infrastructure you control.
+        </p>
+
+        {% if error %}
+          <div class="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('login_action') }}" autocomplete="on">
+          <div class="form-row">
+            <label for="login-username">
+              <span class="req">*</span><span class="lbl">Username or email</span>
+            </label>
+            <input id="login-username"
+                   name="username_or_email"
+                   type="text"
+                   required autofocus
+                   autocomplete="username"
+                   placeholder="you@example.com" />
+          </div>
+
+          <div class="form-row">
+            <label for="login-password">
+              <span class="req">*</span><span class="lbl">Password</span>
+            </label>
+            <div class="password-wrap">
+              <input id="login-password"
+                     name="password"
+                     type="password"
+                     required
+                     autocomplete="current-password"
+                     placeholder="Password" />
+              <button type="button" class="toggle"
+                      onclick="(function(b){const i=document.getElementById('login-password');i.type=i.type==='password'?'text':'password';b.firstChild.textContent=i.type==='password'?'👁':'🙈';})(this)"
+                      aria-label="Toggle password visibility">
+                <span>👁</span>
+              </button>
+            </div>
+          </div>
+
+          <input type="hidden" name="next" value="{{ next or '/' }}" />
+
+          <button type="submit" class="submit">Login</button>
+        </form>
+
+        <a href="#" class="forgot" onclick="alert('Password reset isn\\'t wired up yet — ask an admin to reset it from the Users page, or reach support@orchestack.africa.'); return false;">
+          Forgot Password
+        </a>
+
+        <div class="or-divider">or</div>
+
+        <div class="alt">
+          New to the platform?
+          <a href="/signup">Create Account</a>
+        </div>
       </div>
-    </div>
+    </section>
 
-    {% if error %}
-      <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800 mb-4">
-        {{ error }}
+    <!-- RIGHT: marketing hero ================================== -->
+    <aside class="hero">
+      <h1>Open Data Platform</h1>
+      <p>
+        Run your warehouse, transformations, BI, and orchestration on infrastructure you
+        control. No SaaS bills, no vendor lock-in — every service is open-source and
+        containerised, deployed from a single setup wizard.
+      </p>
+
+      <div class="hero-illustration">
+        <div class="preview shadow"></div>
+        <div class="preview main">
+          <div class="preview-head">
+            <div class="title">Dashboard · Services</div>
+            <div class="dots"><span></span><span></span><span></span></div>
+          </div>
+          <div class="preview-grid">
+            <div class="preview-tile">
+              <div class="tile-name">PostgreSQL <span class="pill hot">hot</span></div>
+              <div class="tile-status running"><span class="dot"></span>Running</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">Metabase <span class="pill hot">hot</span></div>
+              <div class="tile-status running"><span class="dot"></span>Running</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">pgAdmin <span class="pill hot">hot</span></div>
+              <div class="tile-status running"><span class="dot"></span>Running</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">Airflow <span class="pill cold">cold</span></div>
+              <div class="tile-status"><span class="dot"></span>Stopped</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">dbt Core <span class="pill cold">cold</span></div>
+              <div class="tile-status"><span class="dot"></span>Stopped</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">MinIO <span class="pill cold">cold</span></div>
+              <div class="tile-status"><span class="dot"></span>Stopped</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">OpenMetadata <span class="pill cold">cold</span></div>
+              <div class="tile-status"><span class="dot"></span>Stopped</div>
+            </div>
+            <div class="preview-tile">
+              <div class="tile-name">Airbyte <span class="pill cold">cold</span></div>
+              <div class="tile-status"><span class="dot"></span>Stopped</div>
+            </div>
+          </div>
+        </div>
       </div>
-    {% endif %}
 
-    <form method="post" action="{{ url_for('login_action') }}" class="space-y-3">
-      <label class="block">
-        <span class="text-xs font-medium text-[var(--text-2)]">Username or email</span>
-        <input name="username_or_email" required autofocus autocomplete="username"
-               class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                      px-3 py-2 bg-white focus:outline-none
-                      focus:ring-2 focus:ring-[var(--navy)] focus:border-[var(--navy)]" />
-      </label>
-      <label class="block">
-        <span class="text-xs font-medium text-[var(--text-2)]">Password</span>
-        <input name="password" type="password" required autocomplete="current-password"
-               class="mt-1 w-full text-sm border border-[var(--border)] rounded
-                      px-3 py-2 bg-white focus:outline-none
-                      focus:ring-2 focus:ring-[var(--navy)] focus:border-[var(--navy)]" />
-      </label>
-      <input type="hidden" name="next" value="{{ next or '/' }}" />
-      <button type="submit"
-              class="w-full text-sm font-medium py-2 rounded
-                     bg-[var(--navy)] text-white
-                     hover:bg-[var(--navy-2)] transition-colors">
-        Sign in
-      </button>
-    </form>
+      <div class="hero-dots">
+        <span class="active"></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </aside>
 
-    <p class="text-xs text-[var(--text-2)] mt-4 text-center">
-      No account?
-      <a href="/signup" class="text-[var(--navy)] underline">Sign up</a>
-    </p>
   </div>
 
 </body>
