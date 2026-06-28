@@ -233,7 +233,7 @@ services:
             export PS1='\[\e[36m\]ge@orchestack\[\e[0m\]:\[\e[33m\]\w\[\e[0m\]\$ '
             export PATH="/opt/ge-venv/bin:$PATH"
             export GE_DATA_CONTEXT_ROOT_DIR=/gx
-            cd $GE_DATA_CONTEXT_ROOT_DIR 2>/dev/null || true
+            cd $$GE_DATA_CONTEXT_ROOT_DIR 2>/dev/null || true
             echo
             echo -e "\e[1;36m── OrcheStack Great Expectations terminal ──\e[0m"
             echo "  Project dir : /gx (you are here)"

@@ -370,11 +370,26 @@
         return;
       }
 
-      // Deploy succeeded. Now wait for every registered service to
+      // Deploy succeeded. Now wait for every NEWLY-added service to
       // reach its terminal state: hot-tier=running, cold-tier=pulled.
-      const registered = data.registered_services || [];
+      // Already-configured services (locked layers re-submitted in
+      // add-more mode) aren't tracked here — they were untouched by
+      // this deploy and showing them as "Pulling…" would be misleading.
+      // Falls back to registered_services for backward compat against
+      // older orchestrator builds that don't yet send newly_added.
+      const tracked = data.newly_added_services
+                    || data.registered_services
+                    || [];
+      if (tracked.length === 0) {
+        // Add-more with no new services (operator just hit Save on
+        // locked-only layers — pathological but possible). Nothing
+        // to wait for; redirect straight to the dashboard.
+        statusEl.textContent = "Nothing new to deploy — taking you to the dashboard…";
+        setTimeout(() => { window.location.href = REDIRECT_TO; }, 1200);
+        return;
+      }
       statusEl.textContent = "Services registered. Now pulling images + starting…";
-      const wait = await waitForServicesReady(registered);
+      const wait = await waitForServicesReady(tracked);
 
       if (wait.allReady) {
         finish(true);

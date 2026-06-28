@@ -136,6 +136,19 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         user_id, json.dumps(req.selections),
     )
 
+    # Snapshot which services were already enabled BEFORE this deploy.
+    # Used after the upsert loop to distinguish "newly added in THIS
+    # deploy" from "already configured + just re-submitted because the
+    # wizard sends every locked layer's prior pick along too." The
+    # post-deploy hot-tier-start + cold-tier-pull should only fire for
+    # the newly-added subset — restarting hot-tier services that are
+    # already running is wasteful, and re-pulling cold-tier images
+    # whose tags haven't moved is a wasted 5-15 minutes.
+    pre_existing_rows = await db.fetch(
+        "SELECT name FROM platform.installed_services WHERE enabled = TRUE"
+    )
+    previously_enabled: set[str] = {r["name"] for r in pre_existing_rows}
+
     registered: list[str] = []
     skipped: list[dict[str, str]] = []
     async with db.transaction() as conn:
@@ -218,12 +231,22 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     # /deploy response. The dashboard's service grid polls
     # /orchestrator/api/services and reflects starting/running state
     # as the background tasks complete.
+    # Only act on services that are NEWLY added in this deploy — not
+    # the already-configured ones the wizard re-submits because their
+    # layers are locked in add-more mode. Re-starting an already-running
+    # hot service or re-pulling an unchanged cold service's image is
+    # pure waste (and a 5-15 min waste for the cold case — the operator
+    # sees "Pulling…" forever for services they already had on the
+    # dashboard). Defined outside the try so it's available for the
+    # response body even if the background-task scheduling fails.
+    newly_added = [s for s in registered if s not in previously_enabled]
+
     try:
         import asyncio
         from .. import docker_ops, config as _conf, audit as _audit
 
         registered_managed = [
-            svc for svc in registered
+            svc for svc in newly_added
             if svc in _conf.SERVICE_CATALOGUE
             and not _conf.SERVICE_CATALOGUE[svc].get("control_plane", False)
         ]
@@ -290,6 +313,11 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
         "warehouse_db": name,
         "pipeline_user": user,
         "registered_services": registered,
+        # Subset of registered_services that didn't exist (or was disabled)
+        # before this deploy. The deploying page filters its status table
+        # to just these so the operator doesn't see "Pulling…" for
+        # services that were already on their dashboard from a prior run.
+        "newly_added_services": newly_added,
         "skipped_services": skipped,
         "credentials_written": credentials_written,
         "credentials_error": credentials_error,
