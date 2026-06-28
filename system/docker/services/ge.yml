@@ -282,9 +282,12 @@ services:
     ports:
       - "8003:8080"
     healthcheck:
+      # .read() drains the response body — same fix as dbt.yml. GE's
+      # docs server is also Python stdlib http.server; without drain it
+      # logs ConnectionResetError + BrokenPipeError on every probe.
       test:
         - CMD-SHELL
-        - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/index.html', timeout=3).read()\" || exit 1"
       interval: 10s
       timeout: 8s
       retries: 30

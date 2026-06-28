@@ -64,9 +64,38 @@ services:
           if [ -d /opt/airflow/dags/.git ]; then
             cd /opt/airflow/dags && git fetch && git reset --hard origin/$${AIRFLOW_DAGS_REPO_BRANCH:-main} || true;
           else
-            rm -rf /opt/airflow/dags-clone &&
-            (git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $${AIRFLOW_DAGS_REPO_URL} /opt/airflow/dags-clone 2>&1 | tail -5 || echo "[orchestack] dags clone failed (check AIRFLOW_DAGS_REPO_URL includes a PAT for private repos)") &&
-            (cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ 2>/dev/null || true);
+            rm -rf /opt/airflow/dags-clone;
+            clone_log=$$(git clone -b $${AIRFLOW_DAGS_REPO_BRANCH:-main} $${AIRFLOW_DAGS_REPO_URL} /opt/airflow/dags-clone 2>&1);
+            clone_rc=$$?;
+            if [ "$$clone_rc" -ne 0 ]; then
+              echo "==============================================================================";
+              echo "[orchestack] DAGs git clone FAILED (exit $$clone_rc).";
+              echo "$$clone_log" | tail -5;
+              echo "------------------------------------------------------------------------------";
+              case "$$clone_log" in
+                *"could not read Username"*|*"Authentication failed"*|*"403"*)
+                  echo "[orchestack] Looks like AUTH failed. For a private GitHub repo, embed";
+                  echo "[orchestack] a Personal Access Token in the URL:";
+                  echo "[orchestack]   AIRFLOW_DAGS_REPO_URL=https://<PAT>@github.com/owner/repo.git";
+                  echo "[orchestack] Then click Stop + Open on the Airflow tile to retry.";
+                  ;;
+                *"Repository not found"*|*"404"*)
+                  echo "[orchestack] Repo NOT FOUND. Check owner/name and that the URL is";
+                  echo "[orchestack] reachable (private repos still need a PAT).";
+                  ;;
+                *"Could not resolve host"*|*"unable to access"*)
+                  echo "[orchestack] NETWORK: container couldn't reach github.com. Check that";
+                  echo "[orchestack] Docker has internet access (firewall, VPN, proxy).";
+                  ;;
+                *)
+                  echo "[orchestack] Unrecognised failure mode — see the git output above.";
+                  ;;
+              esac;
+              echo "==============================================================================";
+            else
+              cp -r /opt/airflow/dags-clone/* /opt/airflow/dags/ 2>/dev/null || true;
+              echo "[orchestack] DAGs cloned successfully from $${AIRFLOW_DAGS_REPO_URL%@*}";
+            fi;
           fi;
         fi;
         airflow scheduler & airflow webserver

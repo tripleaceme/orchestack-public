@@ -301,9 +301,17 @@ services:
       # constraint as MinIO and Airbyte).
       - "8002:8080"
     healthcheck:
+      # We DRAIN the response body (.read()) before exiting. Without
+      # drain, the Python subprocess closes the connection mid-stream;
+      # `dbt docs serve` (which uses Python stdlib http.server under
+      # the hood) then floods its log with ConnectionResetError +
+      # BrokenPipeError tracebacks on every healthcheck (one per 10s).
+      # The tracebacks are harmless but make container logs unreadable.
+      # .read() reads the full body so the server-side write completes
+      # cleanly, no broken-pipe trace.
       test:
         - CMD-SHELL
-        - "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/index.html',timeout=3)\" || exit 1"
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/index.html', timeout=3).read()\" || exit 1"
       interval: 10s
       timeout: 8s
       retries: 30
