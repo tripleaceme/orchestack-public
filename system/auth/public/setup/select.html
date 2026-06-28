@@ -376,6 +376,26 @@
           });
           if (labelEl) labelEl.appendChild(replaceLink);
         }
+      } else {
+        // Unconfigured layer (operator skipped it during initial setup,
+        // OR a previously-deployed service was Removed from the dashboard).
+        // The dropdown is already editable so the operator can just pick
+        // a tool and submit. We add a visual "Not yet configured" tag for
+        // parity with the "already deployed" tag on locked rows — without
+        // it, this row LOOKS broken/different next to 8 deployed rows
+        // and operators mistakenly conclude the Replace flow is missing
+        // for this specific layer.
+        const labelEl = row.querySelector('.label');
+        if (labelEl && !labelEl.querySelector('.add-mode-tag')) {
+          const tag = document.createElement('span');
+          tag.textContent = ' not yet configured';
+          tag.style.cssText = 'margin-left:8px; font-size:11px; ' +
+            'color: var(--accent, #2563eb); font-style: italic;';
+          tag.classList.add('add-mode-tag');
+          labelEl.appendChild(tag);
+          // No Replace link — there's nothing to replace. The dropdown
+          // itself is the affordance: pick a tool + click Continue.
+        }
       }
     });
   })();
