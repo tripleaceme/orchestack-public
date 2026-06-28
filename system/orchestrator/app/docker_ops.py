@@ -1673,11 +1673,14 @@ async def start_service(service: str) -> CommandResult:
             log.warning("pre-start hook for %s failed: %s", service, e)
 
     up_args = _service_compose_args(service) + ["up", "-d", "--remove-orphans"]
-    # 900s (15 min) tolerates the first-pull of OrcheStack's heaviest
-    # images on slow connections — orchestack-airflow is ~2.4 GB and
-    # airbyte's container stack adds another ~3 GB. Cached starts are
-    # sub-second, so the higher cap costs nothing in steady state.
-    res = await asyncio.to_thread(_run_sync, up_args, 900)
+    # Default 900s (15 min) tolerates the first-pull of most OrcheStack
+    # images on slow connections. Services with much larger image
+    # footprints (OpenMetadata is server+ES+ingestion = ~6 GB across
+    # 3 images) override this via SERVICE_CATALOGUE[svc]["start_timeout"].
+    # Cached starts are sub-second so a high cap costs nothing once
+    # images land.
+    start_timeout = config.SERVICE_CATALOGUE.get(service, {}).get("start_timeout", 900)
+    res = await asyncio.to_thread(_run_sync, up_args, start_timeout)
 
     if res.ok:
         _schedule_post_start_hook(service)
@@ -1701,7 +1704,7 @@ async def start_service(service: str) -> CommandResult:
         )
         return res
 
-    retry = await asyncio.to_thread(_run_sync, up_args, 900)
+    retry = await asyncio.to_thread(_run_sync, up_args, start_timeout)
     if retry.ok:
         _schedule_post_start_hook(service)
     return retry
@@ -1751,14 +1754,17 @@ async def pull_service(service: str) -> CommandResult:
     seconds.
 
     Pulls run in parallel by the caller (asyncio.create_task per
-    service). The 1200s timeout matches `docker compose pull`'s
+    service). Default 1200s timeout matches `docker compose pull`'s
     expected upper bound for a single heavy image — orchestack-airflow
-    on a 5 Mbit/s connection takes ~10 min.
+    on a 5 Mbit/s connection takes ~10 min. Multi-image stacks like
+    OpenMetadata (server + Elasticsearch + ingestion = ~6 GB across
+    3 images) override this via SERVICE_CATALOGUE[svc]["pull_timeout"].
     """
+    pull_timeout = config.SERVICE_CATALOGUE.get(service, {}).get("pull_timeout", 1200)
     return await asyncio.to_thread(
         _run_sync,
         _service_compose_args(service, need_env=True) + ["pull"],
-        1200,
+        pull_timeout,
     )
 
 

@@ -327,6 +327,48 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 # .env file persistence — line-preserving update with backup
 # ---------------------------------------------------------------------------
+_VAR_REF_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+
+
+def _resolve_credential_placeholders(incoming: dict[str, str]) -> dict[str, str]:
+    """Substitute ${VAR} and *** placeholders in credential values.
+
+    The wizard captures derived values as templates so the operator can
+    SEE the structure before submitting (e.g. they can spot a typo in
+    a host name). The two placeholder shapes:
+
+      ${KEY}  — a reference to another credential being submitted in the
+                same form. Resolved by looking up the matching key in
+                `incoming`. If the key isn't in incoming, the ${KEY}
+                stays literal (no surprise expansion against the host's
+                env vars).
+
+      ***     — a stand-in for WAREHOUSE_DB_PASSWORD (the wizard uses
+                this specifically because the password field is masked
+                and operators don't want to retype a long password into
+                a URL field). Replaced with the actual warehouse password
+                from incoming.
+
+    Single-pass substitution — doesn't re-scan results, so a credential
+    value can't transitively expand another. Sufficient for the current
+    use case (GE_DATASOURCE_URL); tighten later if we add chained refs.
+    """
+    warehouse_pw = incoming.get("WAREHOUSE_DB_PASSWORD")
+    resolved: dict[str, str] = {}
+    for k, v in incoming.items():
+        if not isinstance(v, str):
+            resolved[k] = v
+            continue
+        out = _VAR_REF_RE.sub(
+            lambda m: incoming.get(m.group(1), m.group(0)),
+            v,
+        )
+        if warehouse_pw and "***" in out:
+            out = out.replace("***", warehouse_pw)
+        resolved[k] = out
+    return resolved
+
+
 def _persist_credentials_to_env(credentials: dict) -> list[str]:
     """Append/update each credential key in the operator's .env; returns keys written."""
     if not credentials:
@@ -348,6 +390,16 @@ def _persist_credentials_to_env(credentials: dict) -> list[str]:
     }
     if not incoming:
         return []
+
+    # Resolve ${VAR} and *** placeholders in credential values.
+    # The configure-page wizard captures derived values as templates —
+    # e.g. GE_DATASOURCE_URL = "postgresql://${WAREHOUSE_DB_USER}:***@host:5432/${WAREHOUSE_DB_NAME}"
+    # — where `***` is a stand-in for the warehouse password (operators
+    # don't type a password into a URL field) and ${VAR} references are
+    # other credentials filled in elsewhere on the same form. Substitute
+    # them so the on-disk .env value is the actual usable connection
+    # string, not a template that would mislead the operator.
+    incoming = _resolve_credential_placeholders(incoming)
 
     lines = env_path.read_text().splitlines()
     written: list[str] = []

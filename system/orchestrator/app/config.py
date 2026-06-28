@@ -158,6 +158,17 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
         "tier": "cold", "display_name": "OpenMetadata", "layer": "governance", "managed": True,
         "external_url": "http://{host}:8585",
         "ready_probe": (8585, "/api/v1/system/version"),
+        # OpenMetadata is a 3-container stack (server + Elasticsearch +
+        # ingestion). Combined image size is ~6 GB across the 3 images;
+        # on residential broadband the pull can exceed the default 1200s.
+        # The server also runs DB migrations + waits on ES on first start,
+        # which extends `docker compose up -d` to ~5-10 min even with
+        # warm caches. Override both timeouts with generous ceilings —
+        # cached starts are still sub-second so this costs nothing in
+        # steady state. Audit log will surface the failure if even these
+        # caps are exceeded.
+        "pull_timeout":  3600,   # 1 hour — for first-time multi-image fetch
+        "start_timeout": 1800,   # 30 min — for first-start migrations + ES warmup
     },
     # PostgreSQL is part of the base control plane (orchestack-postgres),
     # so the orchestrator does NOT start/stop it via compose. The
