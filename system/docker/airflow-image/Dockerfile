@@ -132,6 +132,13 @@ RUN python -c "import dbt.version; import cosmos; \
     print(f'dbt-core OK: {dbt.version.__version__}'); \
     print(f'astronomer-cosmos OK: {cosmos.__version__}')"
 
+# Demo DAGs the runtime entrypoint copies into /opt/airflow/dags on
+# first start. Keeping these as REAL .py files (rather than emitting
+# them via bash heredocs in services/airflow.yml) avoids the nested-
+# quote nightmare that breaks docker compose's command-string parser
+# (triple-quoted Python inside single-quoted bash inside YAML > scalar).
+COPY demo-dags/ /opt/orchestack/demo-dags/
+
 # Re-set USER to airflow (the pip install above runs as root via the
 # upstream image's entrypoint convention; runtime should drop back to
 # the unprivileged airflow user the upstream image already created).

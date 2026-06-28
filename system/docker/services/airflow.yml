@@ -60,24 +60,17 @@ services:
       bash -c '
         airflow db migrate &&
         airflow users create --role Admin --username "$${_AIRFLOW_WWW_USER_USERNAME}" --email "$${_AIRFLOW_WWW_USER_EMAIL}" --firstname Admin --lastname User --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
-        # Always populate /opt/airflow/dags with at least the demo DAG
-        # so the volume isn't empty when the operator opens the Airflow
-        # UI. If the operator-supplied DAG repo clones successfully, it
-        # OVERWRITES the demo. If the clone fails, the demo persists so
-        # operators see a working DAG (helps them confirm Airflow itself
-        # is up) plus a placeholder DAG that surfaces the clone error in
-        # the UI (paired with the inline echo block below).
-        if [ ! -f /opt/airflow/dags/orchestack_welcome.py ]; then
-          cat > /opt/airflow/dags/orchestack_welcome.py <<'WELCOME_DAG'
-        from datetime import datetime
-        from airflow import DAG
-        from airflow.operators.bash import BashOperator
-        with DAG("orchestack_welcome", schedule=None, start_date=datetime(2026,1,1),
-                 catchup=False, tags=["orchestack","demo"]) as dag:
-          BashOperator(task_id="hello",
-                       bash_command="echo hello from OrcheStack && date")
-        WELCOME_DAG
-          chown airflow:0 /opt/airflow/dags/orchestack_welcome.py 2>/dev/null || true;
+        # Always provision a demo DAG so the volume isn't empty when the
+        # operator opens the Airflow UI. The file is baked into the
+        # orchestack-airflow image at /opt/orchestack/demo-dags/ — we
+        # just copy it (idempotently) into the dags volume on each
+        # start. Doing it via a bash heredoc here would put a Python
+        # triple-quoted-string inside the outer single-quoted bash -c
+        # which breaks compose's command-string parser (shlex bails on
+        # the nested quote shapes). Baking + copying sidesteps that.
+        if [ -d /opt/orchestack/demo-dags ] && [ ! -f /opt/airflow/dags/orchestack_welcome.py ]; then
+          cp /opt/orchestack/demo-dags/*.py /opt/airflow/dags/ 2>/dev/null || true;
+          chown -R airflow:0 /opt/airflow/dags/ 2>/dev/null || true;
         fi;
 
         if [ -n "$${AIRFLOW_DAGS_REPO_URL}" ]; then
