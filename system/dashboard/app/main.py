@@ -1486,6 +1486,17 @@ async def service_config_save(
     saved_keys: list[str] = []
     save_error: str | None = None
     test_failures: list[dict] = []
+    # The orchestrator's credentials API masks sensitive values for
+    # display with this exact string (see credentials.py: `"•" * 10 if
+    # value else ""`). The Edit Config form renders that masked string
+    # as the input's current value; on submit, an UNTOUCHED sensitive
+    # field arrives back with this literal bullet string. The naive
+    # "save if changed" check below treats it as a new value and
+    # overwrites the real secret with the bullet string, irrecoverably
+    # destroying every sensitive field the operator didn't manually
+    # retype. Skip-on-bullet-mask is the only safe behaviour.
+    _MASKED_DISPLAY = "•" * 10
+
     for raw_key, raw_val in form_map.items():
         if not raw_key or raw_key.startswith("__"):
             continue
@@ -1495,6 +1506,15 @@ async def service_config_save(
         if cur.get("is_readonly"):
             continue
         if cur.get("value", "") == raw_val:
+            continue
+        # Sensitive + raw_val is the bullet-mask display → treat as
+        # "unchanged, don't touch". Belt-and-braces also catches any
+        # bullet-only string of similar length in case the mask length
+        # ever changes upstream.
+        if cur.get("is_sensitive") and (
+            raw_val == _MASKED_DISPLAY
+            or (raw_val and all(c == "•" for c in raw_val))
+        ):
             continue
 
         # Test BEFORE persist for DB-typed creds. Orchestrator returns testable=false

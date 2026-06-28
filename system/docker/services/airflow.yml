@@ -60,6 +60,26 @@ services:
       bash -c '
         airflow db migrate &&
         airflow users create --role Admin --username "$${_AIRFLOW_WWW_USER_USERNAME}" --email "$${_AIRFLOW_WWW_USER_EMAIL}" --firstname Admin --lastname User --password "$${_AIRFLOW_WWW_USER_PASSWORD}" 2>&1 | tail -3 || true;
+        # Always populate /opt/airflow/dags with at least the demo DAG
+        # so the volume isn't empty when the operator opens the Airflow
+        # UI. If the operator-supplied DAG repo clones successfully, it
+        # OVERWRITES the demo. If the clone fails, the demo persists so
+        # operators see a working DAG (helps them confirm Airflow itself
+        # is up) plus a placeholder DAG that surfaces the clone error in
+        # the UI (paired with the inline echo block below).
+        if [ ! -f /opt/airflow/dags/orchestack_welcome.py ]; then
+          cat > /opt/airflow/dags/orchestack_welcome.py <<'WELCOME_DAG'
+        from datetime import datetime
+        from airflow import DAG
+        from airflow.operators.bash import BashOperator
+        with DAG("orchestack_welcome", schedule=None, start_date=datetime(2026,1,1),
+                 catchup=False, tags=["orchestack","demo"]) as dag:
+          BashOperator(task_id="hello",
+                       bash_command="echo hello from OrcheStack && date")
+        WELCOME_DAG
+          chown airflow:0 /opt/airflow/dags/orchestack_welcome.py 2>/dev/null || true;
+        fi;
+
         if [ -n "$${AIRFLOW_DAGS_REPO_URL}" ]; then
           if [ -d /opt/airflow/dags/.git ]; then
             cd /opt/airflow/dags && git fetch && git reset --hard origin/$${AIRFLOW_DAGS_REPO_BRANCH:-main} || true;
@@ -84,7 +104,7 @@ services:
                   echo "[orchestack] reachable (private repos still need a PAT).";
                   ;;
                 *"Could not resolve host"*|*"unable to access"*)
-                  echo "[orchestack] NETWORK: container couldn't reach github.com. Check that";
+                  echo "[orchestack] NETWORK: container cannot reach github.com. Check that";
                   echo "[orchestack] Docker has internet access (firewall, VPN, proxy).";
                   ;;
                 *)
