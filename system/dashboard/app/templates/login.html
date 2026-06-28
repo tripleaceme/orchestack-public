@@ -84,11 +84,13 @@
       line-height: 1.1;
       letter-spacing: -0.02em;
     }
+    /* Inline wordmark: "Orche" navy + "Stack" blue accent, single
+       line. The previous version stacked "Stack" below "Orche" to
+       mimic OM's "Open / Metadata" two-row mark, but OrcheStack
+       reads better as one word — keep the two-tone for brand
+       identity, drop the vertical split. */
     .form-panel .brand-name .a { color: var(--navy); }
-    .form-panel .brand-name .b {
-      color: var(--accent);
-      display: block;
-    }
+    .form-panel .brand-name .b { color: var(--accent); }
 
     .form-panel .tagline {
       text-align: center;
@@ -348,15 +350,12 @@
 
         <div class="brand">
           <div class="brand-mark">O</div>
-          <div class="brand-name">
-            <span class="a">Orche</span>
-            <span class="b">Stack</span>
-          </div>
+          <div class="brand-name"><span class="a">Orche</span><span class="b">Stack</span></div>
         </div>
 
         <p class="tagline">
           Containerised open-source data platform.
-          Ingest, transform, analyse — all on infrastructure you control.
+          Ingest, transform, analyse, all on infrastructure you control.
         </p>
 
         {% if error %}
@@ -418,7 +417,7 @@
       <h1>Open Data Platform</h1>
       <p>
         Run your warehouse, transformations, BI, and orchestration on infrastructure you
-        control. No SaaS bills, no vendor lock-in — every service is open-source and
+        control. Every service is open-source and
         containerised, deployed from a single setup wizard.
       </p>
 
