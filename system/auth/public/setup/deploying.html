@@ -31,8 +31,9 @@
 
     <p class="muted" style="font-size:13.5px; margin-bottom: 16px;">
       First-time installs take 5–15 minutes depending on your network.<br>
-      We're pulling Docker images and starting hot-tier services. You'll see
-      progress per service below.
+      Hot-tier services (Postgres, Metabase, pgAdmin) are starting now.
+      Cold-tier services (Airflow, Airbyte, dbt, …) have their images
+      pre-pulled so first Open from the dashboard is instant.
     </p>
 
     <!-- Per-service status table — populated by JS once /deploy returns.
@@ -45,15 +46,15 @@
       <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
                   text-transform: uppercase; color: var(--text-2);
                   margin-bottom: 8px;">
-        Hot-tier services
+        Configured services
       </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 13.5px;">
         <tbody id="service-status-rows"></tbody>
       </table>
       <p class="muted" style="font-size: 11.5px; margin-top: 14px;">
-        Cold-tier services (Airflow, Airbyte, dbt, GE, OpenMetadata, MinIO)
-        are not started automatically — open them from the dashboard when
-        you need them.
+        <strong>Hot-tier</strong> services start now and stay running.
+        <strong>Cold-tier</strong> services have their images pre-pulled so first
+        Open is instant; they sleep until you open them from the dashboard.
       </p>
     </div>
 
@@ -106,16 +107,33 @@
     running:  { label: "Running",         color: "#10b981", emoji: "✓" },
     stopped:  { label: "Stopped",         color: "#94a3b8", emoji: "·" },
     error:    { label: "Failed",          color: "#dc2626", emoji: "✗" },
+    // Cold-tier-specific states — the post-deploy hook eagerly pulls
+    // their images without starting the container. Operator opens them
+    // from the dashboard when they actually need them.
+    pulling:  { label: "Pulling image…",  color: "#0ea5e9", emoji: "⬇" },
+    pulled:   { label: "Image ready",     color: "#10b981", emoji: "✓" },
   };
 
   function renderRows(services) {
     rowsEl.innerHTML = services.map(s => {
       const badge = STATE_BADGES[s.state] || STATE_BADGES.queued;
       const errSnippet = s.error ? `<div style="color: #dc2626; font-size: 11.5px; font-family: monospace; margin-top: 4px; white-space: pre-wrap;">${escapeHtml(s.error).slice(0, 240)}</div>` : "";
+      // Tier chip: hot = orange-leaning, cold = blue-leaning. Lets the
+      // operator see at a glance which services will start now vs. which
+      // are just having their images pre-pulled for fast first-open.
+      const tierChip = s.tier === "cold"
+        ? `<span style="display: inline-block; margin-left: 8px; padding: 1px 6px;
+                       font-size: 10.5px; font-weight: 600; border-radius: 3px;
+                       background: #dbeafe; color: #1e40af;
+                       letter-spacing: 0.04em; text-transform: uppercase;">cold</span>`
+        : `<span style="display: inline-block; margin-left: 8px; padding: 1px 6px;
+                       font-size: 10.5px; font-weight: 600; border-radius: 3px;
+                       background: #fef3c7; color: #92400e;
+                       letter-spacing: 0.04em; text-transform: uppercase;">hot</span>`;
       return `
         <tr style="border-top: 1px solid var(--border);">
           <td style="padding: 10px 12px;">
-            <div style="font-weight: 500; color: var(--text);">${escapeHtml(s.display_name || s.name)}</div>
+            <div style="font-weight: 500; color: var(--text);">${escapeHtml(s.display_name || s.name)}${tierChip}</div>
             <div style="font-size: 11.5px; color: var(--text-2); margin-top: 2px;">${escapeHtml(s.layer || "")}</div>
             ${errSnippet}
           </td>
@@ -201,42 +219,85 @@
   const SERVICES_POLL_INTERVAL_MS = 5000;
   const SERVICES_POLL_MAX_MS = 25 * 60 * 1000;   // 25 minutes
 
-  // Hydrate one row per registered hot-tier service from the orchestrator's
-  // /api/services response + recent audit events. Returns the normalised
-  // shape the renderRows() consumer expects.
+  // Hydrate one row per registered service (BOTH hot- and cold-tier) from
+  // the orchestrator's /api/services response + recent audit events.
+  // Hot-tier rows track start-up state (queued → starting → running).
+  // Cold-tier rows track image-pull state (queued → pulling → pulled),
+  // since the post-deploy hook pulls but doesn't auto-start cold services.
+  // Returns the normalised shape the renderRows() consumer expects.
   function normaliseServices(services, registered, recentEvents) {
+    const lastEventByTypeAndTarget = (svcName, eventTypes) =>
+      recentEvents.find(e => e.target === svcName && eventTypes.includes(e.event_type));
+
     return services
       .filter(s =>
-        s.tier === "hot" &&
+        (s.tier === "hot" || s.tier === "cold") &&
         !s.control_plane &&
         registered.includes(s.name)
       )
       .map(s => {
-        // Match orchestrator state names to our STATE_BADGES keys.
-        // Failure detection: scan recent audit events for session_autostart_failed
-        // on this service — surface the error so the operator sees the cause.
-        let state = s.status || s.state || "queued";
+        let state = "queued";
         let error = null;
-        const lastFail = recentEvents.find(e =>
-          e.target === s.name && e.event_type === "session_autostart_failed"
-        );
-        if (lastFail && state !== "running") {
-          state = "error";
-          error = (lastFail.details && (lastFail.details.stderr || lastFail.details.error)) || "Start failed (see audit log)";
+
+        if (s.tier === "hot") {
+          // Hot-tier auto-start path: rely on the orchestrator's state +
+          // session_autostart_failed audit event for failures.
+          state = s.status || s.state || "queued";
+          const lastFail = lastEventByTypeAndTarget(s.name, ["session_autostart_failed"]);
+          if (lastFail && state !== "running") {
+            state = "error";
+            error = (lastFail.details && (lastFail.details.stderr || lastFail.details.error)) || "Start failed (see audit log)";
+          }
+        } else {
+          // Cold-tier eager-pull path: audit events drive the state.
+          // service_pull_started → "pulling"; service_pull_completed → "pulled";
+          // service_pull_failed → "error". If neither event is present
+          // yet, the post-deploy hook hasn't fired its async task yet —
+          // "queued" until it does.
+          const lastPullEvent = lastEventByTypeAndTarget(
+            s.name,
+            ["service_pull_started", "service_pull_completed", "service_pull_failed"],
+          );
+          if (lastPullEvent) {
+            const t = lastPullEvent.event_type;
+            if (t === "service_pull_completed") state = "pulled";
+            else if (t === "service_pull_failed") {
+              state = "error";
+              error = (lastPullEvent.details && (lastPullEvent.details.stderr || lastPullEvent.details.error)) || "Image pull failed (see audit log)";
+            } else state = "pulling";
+          }
         }
+
         return {
           name: s.name,
           display_name: s.display_name,
           layer: s.layer,
+          tier: s.tier,
           state: state,
           error: error,
         };
+      })
+      // Stable sort: hot-tier first (they start), cold-tier after (they pull).
+      // Within each tier, original registration order is preserved.
+      .sort((a, b) => {
+        if (a.tier === b.tier) return 0;
+        return a.tier === "hot" ? -1 : 1;
       });
   }
 
-  async function waitForHotTierRunning(registeredServices) {
+  // Terminal state per tier:
+  //   hot-tier:  "running" (started OK) or "error" (start failed)
+  //   cold-tier: "pulled"  (image cached) or "error" (pull failed)
+  // We redirect to the dashboard once every row is in one of these.
+  function isTerminal(row) {
+    if (row.tier === "hot")  return row.state === "running" || row.state === "error";
+    if (row.tier === "cold") return row.state === "pulled"  || row.state === "error";
+    return true;
+  }
+
+  async function waitForServicesReady(registeredServices) {
     const startedAt = performance.now();
-    let lastRunningCount = -1;
+    let lastDoneCount = -1;
     let lastFailedCount = 0;
     while (performance.now() - startedAt < SERVICES_POLL_MAX_MS) {
       let services = [];
@@ -255,39 +316,40 @@
 
       const rows = normaliseServices(services, registeredServices, events);
       if (rows.length === 0) {
-        // Nothing to wait for (operator only picked cold-tier services).
-        return { allRunning: true, services: [] };
+        // Nothing to wait for (operator picked control-plane services only).
+        return { allReady: true, services: [] };
       }
       renderRows(rows);
 
-      const running = rows.filter(r => r.state === "running").length;
-      const failed  = rows.filter(r => r.state === "error").length;
-      const total   = rows.length;
+      const done   = rows.filter(isTerminal).length;
+      const failed = rows.filter(r => r.state === "error").length;
+      const total  = rows.length;
 
-      // Progress bar: 30% (deploy returned) + 70% × (running / total)
-      setProgress(30 + (70 * running / total));
+      // Progress bar: 30% (deploy returned) + 70% × (done / total). A
+      // failed row counts as "done" for progress purposes — we don't
+      // block forever on something that's already failed.
+      setProgress(30 + (70 * done / total));
 
-      if (running !== lastRunningCount || failed !== lastFailedCount) {
-        if (failed > 0) {
-          statusEl.innerHTML = `<span style="color:#dc2626">${failed} service(s) failed to start.</span> Check the rows below for details.`;
-        } else if (running === total) {
-          statusEl.textContent = "All services running — redirecting to dashboard…";
+      if (done !== lastDoneCount || failed !== lastFailedCount) {
+        if (failed > 0 && done === total) {
+          statusEl.innerHTML = `<span style="color:#dc2626">${failed} service(s) failed.</span> Check the rows below for details — you can retry from the dashboard.`;
+        } else if (done === total) {
+          statusEl.textContent = "All services ready — redirecting to dashboard…";
         } else {
-          statusEl.textContent = `${running} of ${total} services running. Pulling images + starting the rest…`;
+          statusEl.textContent = `${done} of ${total} services ready. Pulling images + starting the rest…`;
         }
-        lastRunningCount = running;
+        lastDoneCount = done;
         lastFailedCount = failed;
       }
 
-      if (running === total) {
-        return { allRunning: true, services: rows };
+      if (done === total) {
+        return { allReady: failed === 0, services: rows };
       }
-      // Don't bail on failures — operator can still see partial-success
-      // state when they reach the dashboard. They'll know what failed
-      // from the rows below + per-service audit page.
+      // Don't bail early on partial failures — let the remaining rows
+      // finish too. Operator sees the full picture on the dashboard.
       await new Promise(rs => setTimeout(rs, SERVICES_POLL_INTERVAL_MS));
     }
-    return { allRunning: false, services: [] };
+    return { allReady: false, services: [] };
   }
 
   (async function deploy() {
@@ -308,20 +370,22 @@
         return;
       }
 
-      // Deploy succeeded. Now wait for the hot-tier services we
-      // just registered to actually come up before redirecting.
+      // Deploy succeeded. Now wait for every registered service to
+      // reach its terminal state: hot-tier=running, cold-tier=pulled.
       const registered = data.registered_services || [];
       statusEl.textContent = "Services registered. Now pulling images + starting…";
-      const wait = await waitForHotTierRunning(registered);
+      const wait = await waitForServicesReady(registered);
 
-      if (wait.allRunning) {
+      if (wait.allReady) {
         finish(true);
       } else {
-        // Cap hit — surface a soft warning + still redirect so the
-        // operator can troubleshoot from the dashboard.
+        // Cap hit OR some services failed — either way, surface a soft
+        // warning and redirect so the operator can troubleshoot from the
+        // dashboard. The status table on this page already shows what
+        // failed (rows persist via setTimeout below).
         statusEl.innerHTML =
-          "Some services are still pulling/starting after 25 min — " +
-          "taking you to the dashboard so you can monitor progress there…";
+          "Some services aren't ready yet — taking you to the dashboard " +
+          "so you can monitor progress + retry from there…";
         setTimeout(() => { window.location.href = REDIRECT_TO; }, 2500);
       }
     } catch (e) {

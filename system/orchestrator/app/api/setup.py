@@ -220,13 +220,22 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
     # as the background tasks complete.
     try:
         import asyncio
-        from .. import docker_ops, config as _conf
-        hot_tier_to_start = [
+        from .. import docker_ops, config as _conf, audit as _audit
+
+        registered_managed = [
             svc for svc in registered
             if svc in _conf.SERVICE_CATALOGUE
-            and _conf.SERVICE_CATALOGUE[svc].get("tier") == "hot"
             and not _conf.SERVICE_CATALOGUE[svc].get("control_plane", False)
         ]
+        hot_tier_to_start = [
+            svc for svc in registered_managed
+            if _conf.SERVICE_CATALOGUE[svc].get("tier") == "hot"
+        ]
+        cold_tier_to_pull = [
+            svc for svc in registered_managed
+            if _conf.SERVICE_CATALOGUE[svc].get("tier") == "cold"
+        ]
+
         if hot_tier_to_start:
             log.info(
                 "post-deploy: kicking off background start for hot-tier services: %s",
@@ -236,6 +245,41 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
                 asyncio.create_task(
                     docker_ops.start_service(svc),
                     name=f"post-deploy-start:{svc}",
+                )
+
+        # Cold-tier services aren't auto-started (that would defeat their
+        # cold-tier semantics — they're supposed to sleep when idle). But
+        # we DO eagerly pull their images in the background so the first
+        # Open is instant instead of waiting on a 5-15min pull. Without
+        # this, an operator who adds Airflow via the wizard then clicks
+        # Open from the dashboard sits staring at the deploying spinner
+        # while docker pulls 2.4 GB.
+        if cold_tier_to_pull:
+            log.info(
+                "post-deploy: kicking off background pull for cold-tier services: %s",
+                cold_tier_to_pull,
+            )
+
+            async def _pull_and_audit(svc_name: str) -> None:
+                await _audit.write(
+                    "service_pull_started",
+                    service_name=svc_name,
+                    details={"reason": "post-deploy eager pull (cold-tier)"},
+                )
+                result = await docker_ops.pull_service(svc_name)
+                await _audit.write(
+                    "service_pull_completed" if result.ok else "service_pull_failed",
+                    service_name=svc_name,
+                    details={
+                        "returncode": result.returncode,
+                        "stderr": result.short_stderr if not result.ok else None,
+                    },
+                )
+
+            for svc in cold_tier_to_pull:
+                asyncio.create_task(
+                    _pull_and_audit(svc),
+                    name=f"post-deploy-pull:{svc}",
                 )
     except Exception as e:
         # Never let an auto-start failure poison the deploy response.

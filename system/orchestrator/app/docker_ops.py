@@ -1738,6 +1738,30 @@ async def stop_service(service: str) -> CommandResult:
     )
 
 
+async def pull_service(service: str) -> CommandResult:
+    """`docker compose pull` for a service — fetches images without starting.
+
+    Used by the post-deploy hook to eagerly pull cold-tier service
+    images right after the operator configures them in the wizard.
+    Hot-tier services get auto-started (which implicitly pulls), but
+    cold-tier services sit untouched until first Open — without this,
+    that first Open waits 5-15 min on the image pull (e.g. 2.4 GB for
+    orchestack-airflow). With this, the image is already in the local
+    cache when the operator clicks Open, so the container starts in
+    seconds.
+
+    Pulls run in parallel by the caller (asyncio.create_task per
+    service). The 1200s timeout matches `docker compose pull`'s
+    expected upper bound for a single heavy image — orchestack-airflow
+    on a 5 Mbit/s connection takes ~10 min.
+    """
+    return await asyncio.to_thread(
+        _run_sync,
+        _service_compose_args(service, need_env=True) + ["pull"],
+        1200,
+    )
+
+
 async def remove_service(service: str, *, wipe_volumes: bool = False) -> CommandResult:
     """Tear down a service's compose project (containers + network).
 
