@@ -122,9 +122,20 @@
                     <input type="text" value="{{ c.value }}" readonly disabled>
                   {% elif c.is_sensitive %}
                     <input type="password" name="{{ c.key }}" value="{{ c.value }}" autocomplete="off">
-                    <div class="input-hint">
-                      Currently masked. Type a new value to replace; leave the dots to keep the existing value.
-                    </div>
+                    {% if c.synthetic == 'pat_for_url' %}
+                      <div class="input-hint">
+                        Personal Access Token used to clone the
+                        <span class="font-mono">{{ c.synthetic_pair_url }}</span>
+                        above (private GitHub repos only). Create one at
+                        <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a>
+                        with read-only access to that repo. Leave blank to keep the
+                        existing PAT embedded in the URL above.
+                      </div>
+                    {% else %}
+                      <div class="input-hint">
+                        Currently masked. Type a new value to replace; leave the dots to keep the existing value.
+                      </div>
+                    {% endif %}
                   {% else %}
                     <input type="text" name="{{ c.key }}" value="{{ c.value }}" autocomplete="off">
                   {% endif %}

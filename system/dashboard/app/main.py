@@ -1344,6 +1344,38 @@ async def service_config_page(
     for c in all_creds:
         c["service"] = _service_for_credential(c["key"])
     creds = [c for c in all_creds if c["service"] in groups_for_service]
+
+    # Synthesize a PAT-edit field for the two services whose repo URLs
+    # embed an auth token. The PAT itself never lives in .env on its own
+    # (it's concatenated into *_REPO_URL at write-time and the bare key
+    # dropped — see _concat_pat_into_repo_urls in orchestrator setup.py),
+    # so the credentials API can't surface it. We add a synthetic empty
+    # field here so operators have a visible affordance to update the
+    # PAT later (vs. having to manually hand-edit the URL to swap the
+    # `<oldPAT>@` segment). On save the POST handler intercepts this
+    # field + re-concatenates into the URL.
+    _PAT_FIELDS = {
+        "airflow": ("AIRFLOW_DAGS_REPO_URL", "AIRFLOW_DAGS_REPO_PAT"),
+        "dbt":     ("DBT_REPO_URL",          "DBT_REPO_PAT"),
+    }
+    pat_pair = _PAT_FIELDS.get(name)
+    if pat_pair:
+        url_key, pat_key = pat_pair
+        url_set = any(c["key"] == url_key and c["is_set"] for c in creds)
+        if url_set and not any(c["key"] == pat_key for c in creds):
+            creds.append({
+                "key":          pat_key,
+                "value":        "",
+                "is_sensitive": True,
+                "is_readonly":  False,
+                "is_set":       False,
+                "service":      _service_for_credential(pat_key),
+                # Marker the template can use to render extra help text; if
+                # the template doesn't know about it the field renders as
+                # a normal empty password input — backward compatible.
+                "synthetic":    "pat_for_url",
+                "synthetic_pair_url": url_key,
+            })
     grouped = _group_credentials(creds)
 
     # Last edit on this service = most recent credential_updated audit event whose target is one of this service's keys.
@@ -1403,10 +1435,43 @@ async def service_config_save(
         existing = []
     by_key = {c["key"]: c for c in existing}
 
+    # Intercept synthetic *_REPO_PAT fields BEFORE the main save loop.
+    # The PAT itself isn't a .env key (consumed at write-time into the
+    # URL), so the main loop's `raw_key not in by_key: continue` filter
+    # would silently drop a typed-in PAT. We instead rewrite the
+    # corresponding *_REPO_URL form value so the new PAT lands in .env
+    # via the URL field's normal save path.
+    form_map = dict(form)
+    _PAT_REWRITE_PAIRS = (
+        ("AIRFLOW_DAGS_REPO_URL", "AIRFLOW_DAGS_REPO_PAT"),
+        ("DBT_REPO_URL",          "DBT_REPO_PAT"),
+    )
+    for url_key, pat_key in _PAT_REWRITE_PAIRS:
+        new_pat = (form_map.pop(pat_key, "") or "").strip()
+        if not new_pat:
+            continue
+        # Where to pull the current URL from — operator may have just
+        # edited it in the URL field too. Prefer the form value; fall
+        # back to .env if the field was somehow absent from the form.
+        current_url = form_map.get(url_key) or (by_key.get(url_key, {}).get("value") or "")
+        if not current_url or not current_url.startswith("https://"):
+            continue  # SSH URL or empty — PAT-in-URL doesn't apply
+        # Strip any existing https://<oldpat>@ segment so we don't
+        # double-embed. Splits on `@github.com` to find the boundary;
+        # leaves non-github URLs alone (their auth shapes differ).
+        if "@github.com" in current_url:
+            suffix = current_url.split("@github.com", 1)[1]
+            current_url = "https://github.com" + suffix
+        if "https://github.com/" in current_url:
+            form_map[url_key] = current_url.replace(
+                "https://", f"https://{new_pat}@", 1,
+            )
+        # else: non-github URL with no existing @ — leave it alone
+
     saved_keys: list[str] = []
     save_error: str | None = None
     test_failures: list[dict] = []
-    for raw_key, raw_val in form.items():
+    for raw_key, raw_val in form_map.items():
         if not raw_key or raw_key.startswith("__"):
             continue
         if raw_key not in by_key:
