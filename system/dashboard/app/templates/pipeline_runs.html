@@ -36,6 +36,52 @@
               box-shadow: 0 8px 24px rgba(0,0,0,0.2);
               display: none; max-width: 380px;"></div>
 
+  {# Horizontal pipeline shape — overlays the latest run's per-step
+     status on the configured step list. Colors per the operator's spec:
+       blue   = queued (step plan, not yet started this run)
+       light  = starting (docker compose up in progress)
+       yellow = warming (succeeded, waiting buffer before next step)
+       deep   = running (succeeded; service is up)
+       red    = stopped (failed or cancelled)
+     Hot-tier steps are tagged "always-on" since they no-op. #}
+  <style>
+    .pipeline-shape { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; padding: 16px; }
+    .pipeline-shape .pstep { padding: 10px 14px; border-radius: 8px; border: 1px solid transparent;
+                              min-width: 130px; font-size: 13px; line-height: 1.35; }
+    .pipeline-shape .pstep .svc { font-weight: 600; }
+    .pipeline-shape .pstep .meta { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+    .pipeline-shape .pstep .tag-always { display: inline-block; font-size: 10px; padding: 1px 5px;
+                                          background: rgba(0,0,0,0.08); border-radius: 3px;
+                                          margin-left: 4px; vertical-align: middle; }
+    .pipeline-shape .pstep-queued    { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+    .pipeline-shape .pstep-starting  { background: #bbf7d0; border-color: #4ade80; color: #14532d; }
+    .pipeline-shape .pstep-warming   { background: #fef08a; border-color: #facc15; color: #713f12; }
+    .pipeline-shape .pstep-running   { background: #16a34a; border-color: #15803d; color: white; }
+    .pipeline-shape .pstep-stopped   { background: #fecaca; border-color: #f87171; color: #7f1d1d; }
+    .pipeline-shape .pstep-cancelled { background: #e5e7eb; border-color: #9ca3af; color: #374151; }
+    .pipeline-shape .parrow { display: flex; align-items: center; padding: 0 4px; color: var(--text-2); font-size: 11px;
+                               flex-direction: column; justify-content: center; min-width: 70px; }
+    .pipeline-shape .parrow .arrow { font-size: 16px; line-height: 1; }
+    .pipeline-shape .legend { font-size: 11px; color: var(--text-2); padding-top: 14px; }
+    .pipeline-shape .legend span { display: inline-block; margin-right: 10px; }
+    .pipeline-shape .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+                                 vertical-align: middle; margin-right: 4px; }
+  </style>
+  <div class="surface" style="margin-bottom: 18px;">
+    <div class="surface-head">
+      <h2>Latest run · <span id="latest-run-label" style="font-weight: 400; color: var(--text-2);">no runs yet</span></h2>
+      <span class="sub" id="shape-poll-status" style="font-size: 12px; color: var(--text-2);"></span>
+    </div>
+    <div id="pipeline-shape" class="pipeline-shape"></div>
+    <div class="pipeline-shape legend" style="padding: 0 16px 14px;">
+      <span><i style="background:#dbeafe;border:1px solid #93c5fd;"></i>queued</span>
+      <span><i style="background:#bbf7d0;border:1px solid #4ade80;"></i>starting</span>
+      <span><i style="background:#fef08a;border:1px solid #facc15;"></i>warming&nbsp;(buffer)</span>
+      <span><i style="background:#16a34a;border:1px solid #15803d;"></i>running</span>
+      <span><i style="background:#fecaca;border:1px solid #f87171;"></i>stopped&nbsp;(failed/cancelled)</span>
+    </div>
+  </div>
+
   <div class="surface">
     <div class="surface-head">
       <h2>Recent runs</h2>
@@ -81,6 +127,13 @@
     const PIPELINE_ID = {{ pipeline.id }};
     const RUNS_ENDPOINT = "/app/api/dashboard/pipelines/" + PIPELINE_ID + "/runs.json";
     const IS_ADMIN = {{ ('Admin' in (user.roles or [])) | tojson if user else 'false' }};
+    // The pipeline plan (step ordering + service + action + buffer +
+    // tier) is server-rendered. The runs poll only returns per-run
+    // progress, so the plan stays static between polls.
+    const PIPELINE_STEPS = {{ (pipeline.steps or []) | tojson }};
+    // service_tiers lets us render the (always-on) tag on hot-tier
+    // pills without a second lookup.
+    const SERVICE_TIERS = {{ service_tiers | tojson }};
 
     function toast(msg, kind) {
       const el = document.getElementById('runs-toast');
@@ -140,6 +193,71 @@
       }).join('');
     }
 
+    function fmtSecs(s) {
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60), r = s % 60;
+      return r ? `${m}m ${r}s` : `${m}m`;
+    }
+
+    // Compute each plan step's display state from the latest run's
+    // step_results overlay. State machine for one step:
+    //   - run is null / no result yet                       -> 'queued'
+    //   - result.status == 'running'                        -> 'starting'
+    //   - result.status == 'succeeded' AND not last step
+    //     AND run still 'running'
+    //     AND next step hasn't started yet                  -> 'warming'
+    //   - result.status == 'succeeded'                      -> 'running'
+    //   - result.status == 'failed' / 'cancelled'           -> 'stopped'
+    function computeStepState(planIdx, plan, run) {
+      if (!run) return 'queued';
+      const sr = (run.step_results || []).find(r => r.order_index === planIdx);
+      if (!sr) return 'queued';
+      if (sr.status === 'running')   return 'starting';
+      if (sr.status === 'failed')    return 'stopped';
+      if (sr.status === 'cancelled') return 'stopped';
+      if (sr.status !== 'succeeded') return 'queued';
+      // succeeded — but is the pipeline still in this step's buffer?
+      const isLast = planIdx === plan.length - 1;
+      if (isLast) return 'running';
+      if (run.status !== 'running') return 'running';
+      const next = (run.step_results || []).find(r => r.order_index === planIdx + 1);
+      if (next) return 'running';  // next step has already started
+      return 'warming';            // waiting buffer before next step
+    }
+
+    function renderShape(run) {
+      const root = document.getElementById('pipeline-shape');
+      if (!PIPELINE_STEPS.length) {
+        root.innerHTML = '<div style="color: var(--text-2); padding: 8px;">Pipeline has no steps yet — <a href="' +
+          "{{ url_for('pipeline_detail_page', pipeline_id=pipeline.id) }}" +
+          '">add some on the edit page</a>.</div>';
+        return;
+      }
+      const label = document.getElementById('latest-run-label');
+      if (run) {
+        label.textContent = `#${run.id} · ${run.triggered_by} · ${fmtStatus(run.status).replace(/<[^>]+>/g, '')} · started ${fmtTs(run.started_at)}`;
+      } else {
+        label.textContent = 'no runs yet';
+      }
+      const html = PIPELINE_STEPS.map((s, idx) => {
+        const state = computeStepState(idx, PIPELINE_STEPS, run);
+        const tier = SERVICE_TIERS[s.service_name];
+        const alwaysOnTag = tier === 'hot' ? ' <span class="tag-always">always-on</span>' : '';
+        const pill = `
+          <div class="pstep pstep-${state}">
+            <div class="svc">${s.service_name}${alwaysOnTag}</div>
+            <div class="meta">${s.action} · ${state}</div>
+          </div>`;
+        if (idx === PIPELINE_STEPS.length - 1) return pill;
+        return pill + `
+          <div class="parrow">
+            <div class="arrow">&rarr;</div>
+            <div>buf ${fmtSecs(s.buffer_seconds)}</div>
+          </div>`;
+      }).join('');
+      root.innerHTML = html;
+    }
+
     async function fetchRuns(silent) {
       try {
         const r = await fetch(RUNS_ENDPOINT, { credentials: 'same-origin' });
@@ -157,14 +275,19 @@
     let pollTimer = null;
     function schedulePoll(runs) {
       // Keep polling every 3s while any run is `running`, otherwise stop.
+      // The shape view re-renders on every tick too, so the warming-state
+      // pill updates as soon as a step succeeds and the next step starts.
       const anyRunning = runs.some(r => r.status === 'running');
-      const statusEl = document.getElementById('poll-status');
+      const tableEl = document.getElementById('poll-status');
+      const shapeEl = document.getElementById('shape-poll-status');
       if (anyRunning) {
-        statusEl.textContent = '· live · refreshes every 3s';
+        tableEl.textContent = '· live · refreshes every 3s';
+        shapeEl.textContent = '· live';
         clearTimeout(pollTimer);
         pollTimer = setTimeout(tick, 3000);
       } else {
-        statusEl.textContent = '';
+        tableEl.textContent = '';
+        shapeEl.textContent = '';
         clearTimeout(pollTimer);
         pollTimer = null;
       }
@@ -174,6 +297,7 @@
       const runs = await fetchRuns(true);
       if (runs) {
         renderRows(runs);
+        renderShape(runs[0] || null);
         schedulePoll(runs);
       } else {
         // network blip — back off but keep trying.
@@ -205,11 +329,15 @@
       tick();
     }
 
-    // On load: if any of the server-rendered rows are `running`, start polling.
+    // On load: render the shape with whatever steps the pipeline has
+    // (queued state if no runs yet). If there are runs, fetch + show
+    // the latest one's overlay and start polling if it's still running.
+    renderShape(null);
     (async function init() {
       const initialRuns = await fetchRuns(true);
       if (initialRuns !== null) {
         renderRows(initialRuns);
+        renderShape(initialRuns[0] || null);
         schedulePoll(initialRuns);
       }
     })();

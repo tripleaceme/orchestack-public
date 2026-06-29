@@ -644,14 +644,26 @@ async def pipeline_runs_page(
         runs = (await orchestrator.list_pipeline_runs(pipeline_id, limit=20)).get("runs", [])
     except (httpx.HTTPError, ValueError):
         runs = []
+    # Services are needed for the horizontal step chain's tier badges
+    # (hot-tier pills get an "always-on" tag). control_plane services
+    # never appear in pipeline step lists, so we filter them out to
+    # keep the JSON payload small.
+    try:
+        svc_data = await orchestrator.list_services()
+        services = [s for s in svc_data.get("services", []) if not s.get("control_plane")]
+    except (httpx.HTTPError, ValueError):
+        services = []
+    # Flatten to {name: tier} so the template doesn't need a comprehension.
+    service_tiers = {s["name"]: s.get("tier", "cold") for s in services}
     return templates.TemplateResponse(
         "pipeline_runs.html",
         {
-            "request":    request,
-            "page_title": f"Runs · {pipeline['name']}",
-            "user":       user,
-            "pipeline":   pipeline,
-            "runs":       runs,
+            "request":       request,
+            "page_title":    f"Runs · {pipeline['name']}",
+            "user":          user,
+            "pipeline":      pipeline,
+            "runs":          runs,
+            "service_tiers": service_tiers,
         },
     )
 
