@@ -75,9 +75,11 @@ services:
       - orchestack-net
     ports:
       # Direct host port so the React SPA's root-absolute paths resolve
-      # cleanly. Traefik labels below stay enabled so /app/openmetadata
-      # returns SOMETHING rather than 404, but the operator's actual
-      # entry point is :8585.
+      # cleanly — OM's React bundle hardcodes /static/... and /api/...
+      # at the document root, so we can't host the SPA under a subpath
+      # without forking the bundle. Traefik labels below 302-redirect
+      # /app/openmetadata -> :8585 so stale bookmarks / dashboard links
+      # still land somewhere working instead of a blank page.
       - "8585:8585"
     healthcheck:
       # OpenMetadata's base image ships wget (not curl) and exposes
@@ -95,8 +97,16 @@ services:
       - traefik.http.routers.openmetadata.rule=PathPrefix(`/app/openmetadata`)
       - traefik.http.routers.openmetadata.entrypoints=web
       - traefik.http.routers.openmetadata.priority=200
-      - traefik.http.middlewares.openmetadata-strip.stripprefix.prefixes=/app/openmetadata
-      - traefik.http.routers.openmetadata.middlewares=openmetadata-strip@docker
+      # 302 redirect /app/openmetadata[/*] -> :8585/. Previously we
+      # stripped the prefix and proxied to OM, but the SPA's hardcoded
+      # /static/... asset paths 404'd at Traefik so the page rendered
+      # blank. The dashboard tile already points operators at :8585
+      # (external_url in catalog); the redirect just catches the
+      # leftover bookmarks + anyone who guesses the subpath.
+      - traefik.http.middlewares.openmetadata-redirect.redirectregex.regex=^https?://([^/]+?)(?::[0-9]+)?/app/openmetadata.*
+      - traefik.http.middlewares.openmetadata-redirect.redirectregex.replacement=http://$${1}:8585/
+      - traefik.http.middlewares.openmetadata-redirect.redirectregex.permanent=false
+      - traefik.http.routers.openmetadata.middlewares=openmetadata-redirect@docker
       - traefik.http.services.openmetadata.loadbalancer.server.port=8585
 
   # Required sidecar for OpenMetadata's full-text search. Not exposed
