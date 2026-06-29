@@ -126,6 +126,43 @@ async def fire_pipeline(
         "UPDATE platform.pipelines SET last_run_at = now(), last_run_status = 'running' WHERE id = $1",
         pipeline_id,
     )
+
+    # Manual fire subsumes the upcoming scheduled fire — operators
+    # don't want a pipeline they manually triggered at 16:15 to ALSO
+    # fire at the configured 16:30. Skip the PENDING fire by advancing
+    # next_run_at past it:
+    #   - 'once': clear it (operator already got their one fire).
+    #   - 'cron': next match strictly AFTER the current next_run_at,
+    #     not next-after-now (which would re-pick the same pending slot).
+    #   - 'manual': no schedule to skip (next_run_at is NULL already).
+    if triggered_by == "manual":
+        pinfo = await db.fetchrow(
+            "SELECT trigger_type, trigger_value, trigger_timezone, next_run_at "
+            "FROM platform.pipelines WHERE id = $1",
+            pipeline_id,
+        )
+        if pinfo and pinfo["trigger_type"] in ("once", "cron"):
+            new_next = None
+            if pinfo["trigger_type"] == "cron" and pinfo["next_run_at"]:
+                try:
+                    from croniter import croniter   # type: ignore
+                    try:
+                        from zoneinfo import ZoneInfo
+                        tz = ZoneInfo(pinfo["trigger_timezone"]) if pinfo["trigger_timezone"] != "UTC" else timezone.utc
+                    except Exception:
+                        tz = timezone.utc
+                    base = pinfo["next_run_at"].astimezone(tz) if pinfo["next_run_at"] else datetime.now(tz)
+                    it = croniter(pinfo["trigger_value"], base)
+                    new_next = it.get_next(datetime).astimezone(timezone.utc)
+                except Exception as e:
+                    log.warning("manual-fire cron advance failed for pipeline %s: %s", pipeline_id, e)
+                    new_next = compute_next_run(
+                        pinfo["trigger_type"], pinfo["trigger_value"], pinfo["trigger_timezone"],
+                    )
+            await db.fetch(
+                "UPDATE platform.pipelines SET next_run_at = $2 WHERE id = $1",
+                pipeline_id, new_next,
+            )
     await audit.write(
         "pipeline_run_started",
         service_name=None,
@@ -209,6 +246,20 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
 
         result["completed_at"] = datetime.now(timezone.utc).isoformat()
         step_results.append(result)
+
+        # Bail on first failure. Operators model pipelines as dependency
+        # chains: if "start MinIO" fails, running "start dbt" after it
+        # is meaningless (dbt's connection target would be unreachable).
+        # Continuing past failures was the original behaviour but
+        # produced confusing partial-success states on the dashboard.
+        # Operators wanting independent steps should create separate
+        # pipelines.
+        if result["status"] == "failed":
+            log.info(
+                "pipelines_executor: pipeline %s run %s step %d (%s) failed — bailing on remaining steps",
+                pipeline_id, run_id, s["order_index"], s["service_name"],
+            )
+            break
 
         # Buffer wait — give the service time to finish its own startup
         # (e.g. Airflow scheduler tick) before the next step fires. Skipped
