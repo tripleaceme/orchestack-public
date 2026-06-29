@@ -192,6 +192,21 @@ services:
               keepalives_idle: 0
         PROFILES
 
+        # ── 2b. Remove stale package-lock.yml ──────────────────────────
+        # dbt 1.7+ writes a lockfile after `dbt deps`. Older dbt versions
+        # wrote a `name:` field alongside `package:` in each lockfile
+        # entry — dbt 1.9 (current image) rejects that shape with a
+        # "is not valid under any of the given schemas" validator error
+        # and the whole container restart-loops. Operators bringing
+        # their own dbt project from a repo cloned/written against an
+        # older dbt won't know to delete it. Cheap defensive fix: drop
+        # the lockfile before deps so dbt regenerates a 1.9-compatible
+        # one. We give up the lockfile's "deterministic versions across
+        # operator machines" guarantee, but the alternative (crashloop)
+        # is worse, and `version:` constraints in packages.yml still
+        # pin meaningfully.
+        rm -f /usr/app/dbt/package-lock.yml
+
         # ── 3. Build + generate docs (best-effort, in background) ──────
         # Why background: ttyd should come up fast so the operator can
         # drop in IMMEDIATELY when troubleshooting, even while docs is
@@ -258,13 +273,28 @@ services:
           TTYD_PID=""
         fi
 
-        # ── 5. Wait for either to exit ────────────────────────────────
-        # If docs serve dies (e.g. operator interrupted with dbt run
-        # mid-generate), or ttyd dies (network blip), the container
-        # exits and Docker's restart=unless-stopped brings it back.
+        # ── 5. Wait for ttyd (treat docs-serve as best-effort) ────────
+        # OLD behaviour: `wait -n` returned on whichever of docs-serve
+        # or ttyd died first, exiting the container so Docker would
+        # restart. The assumption was that a restart fixed transient
+        # issues. In practice it caused HARD restart loops: if anything
+        # made `dbt deps` or `dbt run` fail persistently (malformed
+        # packages.yml, bad SQL in a model, db not yet ready), docs
+        # serve died, container restarted, same failure recurred,
+        # ad infinitum (one operator hit 574 restarts before we
+        # spotted the lockfile bug above).
+        #
+        # NEW behaviour: ttyd is what the OPERATOR cares about. As
+        # long as ttyd is alive they can drop into the terminal and
+        # debug whatever's wrong with their project. Docs serve is a
+        # convenience and its death is logged but doesn't take down
+        # the container. If ttyd dies we still exit + Docker restarts.
         if [ -n "$$TTYD_PID" ]; then
-          wait -n $$DOCS_PID $$TTYD_PID
+          wait $$TTYD_PID
         else
+          # No ttyd (image missing the binary, shouldn't happen) — fall
+          # back to docs-serve as the lifeline so the container has
+          # SOMETHING to wait on.
           wait $$DOCS_PID
         fi
 
