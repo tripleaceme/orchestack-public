@@ -192,6 +192,21 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
     any_failed = False
     cancelled = False
 
+    async def _persist_step_results() -> None:
+        """Snapshot step_results to the DB so the dashboard's polling
+        endpoint sees in-flight progress. Called twice per step (start +
+        end) and once mid-buffer. The whole list is rewritten because
+        jsonb columns don't support targeted array updates without
+        gymnastics; the list is small (<=20 entries) so this is cheap."""
+        try:
+            await db.fetch(
+                "UPDATE platform.pipeline_runs SET step_results = $2::jsonb WHERE id = $1",
+                run_id, json.dumps(step_results),
+            )
+        except Exception as e:
+            # Persistence failure shouldn't kill the run — log + continue.
+            log.warning("pipelines_executor: persist step_results failed: %s", e)
+
     async def _check_cancelled() -> bool:
         """Re-fetch the run's status; an operator can cancel mid-flight
         via the API which sets status='cancelled' in the DB. We poll
@@ -208,12 +223,21 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
             break
         step_started_at = datetime.now(timezone.utc)
         result: dict[str, Any] = {
-            "order_index":  s["order_index"],
-            "service_name": s["service_name"],
-            "action":       s["action"],
-            "started_at":   step_started_at.isoformat(),
-            "status":       "running",
+            "order_index":   s["order_index"],
+            "service_name":  s["service_name"],
+            "action":        s["action"],
+            "buffer_seconds": s["buffer_seconds"],
+            "started_at":    step_started_at.isoformat(),
+            "status":        "running",
         }
+        # Append the in-flight result + persist BEFORE the docker call so
+        # the dashboard sees the step transition from queued -> starting
+        # on its next poll. Without this, step_results was empty for the
+        # entire duration of the run (executor only wrote at completion),
+        # so the runs page rendered every pill as queued even though one
+        # was actively running.
+        step_results.append(result)
+        await _persist_step_results()
         try:
             # Hot-tier services (Postgres, Metabase, pgAdmin) are always
             # on — start_service would no-op via `docker compose up -d`
@@ -263,7 +287,11 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
             any_failed = True
 
         result["completed_at"] = datetime.now(timezone.utc).isoformat()
-        step_results.append(result)
+        # result is already in step_results (appended pre-docker); just
+        # persist the post-docker mutation (status + completed_at + error)
+        # so the dashboard sees the step transition from starting ->
+        # succeeded/failed on its next poll.
+        await _persist_step_results()
 
         # Bail on first failure. Operators model pipelines as dependency
         # chains: if "start MinIO" fails, running "start dbt" after it

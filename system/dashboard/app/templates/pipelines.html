@@ -137,7 +137,7 @@
       }
       const data = await resp.json();
       // Show inline confirmation + flip the row's last-run cell to "running".
-      orchestackToast("Pipeline \"" + name + "\" is running (run #" + data.run_id + "). It'll update on the next page refresh — or check the pipeline detail page for live status.", 'info');
+      orchestackToast("Pipeline \"" + name + "\" is running (run #" + data.run_id + "). It'll update on the next page refresh or check the pipeline detail page for live status.", 'info');
       const lastCell = document.getElementById('p-last-' + pid);
       if (lastCell) {
         lastCell.innerHTML = '<span style="color: #0ea5e9;">⟳ running</span>';

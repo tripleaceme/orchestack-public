@@ -67,12 +67,63 @@
     .pipeline-shape .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
                                  vertical-align: middle; margin-right: 4px; }
   </style>
+  {# Server-rendered initial label + pills. The JS overwrites these on
+     first successful fetch, but seeing the latest run immediately on
+     page load (no waiting for an XHR) is the difference between "I see
+     what's happening" and "I see queued nothing." If JS never runs or
+     the fetch fails, this server render persists. #}
+  {% set _latest = runs[0] if runs else none %}
+  {% macro _server_step_state(step, latest, all_steps) %}
+    {%- if latest is none -%}queued
+    {%- elif latest.step_results is none -%}queued
+    {%- else -%}
+      {%- set _sr = (latest.step_results | selectattr('order_index', 'equalto', step.order_index) | list) -%}
+      {%- if not _sr -%}queued
+      {%- else -%}
+        {%- set _sr = _sr[0] -%}
+        {%- if _sr.status == 'running' -%}starting
+        {%- elif _sr.status in ['failed', 'cancelled'] -%}stopped
+        {%- elif _sr.status == 'succeeded' -%}
+          {%- if step.order_index == (all_steps | length) - 1 -%}running
+          {%- elif latest.status != 'running' -%}running
+          {%- elif (latest.step_results | selectattr('order_index', 'equalto', step.order_index + 1) | list) -%}running
+          {%- else -%}warming
+          {%- endif -%}
+        {%- else -%}queued
+        {%- endif -%}
+      {%- endif -%}
+    {%- endif -%}
+  {% endmacro %}
   <div class="surface" style="margin-bottom: 18px;">
     <div class="surface-head">
-      <h2>Latest run · <span id="latest-run-label" style="font-weight: 400; color: var(--text-2);">no runs yet</span></h2>
+      <h2>Latest run · <span id="latest-run-label" style="font-weight: 400; color: var(--text-2);">
+        {%- if _latest -%}
+          #{{ _latest.id }} · {{ _latest.triggered_by }} · {{ _latest.status }} · started {{ _latest.started_at[:19] | replace('T', ' ') }}
+        {%- else -%}
+          no runs yet
+        {%- endif -%}
+      </span></h2>
       <span class="sub" id="shape-poll-status" style="font-size: 12px; color: var(--text-2);"></span>
     </div>
-    <div id="pipeline-shape" class="pipeline-shape"></div>
+    <div id="pipeline-shape" class="pipeline-shape">
+      {% if pipeline.steps %}
+        {% for step in pipeline.steps %}
+          {% set state = _server_step_state(step, _latest, pipeline.steps) | trim %}
+          <div class="pstep pstep-{{ state }}">
+            <div class="svc">{{ step.service_name }}{% if service_tiers.get(step.service_name) == 'hot' %} <span class="tag-always">always-on</span>{% endif %}</div>
+            <div class="meta">{{ step.action }} · {{ state }}</div>
+          </div>
+          {% if not loop.last %}
+            <div class="parrow">
+              <div class="arrow">&rarr;</div>
+              <div>buf {{ step.buffer_seconds }}s</div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <div style="color: var(--text-2); padding: 8px;">Pipeline has no steps yet.</div>
+      {% endif %}
+    </div>
     <div class="pipeline-shape legend" style="padding: 0 16px 14px;">
       <span><i style="background:#dbeafe;border:1px solid #93c5fd;"></i>queued</span>
       <span><i style="background:#bbf7d0;border:1px solid #4ade80;"></i>starting</span>
@@ -329,10 +380,14 @@
       tick();
     }
 
-    // On load: render the shape with whatever steps the pipeline has
-    // (queued state if no runs yet). If there are runs, fetch + show
-    // the latest one's overlay and start polling if it's still running.
-    renderShape(null);
+    // On load: the server has already rendered the shape from the
+    // latest run (jinja macro above). DO NOT call renderShape(null)
+    // here — that would clobber the server render with "no runs yet"
+    // for the brief window before the XHR completes, AND would leave
+    // the page in a broken state if the XHR silently fails (which is
+    // exactly the bug the operator screenshotted). The XHR exists to
+    // KEEP the shape fresh while a run is in flight, not to bootstrap
+    // initial state.
     (async function init() {
       const initialRuns = await fetchRuns(true);
       if (initialRuns !== null) {
