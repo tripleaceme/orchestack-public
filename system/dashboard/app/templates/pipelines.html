@@ -13,7 +13,7 @@
     A pipeline wakes a sequence of cold-tier services on a schedule. Use it when
     a tool's internal cron (Airflow DAGs, Airbyte connection schedules,
     dbt cosmos schedules) needs the service to be UP at trigger time.
-    The pipeline does not run jobs &mdash; it just turns the lights on
+    The pipeline does not run jobs, it just turns the lights on
     so the tools can fire their own work.
   </p>
 

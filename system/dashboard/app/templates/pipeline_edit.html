@@ -11,7 +11,17 @@
   <h1>{% if is_new %}New pipeline{% else %}{{ pipeline.name }}{% endif %}</h1>
 
   <style>
-    .pipe-form .form-row { margin-bottom: 14px; }
+    /* Override the global `.form-row { display: grid; ... 1fr 1fr }` rule
+       from main.css — that rule is meant for two-column credentials
+       forms, but pipeline rows are single-column with labels stacked
+       above inputs + multi-child rows like the step list that would
+       wrap weirdly in a 2-col grid (the "+ Add a step" button ended up
+       on the same line as the first step). Force back to block flow. */
+    .pipe-form .form-row {
+      display: block !important;
+      grid-template-columns: none !important;
+      margin-bottom: 14px;
+    }
     .pipe-form label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 5px; }
     .pipe-form label .hint { font-weight: 400; color: var(--text-2); font-size: 12px; margin-left: 6px; }
     .pipe-form input[type="text"],
@@ -81,19 +91,19 @@
     <div class="form-row">
       <label for="p-trigger-type">Trigger</label>
       <select id="p-trigger-type" onchange="orchestackUpdateTriggerFields()">
-        <option value="manual" {% if pipeline and pipeline.trigger_type == 'manual' %}selected{% endif %}>Manual only — operator clicks "Run now"</option>
-        <option value="once"   {% if pipeline and pipeline.trigger_type == 'once'   %}selected{% endif %}>Once — at a specific date+time</option>
-        <option value="cron"   {% if pipeline and pipeline.trigger_type == 'cron'   %}selected{% endif %}>Cron — recurring schedule</option>
+        <option value="manual" {% if pipeline and pipeline.trigger_type == 'manual' %}selected{% endif %}>Manual only — fires only when an operator clicks "Run"</option>
+        <option value="once"   {% if pipeline and pipeline.trigger_type == 'once'   %}selected{% endif %}>One-shot — fires once at a specific date+time, then never again</option>
+        <option value="cron"   {% if pipeline and pipeline.trigger_type == 'cron'   %}selected{% endif %}>Recurring — fires on a cron schedule (daily, weekly, custom)</option>
       </select>
 
       <div class="trigger-fields" id="trig-once-fields">
-        <label for="p-once-when">Fire at <span class="hint">your local time, converted to UTC for storage</span></label>
+        <label for="p-once-when">Fire at <span class="hint">your local time, converted to UTC for storage. For "every day at this time" use the Recurring option below instead.</span></label>
         <input type="datetime-local" id="p-once-when"
                value="{{ pipeline.trigger_value[:16] if pipeline and pipeline.trigger_type == 'once' else '' }}" />
       </div>
 
       <div class="trigger-fields" id="trig-cron-fields">
-        <label for="p-cron-expr">Cron expression <span class="hint">5 fields: min hour dom mon dow (e.g. <code>0 8 * * *</code> = 8 AM daily)</span></label>
+        <label for="p-cron-expr">Cron expression <span class="hint">5 fields: min hour dom mon dow. Common: <code>0 8 * * *</code> = 8 AM daily, <code>30 7 * * 1-5</code> = 7:30 AM weekdays, <code>0 */6 * * *</code> = every 6 hours</span></label>
         <input type="text" id="p-cron-expr" placeholder="0 8 * * *"
                value="{{ pipeline.trigger_value if pipeline and pipeline.trigger_type == 'cron' else '' }}" />
         <label for="p-cron-tz" style="margin-top: 10px;">Timezone</label>
