@@ -29,3 +29,8 @@ bcrypt==4.2.0
 # Local imports inside docker_ops.PRE/POST_START_HOOKS pull from this.
 # Pinned to match the dashboard's version.
 httpx==0.27.2
+
+# Cron expression parsing for the pipelines scheduler (see
+# pipelines_executor.compute_next_run). Used to compute next_run_at
+# for pipelines with trigger_type='cron'. Pure-python, no compiled deps.
+croniter==3.0.3

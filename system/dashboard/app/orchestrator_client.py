@@ -52,6 +52,53 @@ class OrchestratorClient:
             resp.raise_for_status()
             return resp.json()
 
+    # ---- Pipelines ---------------------------------------------------
+    async def list_pipelines(self) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{self.base_url}/api/pipelines")
+            r.raise_for_status()
+            return r.json()
+
+    async def get_pipeline(self, pipeline_id: int) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{self.base_url}/api/pipelines/{pipeline_id}")
+            r.raise_for_status()
+            return r.json()
+
+    async def create_pipeline(self, body: dict, *, actor_user_id: int | None = None) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            params = {"actor_user_id": actor_user_id} if actor_user_id is not None else {}
+            r = await client.post(f"{self.base_url}/api/pipelines", json=body, params=params)
+            r.raise_for_status()
+            return r.json()
+
+    async def update_pipeline(self, pipeline_id: int, body: dict, *, actor_user_id: int | None = None) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            params = {"actor_user_id": actor_user_id} if actor_user_id is not None else {}
+            r = await client.put(f"{self.base_url}/api/pipelines/{pipeline_id}", json=body, params=params)
+            r.raise_for_status()
+            return r.json()
+
+    async def delete_pipeline(self, pipeline_id: int, *, actor_user_id: int | None = None) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            params = {"actor_user_id": actor_user_id} if actor_user_id is not None else {}
+            r = await client.delete(f"{self.base_url}/api/pipelines/{pipeline_id}", params=params)
+            r.raise_for_status()
+            return r.json()
+
+    async def run_pipeline_now(self, pipeline_id: int, *, actor_user_id: int | None = None) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            params = {"actor_user_id": actor_user_id} if actor_user_id is not None else {}
+            r = await client.post(f"{self.base_url}/api/pipelines/{pipeline_id}/run", params=params)
+            r.raise_for_status()
+            return r.json()
+
+    async def list_pipeline_runs(self, pipeline_id: int, limit: int = 20) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{self.base_url}/api/pipelines/{pipeline_id}/runs", params={"limit": limit})
+            r.raise_for_status()
+            return r.json()
+
     async def delete_service(self, name: str, *, wipe_volumes: bool = False) -> dict[str, object]:
         # Volume wipe can take longer for large volumes (Airflow logs, Airbyte
         # workspace cache); keep the timeout generous.

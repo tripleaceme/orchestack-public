@@ -285,6 +285,9 @@
       <a href="{{ url_for('sessions_page') }}" class="item {{ 'active' if path == '/sessions' else '' }}">
         <span class="item-label">Sessions</span><span class="kbd">G E</span>
       </a>
+      <a href="{{ url_for('pipelines_page') }}" class="item {{ 'active' if path.startswith('/pipelines') else '' }}">
+        <span class="item-label">Pipelines</span><span class="kbd">G P</span>
+      </a>
       <a href="{{ url_for('audit_page') }}" class="item {{ 'active' if path == '/audit' else '' }}">
         <span class="item-label">Audit</span><span class="kbd">G A</span>
       </a>

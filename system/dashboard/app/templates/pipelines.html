@@ -1,0 +1,119 @@
+{# Pipelines list page. Lifecycle-only — each pipeline is an ordered
+   sequence of service starts on a trigger (manual / once / cron). #}
+{% extends "base.html" %}
+{% block content %}
+  <div class="breadcrumb">Workspace / Pipelines</div>
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+    <h1 style="margin: 0;">Pipelines</h1>
+    {% if user and 'Admin' in (user.roles or []) %}
+      <a href="{{ url_for('pipeline_new_page') }}" class="btn btn-primary">+ New pipeline</a>
+    {% endif %}
+  </div>
+  <p class="lede">
+    A pipeline wakes a sequence of services on a schedule. Use it when
+    a tool's internal cron (Airflow DAGs, Airbyte connection schedules,
+    dbt cosmos schedules) needs the service to be UP at trigger time.
+    The pipeline does not run jobs &mdash; it just turns the lights on
+    so the tools can fire their own work.
+  </p>
+
+  {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  <div class="surface" style="margin-top: 18px;">
+    {% if not pipelines %}
+      <div style="padding: 32px; text-align: center; color: var(--text-2);">
+        No pipelines yet.
+        {% if user and 'Admin' in (user.roles or []) %}
+          <a href="{{ url_for('pipeline_new_page') }}" style="color: var(--navy); text-decoration: underline;">Create your first one</a>.
+        {% endif %}
+      </div>
+    {% else %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Trigger</th>
+            <th>Next run</th>
+            <th>Last run</th>
+            <th>Steps</th>
+            <th>Enabled</th>
+            <th style="text-align: right;"></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in pipelines %}
+          <tr>
+            <td>
+              <a href="{{ url_for('pipeline_detail_page', pipeline_id=p.id) }}"
+                 style="font-weight: 500; color: var(--text); text-decoration: none;">
+                {{ p.name }}
+              </a>
+              {% if p.description %}
+                <div style="font-size: 12px; color: var(--text-2);">{{ p.description }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="font-mono" style="font-size: 12.5px;">
+                {% if p.trigger_type == 'manual' %}
+                  manual
+                {% elif p.trigger_type == 'once' %}
+                  once @ {{ p.trigger_value[:16] | replace('T', ' ') }}
+                {% elif p.trigger_type == 'cron' %}
+                  cron · <code>{{ p.trigger_value }}</code> ({{ p.trigger_timezone }})
+                {% endif %}
+              </span>
+            </td>
+            <td class="font-mono" style="font-size: 12.5px;">
+              {% if p.next_run_at %}{{ p.next_run_at[:16] | replace('T', ' ') }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="font-mono" style="font-size: 12.5px;">
+              {% if p.last_run_at %}
+                {{ p.last_run_at[:16] | replace('T', ' ') }}
+                {% if p.last_run_status == 'succeeded' %}
+                  <span style="color: #047857;">✓</span>
+                {% elif p.last_run_status == 'failed' %}
+                  <span style="color: #dc2626;">✗</span>
+                {% elif p.last_run_status == 'running' %}
+                  <span style="color: #0ea5e9;">⟳</span>
+                {% endif %}
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>{{ p.step_count }}</td>
+            <td>
+              {% if p.enabled %}
+                <span style="color: #047857;">enabled</span>
+              {% else %}
+                <span style="color: var(--text-2);">disabled</span>
+              {% endif %}
+            </td>
+            <td style="text-align: right;">
+              {% if user and 'Admin' in (user.roles or []) %}
+                <button type="button"
+                        onclick="orchestackRunPipeline({{ p.id }}, '{{ p.name|e }}')"
+                        class="btn btn-sm">Run now</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+
+  <script>
+    async function orchestackRunPipeline(pid, name) {
+      if (!confirm("Run \"" + name + "\" now?\n\nEach step's service will be started in order with the configured buffer between steps.")) return;
+      const resp = await fetch("/app/api/dashboard/pipelines/" + pid + "/run",
+        { method: "POST", credentials: "same-origin" });
+      if (!resp.ok) {
+        alert("Run failed (HTTP " + resp.status + "): " + (await resp.text()));
+        return;
+      }
+      const data = await resp.json();
+      // Jump to the detail page where the run history will show this run.
+      window.location.href = "/app/pipelines/" + pid;
+    }
+  </script>
+{% endblock %}

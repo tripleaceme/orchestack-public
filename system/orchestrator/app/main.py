@@ -9,8 +9,8 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from . import config, db, docker_ops, reconciler
-from .api import admin, audit_api, auth, credentials, pinning, services, sessions, setup as setup_api, users
+from . import config, db, docker_ops, pipelines_executor, reconciler
+from .api import admin, audit_api, auth, credentials, pinning, pipelines, services, sessions, setup as setup_api, users
 
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL, logging.INFO),
@@ -102,9 +102,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     stop_event = asyncio.Event()
     reconciler_task: asyncio.Task | None = None
+    pipelines_task: asyncio.Task | None = None
     if pool_ready:
         reconciler_task = asyncio.create_task(
             reconciler.run_loop(stop_event), name="reconciler",
+        )
+        # Pipelines scheduler — fires cron/once triggers + recomputes next_run_at.
+        # Same stop_event so both loops shut down together on lifespan exit.
+        pipelines_task = asyncio.create_task(
+            pipelines_executor.run_loop(stop_event), name="pipelines-scheduler",
         )
 
     log.info(
@@ -116,14 +122,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        if reconciler_task is not None:
-            log.info("shutdown: signalling reconciler to stop")
+        if reconciler_task is not None or pipelines_task is not None:
+            log.info("shutdown: signalling background loops to stop")
             stop_event.set()
+        for name, task in (("reconciler", reconciler_task), ("pipelines", pipelines_task)):
+            if task is None:
+                continue
             try:
-                await asyncio.wait_for(reconciler_task, timeout=10)
+                await asyncio.wait_for(task, timeout=10)
             except asyncio.TimeoutError:
-                log.warning("reconciler did not stop within 10s, cancelling")
-                reconciler_task.cancel()
+                log.warning("%s did not stop within 10s, cancelling", name)
+                task.cancel()
         await db.close_pool()
         log.info("shutdown complete")
 
@@ -148,6 +157,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(credentials.router)
 app.include_router(admin.router)
+app.include_router(pipelines.router)
 
 
 @app.get("/api/health")

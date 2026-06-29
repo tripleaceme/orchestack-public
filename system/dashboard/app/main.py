@@ -492,6 +492,139 @@ async def credentials_page(
     )
 
 
+# ===========================================================================
+#  Pipelines — lifecycle-only scheduling for cold-tier services
+# ===========================================================================
+@app.get("/pipelines", response_class=HTMLResponse, name="pipelines_page")
+async def pipelines_page(request: Request, user=Depends(require_user)) -> HTMLResponse:
+    """List page — all pipelines with name, trigger summary, next/last run, step count."""
+    pipelines: list = []
+    error: str | None = None
+    try:
+        data = await orchestrator.list_pipelines()
+        pipelines = data.get("pipelines", [])
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("pipelines_page list_pipelines failed: %s", e)
+        error = "Couldn't load pipelines from the orchestrator."
+    return templates.TemplateResponse(
+        "pipelines.html",
+        {
+            "request":    request,
+            "page_title": "Pipelines",
+            "user":       user,
+            "pipelines":  pipelines,
+            "error":      error,
+        },
+    )
+
+
+@app.get("/pipelines/new", response_class=HTMLResponse, name="pipeline_new_page")
+async def pipeline_new_page(request: Request, user=Depends(require_admin)) -> HTMLResponse:
+    """Editor for a fresh pipeline. Admin-only — pipelines start/stop services."""
+    # Pre-fetch the catalogue so the step picker knows what services exist.
+    try:
+        svc_data = await orchestrator.list_services()
+        services = [
+            s for s in svc_data.get("services", [])
+            if not s.get("control_plane")
+        ]
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("pipeline_new_page list_services failed: %s", e)
+        services = []
+    return templates.TemplateResponse(
+        "pipeline_edit.html",
+        {
+            "request":      request,
+            "page_title":   "New pipeline",
+            "user":         user,
+            "pipeline":     None,
+            "services":     services,
+            "save_error":   None,
+        },
+    )
+
+
+@app.get("/pipelines/{pipeline_id}", response_class=HTMLResponse, name="pipeline_detail_page")
+async def pipeline_detail_page(
+    request: Request, pipeline_id: int, user=Depends(require_user),
+) -> HTMLResponse:
+    """Detail + edit + run-history for one pipeline."""
+    try:
+        pipeline = await orchestrator.get_pipeline(pipeline_id)
+    except httpx.HTTPError as e:
+        log.warning("pipeline_detail_page get failed: %s", e)
+        raise HTTPException(404, f"Pipeline {pipeline_id} not found")
+    try:
+        runs = (await orchestrator.list_pipeline_runs(pipeline_id, limit=20)).get("runs", [])
+    except (httpx.HTTPError, ValueError):
+        runs = []
+    try:
+        svc_data = await orchestrator.list_services()
+        services = [s for s in svc_data.get("services", []) if not s.get("control_plane")]
+    except (httpx.HTTPError, ValueError):
+        services = []
+    return templates.TemplateResponse(
+        "pipeline_edit.html",
+        {
+            "request":      request,
+            "page_title":   f"Pipeline · {pipeline['name']}",
+            "user":         user,
+            "pipeline":     pipeline,
+            "runs":         runs,
+            "services":     services,
+            "save_error":   None,
+        },
+    )
+
+
+@app.post("/api/dashboard/pipelines", name="pipeline_save_action")
+async def pipeline_save_action(
+    request: Request, user=Depends(require_admin),
+) -> JSONResponse:
+    """Create or update a pipeline. JSON body = orchestrator's PipelineIn shape."""
+    body = await request.json()
+    pid = body.pop("id", None)
+    try:
+        if pid:
+            result = await orchestrator.update_pipeline(int(pid), body, actor_user_id=user.get("user_id"))
+        else:
+            result = await orchestrator.create_pipeline(body, actor_user_id=user.get("user_id"))
+    except httpx.HTTPStatusError as e:
+        return JSONResponse(
+            {"error": e.response.text}, status_code=e.response.status_code,
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse(result)
+
+
+@app.post("/api/dashboard/pipelines/{pipeline_id}/run", name="pipeline_run_action")
+async def pipeline_run_action(
+    request: Request, pipeline_id: int, user=Depends(require_admin),
+) -> JSONResponse:
+    """Fire-and-forget manual trigger."""
+    try:
+        result = await orchestrator.run_pipeline_now(pipeline_id, actor_user_id=user.get("user_id"))
+    except httpx.HTTPStatusError as e:
+        return JSONResponse(
+            {"error": e.response.text}, status_code=e.response.status_code,
+        )
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse(result)
+
+
+@app.delete("/api/dashboard/pipelines/{pipeline_id}", name="pipeline_delete_action")
+async def pipeline_delete_action(
+    request: Request, pipeline_id: int, user=Depends(require_admin),
+) -> JSONResponse:
+    try:
+        result = await orchestrator.delete_pipeline(pipeline_id, actor_user_id=user.get("user_id"))
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse(result)
+
+
 # Maps a managed service to its admin-login .env key pair (email, password).
 # Used by the service-detail Connection card's "Reveal" affordance — the
 # operator clicks Reveal to fetch real values from the orchestrator's

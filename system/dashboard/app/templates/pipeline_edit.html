@@ -1,0 +1,257 @@
+{# Pipeline edit page — used for both creating a new pipeline and
+   editing/viewing an existing one. The mode is controlled by whether
+   `pipeline` is None (new) or a dict (existing). #}
+{% extends "base.html" %}
+{% block content %}
+  {% set is_new = pipeline is none %}
+  <div class="breadcrumb">
+    Workspace / <a href="{{ url_for('pipelines_page') }}">Pipelines</a> /
+    {% if is_new %}New{% else %}{{ pipeline.name }}{% endif %}
+  </div>
+  <h1>{% if is_new %}New pipeline{% else %}{{ pipeline.name }}{% endif %}</h1>
+
+  <style>
+    .pipe-form .form-row { margin-bottom: 14px; }
+    .pipe-form label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 5px; }
+    .pipe-form label .hint { font-weight: 400; color: var(--text-2); font-size: 12px; margin-left: 6px; }
+    .pipe-form input[type="text"],
+    .pipe-form input[type="datetime-local"],
+    .pipe-form textarea,
+    .pipe-form select {
+      width: 100%; padding: 8px 10px; font-size: 14px;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--surface); color: var(--text);
+      font-family: inherit;
+    }
+    .pipe-form textarea { min-height: 64px; resize: vertical; }
+    .pipe-form .trigger-fields { display: none; margin-top: 8px; }
+    .pipe-form .trigger-fields.active { display: block; }
+    .pipe-form .step-row {
+      display: grid; grid-template-columns: 30px 1fr 120px 100px 60px;
+      gap: 10px; padding: 10px; align-items: center;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg); margin-bottom: 8px;
+    }
+    .pipe-form .step-row .order { font-weight: 600; color: var(--text-2); text-align: center; }
+    .pipe-form .step-row select,
+    .pipe-form .step-row input { padding: 6px 8px; font-size: 13px; }
+    .pipe-form .step-row .remove { background: none; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 4px; padding: 5px 8px; cursor: pointer; font-size: 12px; }
+    .pipe-form .step-row .remove:hover { background: #fef2f2; }
+    .pipe-form .add-step { margin-top: 8px; padding: 8px 14px; background: var(--bg); border: 1px dashed var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--navy); }
+    .pipe-form .add-step:hover { background: var(--surface); border-color: var(--navy); }
+  </style>
+
+  {% if save_error %}
+    <div class="alert alert-error">{{ save_error }}</div>
+  {% endif %}
+
+  <div class="surface pipe-form" style="padding: 24px;">
+    <input type="hidden" id="p-id" value="{{ pipeline.id if pipeline else '' }}" />
+
+    <div class="form-row">
+      <label for="p-name">Name <span class="hint">unique; shown in the list + audit log</span></label>
+      <input type="text" id="p-name" placeholder="e.g. nightly-warehouse-refresh"
+             value="{{ pipeline.name if pipeline else '' }}"
+             required maxlength="120" />
+    </div>
+
+    <div class="form-row">
+      <label for="p-description">Description <span class="hint">optional</span></label>
+      <textarea id="p-description" placeholder="What this pipeline does — for human readers.">{{ pipeline.description if pipeline else '' }}</textarea>
+    </div>
+
+    <div class="form-row">
+      <label>
+        <input type="checkbox" id="p-enabled" {% if pipeline is none or pipeline.enabled %}checked{% endif %} />
+        Enabled
+        <span class="hint">Disabled pipelines stay in the list but won't auto-fire</span>
+      </label>
+    </div>
+
+    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border);" />
+
+    <div class="form-row">
+      <label for="p-trigger-type">Trigger</label>
+      <select id="p-trigger-type" onchange="orchestackUpdateTriggerFields()">
+        <option value="manual" {% if pipeline and pipeline.trigger_type == 'manual' %}selected{% endif %}>Manual only — operator clicks "Run now"</option>
+        <option value="once"   {% if pipeline and pipeline.trigger_type == 'once'   %}selected{% endif %}>Once — at a specific date+time</option>
+        <option value="cron"   {% if pipeline and pipeline.trigger_type == 'cron'   %}selected{% endif %}>Cron — recurring schedule</option>
+      </select>
+
+      <div class="trigger-fields" id="trig-once-fields">
+        <label for="p-once-when">Fire at <span class="hint">your local time, converted to UTC for storage</span></label>
+        <input type="datetime-local" id="p-once-when"
+               value="{{ pipeline.trigger_value[:16] if pipeline and pipeline.trigger_type == 'once' else '' }}" />
+      </div>
+
+      <div class="trigger-fields" id="trig-cron-fields">
+        <label for="p-cron-expr">Cron expression <span class="hint">5 fields: min hour dom mon dow (e.g. <code>0 8 * * *</code> = 8 AM daily)</span></label>
+        <input type="text" id="p-cron-expr" placeholder="0 8 * * *"
+               value="{{ pipeline.trigger_value if pipeline and pipeline.trigger_type == 'cron' else '' }}" />
+        <label for="p-cron-tz" style="margin-top: 10px;">Timezone</label>
+        <input type="text" id="p-cron-tz" placeholder="UTC"
+               value="{{ pipeline.trigger_timezone if pipeline else 'UTC' }}" />
+      </div>
+    </div>
+
+    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border);" />
+
+    <div class="form-row">
+      <label>Steps <span class="hint">services execute in order, top to bottom</span></label>
+      <div id="step-list"></div>
+      <button type="button" class="add-step" onclick="orchestackAddStep()">+ Add a step</button>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border);">
+      <div>
+        {% if not is_new and user and 'Admin' in (user.roles or []) %}
+          <button type="button" class="btn btn-danger btn-sm" onclick="orchestackDeletePipeline()">Delete pipeline</button>
+        {% endif %}
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('pipelines_page') }}" class="btn">Cancel</a>
+        {% if user and 'Admin' in (user.roles or []) %}
+          <button type="button" class="btn btn-primary" onclick="orchestackSavePipeline()">
+            {% if is_new %}Create{% else %}Save{% endif %}
+          </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if not is_new and runs is defined and runs %}
+    <div class="surface" style="margin-top: 18px;">
+      <div class="surface-head"><h2>Recent runs</h2></div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Triggered by</th>
+            <th>Status</th>
+            <th>Completed</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+            <tr>
+              <td class="font-mono" style="font-size: 12.5px;">{{ r.started_at[:19] | replace('T', ' ') }}</td>
+              <td>{{ r.triggered_by }}</td>
+              <td>
+                {% if r.status == 'succeeded' %}
+                  <span style="color: #047857;">✓ succeeded</span>
+                {% elif r.status == 'failed' %}
+                  <span style="color: #dc2626;">✗ failed</span>
+                {% elif r.status == 'running' %}
+                  <span style="color: #0ea5e9;">⟳ running</span>
+                {% else %}{{ r.status }}{% endif %}
+              </td>
+              <td class="font-mono" style="font-size: 12.5px;">{% if r.completed_at %}{{ r.completed_at[:19] | replace('T', ' ') }}{% else %}&mdash;{% endif %}</td>
+              <td style="font-size: 12px; color: var(--text-2);">{{ r.error_summary or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <script>
+    // Build the step picker. Services come from the catalogue (non-control-plane).
+    const SERVICES = {{ services | tojson }};
+    const INITIAL_STEPS = {{ (pipeline.steps if pipeline else []) | tojson }};
+
+    function orchestackUpdateTriggerFields() {
+      const t = document.getElementById('p-trigger-type').value;
+      document.getElementById('trig-once-fields').classList.toggle('active', t === 'once');
+      document.getElementById('trig-cron-fields').classList.toggle('active', t === 'cron');
+    }
+
+    function orchestackAddStep(prefill) {
+      const list = document.getElementById('step-list');
+      const idx = list.children.length;
+      const row = document.createElement('div');
+      row.className = 'step-row';
+      const opts = SERVICES.map(s =>
+        `<option value="${s.name}" ${prefill && prefill.service_name === s.name ? 'selected' : ''}>${s.display_name}</option>`
+      ).join('');
+      row.innerHTML =
+        `<div class="order">${idx + 1}</div>
+         <select class="step-service">${opts}</select>
+         <select class="step-action">
+           <option value="start" ${(!prefill || prefill.action === 'start') ? 'selected' : ''}>start</option>
+           <option value="stop" ${prefill && prefill.action === 'stop' ? 'selected' : ''}>stop</option>
+         </select>
+         <input type="number" class="step-buffer" min="0" max="3600"
+                value="${prefill ? prefill.buffer_seconds : 300}" /><span style="font-size:11px;color:var(--text-2);">s buffer</span>
+         <button type="button" class="remove" onclick="this.parentElement.remove(); orchestackRenumberSteps()">✕</button>`;
+      list.appendChild(row);
+    }
+
+    function orchestackRenumberSteps() {
+      document.querySelectorAll('#step-list .step-row .order').forEach((el, i) => {
+        el.textContent = i + 1;
+      });
+    }
+
+    async function orchestackSavePipeline() {
+      const stepEls = document.querySelectorAll('#step-list .step-row');
+      const steps = Array.from(stepEls).map(r => ({
+        service_name: r.querySelector('.step-service').value,
+        action:       r.querySelector('.step-action').value,
+        buffer_seconds: parseInt(r.querySelector('.step-buffer').value || '300', 10),
+      }));
+      const body = {
+        id:               document.getElementById('p-id').value || null,
+        name:             document.getElementById('p-name').value.trim(),
+        description:      document.getElementById('p-description').value.trim() || null,
+        trigger_type:     document.getElementById('p-trigger-type').value,
+        trigger_value:    null,
+        trigger_timezone: 'UTC',
+        enabled:          document.getElementById('p-enabled').checked,
+        steps:            steps,
+      };
+      if (body.trigger_type === 'once') {
+        const v = document.getElementById('p-once-when').value;
+        if (!v) { alert('Pick a date and time for the "once" trigger.'); return; }
+        body.trigger_value = v;
+      } else if (body.trigger_type === 'cron') {
+        body.trigger_value = document.getElementById('p-cron-expr').value.trim();
+        body.trigger_timezone = document.getElementById('p-cron-tz').value.trim() || 'UTC';
+        if (!body.trigger_value) { alert('Enter a cron expression.'); return; }
+      }
+      if (!body.name) { alert('Name is required.'); return; }
+      if (steps.length === 0) { alert('Add at least one step.'); return; }
+      const resp = await fetch('/app/api/dashboard/pipelines', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        let detail = '';
+        try { detail = (await resp.json()).error || (await resp.text()); } catch (_) {}
+        alert('Save failed (HTTP ' + resp.status + '): ' + detail);
+        return;
+      }
+      const data = await resp.json();
+      window.location.href = '/app/pipelines/' + data.id;
+    }
+
+    async function orchestackDeletePipeline() {
+      const pid = document.getElementById('p-id').value;
+      if (!pid) return;
+      if (!confirm('Delete this pipeline?\n\nThis removes the pipeline + its run history. Cannot be undone.')) return;
+      const resp = await fetch('/app/api/dashboard/pipelines/' + pid, {
+        method: 'DELETE', credentials: 'same-origin',
+      });
+      if (!resp.ok) {
+        alert('Delete failed (HTTP ' + resp.status + '): ' + (await resp.text()));
+        return;
+      }
+      window.location.href = '/app/pipelines';
+    }
+
+    // Initial render: trigger-type fields + prefill steps if editing.
+    orchestackUpdateTriggerFields();
+    INITIAL_STEPS.forEach(s => orchestackAddStep(s));
+  </script>
+{% endblock %}
