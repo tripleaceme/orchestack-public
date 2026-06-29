@@ -93,6 +93,13 @@ class OrchestratorClient:
             r.raise_for_status()
             return r.json()
 
+    async def cancel_pipeline_run(self, run_id: int, *, actor_user_id: int | None = None) -> dict[str, object]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            params = {"actor_user_id": actor_user_id} if actor_user_id is not None else {}
+            r = await client.post(f"{self.base_url}/api/pipelines/runs/{run_id}/cancel", params=params)
+            r.raise_for_status()
+            return r.json()
+
     async def list_pipeline_runs(self, pipeline_id: int, limit: int = 20) -> dict[str, object]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{self.base_url}/api/pipelines/{pipeline_id}/runs", params={"limit": limit})

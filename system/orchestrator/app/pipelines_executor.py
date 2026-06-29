@@ -153,8 +153,22 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
 
     step_results: list[dict[str, Any]] = []
     any_failed = False
+    cancelled = False
+
+    async def _check_cancelled() -> bool:
+        """Re-fetch the run's status; an operator can cancel mid-flight
+        via the API which sets status='cancelled' in the DB. We poll
+        between steps so the in-flight step finishes (docker compose
+        is already racing) but no MORE steps fire."""
+        row = await db.fetchrow(
+            "SELECT status FROM platform.pipeline_runs WHERE id = $1", run_id,
+        )
+        return row is not None and row["status"] == "cancelled"
 
     for s in steps:
+        if await _check_cancelled():
+            cancelled = True
+            break
         step_started_at = datetime.now(timezone.utc)
         result: dict[str, Any] = {
             "order_index":  s["order_index"],
@@ -198,9 +212,33 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
 
         # Buffer wait — give the service time to finish its own startup
         # (e.g. Airflow scheduler tick) before the next step fires. Skipped
-        # on the last step (no following step to wait for).
+        # on the last step (no following step to wait for). Also broken
+        # into 5s polls so a cancel signal is honoured mid-sleep instead
+        # of waiting out the full buffer.
         if s["order_index"] < len(steps) - 1:
-            await asyncio.sleep(s["buffer_seconds"])
+            slept = 0
+            while slept < s["buffer_seconds"]:
+                await asyncio.sleep(min(5, s["buffer_seconds"] - slept))
+                slept += 5
+                if await _check_cancelled():
+                    cancelled = True
+                    break
+            if cancelled:
+                break
+
+    if cancelled:
+        # The cancel API already set status='cancelled' + completed_at +
+        # error_summary. We just persist whatever step_results we collected
+        # before the cancel signal was observed.
+        await db.fetch(
+            "UPDATE platform.pipeline_runs SET step_results = $2::jsonb WHERE id = $1 AND status = 'cancelled'",
+            run_id, json.dumps(step_results),
+        )
+        await db.fetch(
+            "UPDATE platform.pipelines SET last_run_status = 'cancelled' WHERE id = $1",
+            pipeline_id,
+        )
+        return
 
     final_status = "failed" if any_failed else "succeeded"
     summary = (

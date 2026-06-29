@@ -625,6 +625,19 @@ async def pipeline_delete_action(
     return JSONResponse(result)
 
 
+@app.post("/api/dashboard/pipeline-runs/{run_id}/cancel", name="pipeline_run_cancel_action")
+async def pipeline_run_cancel_action(
+    request: Request, run_id: int, user=Depends(require_admin),
+) -> JSONResponse:
+    """Cancel a currently-running pipeline. Sets status='cancelled' in
+    the DB; the executor checks this between steps and exits."""
+    try:
+        result = await orchestrator.cancel_pipeline_run(run_id, actor_user_id=user.get("user_id"))
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse(result)
+
+
 # Maps a managed service to its admin-login .env key pair (email, password).
 # Used by the service-detail Connection card's "Reveal" affordance — the
 # operator clicks Reveal to fetch real values from the orchestrator's

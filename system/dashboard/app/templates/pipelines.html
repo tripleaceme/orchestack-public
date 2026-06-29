@@ -10,7 +10,7 @@
     {% endif %}
   </div>
   <p class="lede">
-    A pipeline wakes a sequence of services on a schedule. Use it when
+    A pipeline wakes a sequence of cold-tier services on a schedule. Use it when
     a tool's internal cron (Airflow DAGs, Airbyte connection schedules,
     dbt cosmos schedules) needs the service to be UP at trigger time.
     The pipeline does not run jobs &mdash; it just turns the lights on
@@ -20,6 +20,13 @@
   {% if error %}
     <div class="alert alert-error">{{ error }}</div>
   {% endif %}
+
+  <div id="pipelines-toast"
+       style="position: fixed; top: 16px; right: 16px; z-index: 1000;
+              padding: 10px 14px; border-radius: 6px;
+              background: #064e3b; color: white; font-size: 13px;
+              box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+              display: none; max-width: 380px;"></div>
 
   <div class="surface" style="margin-top: 18px;">
     {% if not pipelines %}
@@ -39,17 +46,14 @@
             <th>Last run</th>
             <th>Steps</th>
             <th>Enabled</th>
-            <th style="text-align: right;"></th>
+            <th style="text-align: right;">Actions</th>
           </tr>
         </thead>
         <tbody>
         {% for p in pipelines %}
-          <tr>
+          <tr id="p-row-{{ p.id }}">
             <td>
-              <a href="{{ url_for('pipeline_detail_page', pipeline_id=p.id) }}"
-                 style="font-weight: 500; color: var(--text); text-decoration: none;">
-                {{ p.name }}
-              </a>
+              <div style="font-weight: 500; color: var(--text);">{{ p.name }}</div>
               {% if p.description %}
                 <div style="font-size: 12px; color: var(--text-2);">{{ p.description }}</div>
               {% endif %}
@@ -69,16 +73,20 @@
               {% if p.next_run_at %}{{ p.next_run_at[:16] | replace('T', ' ') }}{% else %}&mdash;{% endif %}
             </td>
             <td class="font-mono" style="font-size: 12.5px;">
-              {% if p.last_run_at %}
-                {{ p.last_run_at[:16] | replace('T', ' ') }}
-                {% if p.last_run_status == 'succeeded' %}
-                  <span style="color: #047857;">✓</span>
-                {% elif p.last_run_status == 'failed' %}
-                  <span style="color: #dc2626;">✗</span>
-                {% elif p.last_run_status == 'running' %}
-                  <span style="color: #0ea5e9;">⟳</span>
-                {% endif %}
-              {% else %}&mdash;{% endif %}
+              <span id="p-last-{{ p.id }}">
+                {% if p.last_run_at %}
+                  {{ p.last_run_at[:16] | replace('T', ' ') }}
+                  {% if p.last_run_status == 'succeeded' %}
+                    <span style="color: #047857;">✓</span>
+                  {% elif p.last_run_status == 'failed' %}
+                    <span style="color: #dc2626;">✗</span>
+                  {% elif p.last_run_status == 'running' %}
+                    <span style="color: #0ea5e9;">⟳ running</span>
+                  {% elif p.last_run_status == 'cancelled' %}
+                    <span style="color: var(--text-2);">⊘ cancelled</span>
+                  {% endif %}
+                {% else %}&mdash;{% endif %}
+              </span>
             </td>
             <td>{{ p.step_count }}</td>
             <td>
@@ -88,11 +96,19 @@
                 <span style="color: var(--text-2);">disabled</span>
               {% endif %}
             </td>
-            <td style="text-align: right;">
+            <td style="text-align: right; white-space: nowrap;">
               {% if user and 'Admin' in (user.roles or []) %}
                 <button type="button"
                         onclick="orchestackRunPipeline({{ p.id }}, '{{ p.name|e }}')"
-                        class="btn btn-sm">Run now</button>
+                        class="btn btn-sm">Run</button>
+                <a href="{{ url_for('pipeline_detail_page', pipeline_id=p.id) }}"
+                   class="btn btn-sm">Edit</a>
+                <button type="button"
+                        onclick="orchestackDeletePipeline({{ p.id }}, '{{ p.name|e }}')"
+                        class="btn btn-sm btn-danger">Delete</button>
+              {% else %}
+                <a href="{{ url_for('pipeline_detail_page', pipeline_id=p.id) }}"
+                   class="btn btn-sm">View</a>
               {% endif %}
             </td>
           </tr>
@@ -103,17 +119,45 @@
   </div>
 
   <script>
+    function orchestackToast(msg, kind) {
+      const el = document.getElementById('pipelines-toast');
+      el.textContent = msg;
+      el.style.background = kind === 'error' ? '#7f1d1d' : (kind === 'info' ? '#1e40af' : '#064e3b');
+      el.style.display = 'block';
+      clearTimeout(window.__pipelineToastTimer);
+      window.__pipelineToastTimer = setTimeout(() => { el.style.display = 'none'; }, 4500);
+    }
+
     async function orchestackRunPipeline(pid, name) {
       if (!confirm("Run \"" + name + "\" now?\n\nEach step's service will be started in order with the configured buffer between steps.")) return;
       const resp = await fetch("/app/api/dashboard/pipelines/" + pid + "/run",
         { method: "POST", credentials: "same-origin" });
       if (!resp.ok) {
-        alert("Run failed (HTTP " + resp.status + "): " + (await resp.text()));
+        orchestackToast("Run failed: " + (await resp.text()), 'error');
         return;
       }
       const data = await resp.json();
-      // Jump to the detail page where the run history will show this run.
-      window.location.href = "/app/pipelines/" + pid;
+      // Show inline confirmation + flip the row's last-run cell to "running".
+      orchestackToast("Pipeline \"" + name + "\" is running (run #" + data.run_id + "). It'll update on the next page refresh — or check the pipeline detail page for live status.", 'info');
+      const lastCell = document.getElementById('p-last-' + pid);
+      if (lastCell) {
+        lastCell.innerHTML = '<span style="color: #0ea5e9;">⟳ running</span>';
+      }
+    }
+
+    async function orchestackDeletePipeline(pid, name) {
+      if (!confirm("Delete pipeline \"" + name + "\"?\n\nThis removes the pipeline + its run history. Cannot be undone.")) return;
+      const resp = await fetch("/app/api/dashboard/pipelines/" + pid, {
+        method: "DELETE", credentials: "same-origin",
+      });
+      if (!resp.ok) {
+        orchestackToast("Delete failed: " + (await resp.text()), 'error');
+        return;
+      }
+      // Remove the row in-place; spares a full page reload.
+      const row = document.getElementById('p-row-' + pid);
+      if (row) row.remove();
+      orchestackToast("Pipeline \"" + name + "\" deleted.");
     }
   </script>
 {% endblock %}

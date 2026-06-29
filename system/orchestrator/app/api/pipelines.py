@@ -292,6 +292,46 @@ async def run_pipeline_now(
     return {"ok": True, "run_id": run_id, "pipeline_id": pipeline_id}
 
 
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(
+    run_id: int,
+    actor_user_id: Annotated[int | None, Query()] = None,
+) -> dict[str, object]:
+    """Cancel a currently-running pipeline run.
+
+    Marks status='cancelled' in the DB. The executor checks this flag
+    between steps; if the run is cancelled mid-flight, the in-flight
+    step is allowed to complete (docker compose up/stop is already
+    racing) but no more steps fire. Idempotent — cancelling a
+    succeeded/failed/already-cancelled run is a no-op.
+    """
+    row = await db.fetchrow(
+        "SELECT pipeline_id, status FROM platform.pipeline_runs WHERE id = $1",
+        run_id,
+    )
+    if not row:
+        raise HTTPException(404, f"pipeline run {run_id} not found")
+    if row["status"] != "running":
+        return {"ok": True, "run_id": run_id, "status": row["status"], "noop": True}
+    await db.fetch(
+        """
+        UPDATE platform.pipeline_runs
+        SET status = 'cancelled',
+            completed_at = now(),
+            error_summary = 'cancelled by operator'
+        WHERE id = $1 AND status = 'running'
+        """,
+        run_id,
+    )
+    await audit.write(
+        "pipeline_run_cancelled",
+        service_name=None,
+        user_id=actor_user_id,
+        details={"pipeline_id": row["pipeline_id"], "run_id": run_id},
+    )
+    return {"ok": True, "run_id": run_id, "status": "cancelled"}
+
+
 @router.get("/{pipeline_id}/runs")
 async def list_runs(
     pipeline_id: int,

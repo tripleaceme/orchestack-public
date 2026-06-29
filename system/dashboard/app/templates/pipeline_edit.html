@@ -97,7 +97,20 @@
     <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border);" />
 
     <div class="form-row">
-      <label>Steps <span class="hint">services execute in order, top to bottom</span></label>
+      <label>Steps <span class="hint">cold-tier services execute in order, top to bottom</span></label>
+      <div style="font-size: 12px; color: var(--text-2); margin-bottom: 8px; line-height: 1.5;">
+        <strong>About the buffer:</strong> after each step's <code>start</code> or <code>stop</code> command
+        completes, the pipeline waits this many seconds BEFORE running the next step.
+        Gives the service time to finish booting (Airflow scheduler tick, Airbyte
+        worker register, etc.) so the next step can rely on it being responsive.
+        Default 300&nbsp;s = 5&nbsp;min. Last step's buffer is ignored (nothing
+        follows it).
+        <br>
+        <strong>Why only cold-tier services in the dropdown:</strong> hot-tier
+        services (Postgres, Metabase, pgAdmin) are always running &mdash; starting
+        them via a pipeline is a no-op. Pipelines are for waking cold services
+        before their internal schedulers fire.
+      </div>
       <div id="step-list"></div>
       <button type="button" class="add-step" onclick="orchestackAddStep()">+ Add a step</button>
     </div>
@@ -130,24 +143,34 @@
             <th>Status</th>
             <th>Completed</th>
             <th>Error</th>
+            <th style="text-align: right;"></th>
           </tr>
         </thead>
         <tbody>
           {% for r in runs %}
-            <tr>
+            <tr id="run-row-{{ r.id }}">
               <td class="font-mono" style="font-size: 12.5px;">{{ r.started_at[:19] | replace('T', ' ') }}</td>
               <td>{{ r.triggered_by }}</td>
-              <td>
+              <td id="run-status-{{ r.id }}">
                 {% if r.status == 'succeeded' %}
                   <span style="color: #047857;">✓ succeeded</span>
                 {% elif r.status == 'failed' %}
                   <span style="color: #dc2626;">✗ failed</span>
                 {% elif r.status == 'running' %}
                   <span style="color: #0ea5e9;">⟳ running</span>
+                {% elif r.status == 'cancelled' %}
+                  <span style="color: var(--text-2);">⊘ cancelled</span>
                 {% else %}{{ r.status }}{% endif %}
               </td>
               <td class="font-mono" style="font-size: 12.5px;">{% if r.completed_at %}{{ r.completed_at[:19] | replace('T', ' ') }}{% else %}&mdash;{% endif %}</td>
               <td style="font-size: 12px; color: var(--text-2);">{{ r.error_summary or '' }}</td>
+              <td style="text-align: right;">
+                {% if r.status == 'running' and user and 'Admin' in (user.roles or []) %}
+                  <button type="button"
+                          class="btn btn-sm btn-danger"
+                          onclick="orchestackCancelRun({{ r.id }})">Cancel</button>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -156,8 +179,27 @@
   {% endif %}
 
   <script>
-    // Build the step picker. Services come from the catalogue (non-control-plane).
-    const SERVICES = {{ services | tojson }};
+    async function orchestackCancelRun(runId) {
+      if (!confirm("Cancel this pipeline run?\n\nThe in-flight step will be allowed to finish (docker compose is already racing), but no MORE steps will fire.")) return;
+      const resp = await fetch("/app/api/dashboard/pipeline-runs/" + runId + "/cancel",
+        { method: "POST", credentials: "same-origin" });
+      if (!resp.ok) {
+        alert("Cancel failed: " + (await resp.text()));
+        return;
+      }
+      // Flip the status cell in place; the executor will catch up
+      // between steps and stop. Operator can refresh to see step_results.
+      const cell = document.getElementById('run-status-' + runId);
+      if (cell) cell.innerHTML = '<span style="color: var(--text-2);">⊘ cancelling…</span>';
+    }
+  </script>
+  {% endif %}
+
+  <script>
+    // Build the step picker. Cold-tier only — hot-tier services are
+    // already running so a pipeline start is a no-op, and putting them
+    // in the dropdown just confuses operators about what pipelines do.
+    const SERVICES = ({{ services | tojson }}).filter(s => s.tier === 'cold');
     const INITIAL_STEPS = {{ (pipeline.steps if pipeline else []) | tojson }};
 
     function orchestackUpdateTriggerFields() {
@@ -232,8 +274,9 @@
         alert('Save failed (HTTP ' + resp.status + '): ' + detail);
         return;
       }
-      const data = await resp.json();
-      window.location.href = '/app/pipelines/' + data.id;
+      // Redirect to the LIST page after save/create — operator wanted
+      // confirmation they're done editing, not to land back on the form.
+      window.location.href = '/app/pipelines';
     }
 
     async function orchestackDeletePipeline() {
