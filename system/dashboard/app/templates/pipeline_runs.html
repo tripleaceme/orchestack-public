@@ -1,0 +1,217 @@
+{# Pipeline runs view — focused run history with live status polling.
+   Separated from the edit page so the operator can watch in-flight
+   runs without entering edit mode. #}
+{% extends "base.html" %}
+{% block content %}
+  <div class="breadcrumb">
+    Workspace / <a href="{{ url_for('pipelines_page') }}">Pipelines</a> /
+    <a href="{{ url_for('pipeline_detail_page', pipeline_id=pipeline.id) }}">{{ pipeline.name }}</a> / Runs
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 18px;">
+    <h1 style="margin: 0;">{{ pipeline.name }} <span style="color: var(--text-2); font-weight: 400; font-size: 18px;">· runs</span></h1>
+    <div style="display: flex; gap: 8px;">
+      <a href="{{ url_for('pipeline_detail_page', pipeline_id=pipeline.id) }}" class="btn">Edit config</a>
+      {% if user and 'Admin' in (user.roles or []) %}
+        <button type="button" class="btn btn-primary" onclick="orchestackRunNow()">Run now</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="font-size: 13px; color: var(--text-2); margin-bottom: 16px;">
+    {% if pipeline.trigger_type == 'manual' %}
+      Manual trigger — runs only when an operator clicks Run.
+    {% elif pipeline.trigger_type == 'once' %}
+      One-shot trigger — fires once at {{ pipeline.trigger_value[:16] | replace('T', ' ') }}.
+    {% elif pipeline.trigger_type == 'cron' %}
+      Cron <code style="background: var(--bg); padding: 1px 4px; border-radius: 3px;">{{ pipeline.trigger_value }}</code> ({{ pipeline.trigger_timezone }})
+      {% if pipeline.next_run_at %}— next fire {{ pipeline.next_run_at[:16] | replace('T', ' ') }}{% endif %}
+    {% endif %}
+  </div>
+
+  <div id="runs-toast"
+       style="position: fixed; top: 16px; right: 16px; z-index: 1000;
+              padding: 10px 14px; border-radius: 6px;
+              background: #064e3b; color: white; font-size: 13px;
+              box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+              display: none; max-width: 380px;"></div>
+
+  <div class="surface">
+    <div class="surface-head">
+      <h2>Recent runs</h2>
+      <span class="sub" id="poll-status" style="font-size: 12px; color: var(--text-2);"></span>
+    </div>
+    <table class="data-table" id="runs-table">
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Triggered by</th>
+          <th>Status</th>
+          <th>Completed</th>
+          <th>Step results</th>
+          <th style="text-align: right;"></th>
+        </tr>
+      </thead>
+      <tbody id="runs-tbody">
+        {# Server-side initial render — the polling JS replaces this on first tick,
+           but server render means the page is useful immediately even before JS runs. #}
+        {% for r in runs %}
+          <tr id="run-row-{{ r.id }}">
+            <td class="font-mono" style="font-size: 12.5px;">{{ r.started_at[:19] | replace('T', ' ') }}</td>
+            <td>{{ r.triggered_by }}</td>
+            <td>
+              {% if r.status == 'succeeded' %}<span style="color: #047857;">✓ succeeded</span>
+              {% elif r.status == 'failed' %}<span style="color: #dc2626;">✗ failed</span>
+              {% elif r.status == 'running' %}<span style="color: #0ea5e9;">⟳ running</span>
+              {% elif r.status == 'cancelled' %}<span style="color: var(--text-2);">⊘ cancelled</span>
+              {% else %}{{ r.status }}{% endif %}
+            </td>
+            <td class="font-mono" style="font-size: 12.5px;">{% if r.completed_at %}{{ r.completed_at[:19] | replace('T', ' ') }}{% else %}&mdash;{% endif %}</td>
+            <td style="font-size: 12px; color: var(--text-2);">{{ r.error_summary or '' }}</td>
+            <td style="text-align: right;"></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--text-2);">No runs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const PIPELINE_ID = {{ pipeline.id }};
+    const RUNS_ENDPOINT = "/app/api/dashboard/pipelines/" + PIPELINE_ID + "/runs.json";
+    const IS_ADMIN = {{ ('Admin' in (user.roles or [])) | tojson if user else 'false' }};
+
+    function toast(msg, kind) {
+      const el = document.getElementById('runs-toast');
+      el.textContent = msg;
+      el.style.background = kind === 'error' ? '#7f1d1d' : (kind === 'info' ? '#1e40af' : '#064e3b');
+      el.style.display = 'block';
+      clearTimeout(window.__runsToastTimer);
+      window.__runsToastTimer = setTimeout(() => { el.style.display = 'none'; }, 4500);
+    }
+
+    function fmtStatus(s) {
+      if (s === 'succeeded') return '<span style="color: #047857;">✓ succeeded</span>';
+      if (s === 'failed')    return '<span style="color: #dc2626;">✗ failed</span>';
+      if (s === 'running')   return '<span style="color: #0ea5e9;">⟳ running</span>';
+      if (s === 'cancelled') return '<span style="color: var(--text-2);">⊘ cancelled</span>';
+      return s;
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return '—';
+      return ts.slice(0, 19).replace('T', ' ');
+    }
+
+    function fmtSteps(stepResults) {
+      // Compact per-step bullet list. Tooltips on red/green for errors.
+      if (!stepResults || !stepResults.length) return '<span style="color: var(--text-2);">—</span>';
+      return stepResults.map(s => {
+        const icon = s.status === 'succeeded' ? '<span style="color: #047857;">●</span>'
+                   : s.status === 'failed'    ? '<span style="color: #dc2626;" title="' + (s.error || '').replace(/"/g, '&quot;') + '">●</span>'
+                   : s.status === 'running'   ? '<span style="color: #0ea5e9;">●</span>'
+                   : '<span style="color: var(--text-2);">●</span>';
+        return icon + '&nbsp;' + s.service_name;
+      }).join(' &nbsp;');
+    }
+
+    function renderRows(runs) {
+      const tbody = document.getElementById('runs-tbody');
+      if (!runs || runs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--text-2);">No runs yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = runs.map(r => {
+        const cancelBtn = (r.status === 'running' && IS_ADMIN)
+          ? `<button type="button" class="btn btn-sm btn-danger" onclick="orchestackCancelRun(${r.id})">Cancel</button>`
+          : '';
+        const errCell = r.error_summary
+          ? `<td style="font-size: 12px; color: #dc2626;">${r.error_summary}</td>` : '<td></td>';
+        return `
+          <tr id="run-row-${r.id}">
+            <td class="font-mono" style="font-size: 12.5px;">${fmtTs(r.started_at)}</td>
+            <td>${r.triggered_by}</td>
+            <td>${fmtStatus(r.status)}</td>
+            <td class="font-mono" style="font-size: 12.5px;">${fmtTs(r.completed_at)}</td>
+            <td>${fmtSteps(r.step_results)}</td>
+            <td style="text-align: right;">${cancelBtn}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    async function fetchRuns(silent) {
+      try {
+        const r = await fetch(RUNS_ENDPOINT, { credentials: 'same-origin' });
+        if (!r.ok) {
+          if (!silent) toast('Could not refresh runs', 'error');
+          return null;
+        }
+        return (await r.json()).runs || [];
+      } catch (e) {
+        if (!silent) toast('Network error: ' + e.message, 'error');
+        return null;
+      }
+    }
+
+    let pollTimer = null;
+    function schedulePoll(runs) {
+      // Keep polling every 3s while any run is `running`, otherwise stop.
+      const anyRunning = runs.some(r => r.status === 'running');
+      const statusEl = document.getElementById('poll-status');
+      if (anyRunning) {
+        statusEl.textContent = '· live · refreshes every 3s';
+        clearTimeout(pollTimer);
+        pollTimer = setTimeout(tick, 3000);
+      } else {
+        statusEl.textContent = '';
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    async function tick() {
+      const runs = await fetchRuns(true);
+      if (runs) {
+        renderRows(runs);
+        schedulePoll(runs);
+      } else {
+        // network blip — back off but keep trying.
+        pollTimer = setTimeout(tick, 6000);
+      }
+    }
+
+    async function orchestackRunNow() {
+      if (!confirm("Run this pipeline now?")) return;
+      const r = await fetch("/app/api/dashboard/pipelines/" + PIPELINE_ID + "/run",
+        { method: 'POST', credentials: 'same-origin' });
+      if (!r.ok) {
+        toast('Run failed: ' + (await r.text()), 'error');
+        return;
+      }
+      toast('Run started — polling for status…', 'info');
+      tick();
+    }
+
+    async function orchestackCancelRun(runId) {
+      if (!confirm("Cancel this pipeline run?\n\nThe in-flight step finishes, no more steps fire.")) return;
+      const r = await fetch("/app/api/dashboard/pipeline-runs/" + runId + "/cancel",
+        { method: 'POST', credentials: 'same-origin' });
+      if (!r.ok) {
+        toast('Cancel failed: ' + (await r.text()), 'error');
+        return;
+      }
+      toast('Cancel requested', 'info');
+      tick();
+    }
+
+    // On load: if any of the server-rendered rows are `running`, start polling.
+    (async function init() {
+      const initialRuns = await fetchRuns(true);
+      if (initialRuns !== null) {
+        renderRows(initialRuns);
+        schedulePoll(initialRuns);
+      }
+    })();
+  </script>
+{% endblock %}

@@ -97,6 +97,8 @@
               {% endif %}
             </td>
             <td style="text-align: right; white-space: nowrap;">
+              <a href="{{ url_for('pipeline_runs_page', pipeline_id=p.id) }}"
+                 class="btn btn-sm">View runs</a>
               {% if user and 'Admin' in (user.roles or []) %}
                 <button type="button"
                         onclick="orchestackRunPipeline({{ p.id }}, '{{ p.name|e }}')"
@@ -106,9 +108,6 @@
                 <button type="button"
                         onclick="orchestackDeletePipeline({{ p.id }}, '{{ p.name|e }}')"
                         class="btn btn-sm btn-danger">Delete</button>
-              {% else %}
-                <a href="{{ url_for('pipeline_detail_page', pipeline_id=p.id) }}"
-                   class="btn btn-sm">View</a>
               {% endif %}
             </td>
           </tr>

@@ -625,6 +625,49 @@ async def pipeline_delete_action(
     return JSONResponse(result)
 
 
+@app.get("/pipelines/{pipeline_id}/runs", response_class=HTMLResponse, name="pipeline_runs_page")
+async def pipeline_runs_page(
+    request: Request, pipeline_id: int, user=Depends(require_user),
+) -> HTMLResponse:
+    """`/app/pipelines/{id}/runs` — focused run-history view.
+
+    Separate from the edit page so the operator can monitor a live run
+    without entering edit mode. Polls /api/dashboard/pipelines/{id}/runs.json
+    every 3s as long as any run is `running`, so live status appears
+    without manual refresh.
+    """
+    try:
+        pipeline = await orchestrator.get_pipeline(pipeline_id)
+    except httpx.HTTPError:
+        raise HTTPException(404, f"Pipeline {pipeline_id} not found")
+    try:
+        runs = (await orchestrator.list_pipeline_runs(pipeline_id, limit=20)).get("runs", [])
+    except (httpx.HTTPError, ValueError):
+        runs = []
+    return templates.TemplateResponse(
+        "pipeline_runs.html",
+        {
+            "request":    request,
+            "page_title": f"Runs · {pipeline['name']}",
+            "user":       user,
+            "pipeline":   pipeline,
+            "runs":       runs,
+        },
+    )
+
+
+@app.get("/api/dashboard/pipelines/{pipeline_id}/runs.json", name="pipeline_runs_json")
+async def pipeline_runs_json(
+    request: Request, pipeline_id: int, user=Depends(require_user),
+) -> JSONResponse:
+    """JSON-only — the runs page polls this for live status updates."""
+    try:
+        data = await orchestrator.list_pipeline_runs(pipeline_id, limit=20)
+    except httpx.HTTPError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    return JSONResponse(data)
+
+
 @app.post("/api/dashboard/pipeline-runs/{run_id}/cancel", name="pipeline_run_cancel_action")
 async def pipeline_run_cancel_action(
     request: Request, run_id: int, user=Depends(require_admin),
