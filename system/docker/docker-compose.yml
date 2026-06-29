@@ -223,6 +223,13 @@ services:
       # full access is intentional (vs. Traefik's read-only socket-proxy).
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services:/services:ro
+      # Read-only mount of the bundle's postgres-init/ so the orchestrator's
+      # migration runner can apply NEW schema changes shipped after the
+      # operator's initial install. docker-entrypoint only runs these on
+      # FIRST init (empty data dir); the orchestrator re-applies any new
+      # files on every startup, idempotently (tracks via
+      # platform.applied_migrations).
+      - ./postgres-init:/postgres-init:ro
       # Operator's `.env` is mounted RW so the credentials-admin view in
       # the dashboard can write updated values back; the orchestrator
       # also passes it to `docker compose --env-file` for per-service

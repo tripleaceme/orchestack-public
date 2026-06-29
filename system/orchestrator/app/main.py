@@ -9,7 +9,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from . import config, db, docker_ops, pipelines_executor, reconciler
+from . import config, db, docker_ops, migrations, pipelines_executor, reconciler
 from .api import admin, audit_api, auth, credentials, pinning, pipelines, services, sessions, setup as setup_api, users
 
 logging.basicConfig(
@@ -32,6 +32,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pool_ready = True
     except Exception as e:
         log.error("startup: DB pool init failed — running in degraded mode: %s", e)
+
+    # Apply pending migrations from /postgres-init/. New migrations
+    # shipped after the operator's initial install (which only ran
+    # via docker-entrypoint on first init) get applied here. Tracks
+    # via platform.applied_migrations to avoid re-runs.
+    if pool_ready:
+        try:
+            await migrations.apply_pending_migrations()
+        except Exception as e:
+            log.error("startup: migration runner failed: %s", e)
 
     # .env readability check — the bind-mount-as-empty-directory trap silently
     # breaks stop_service env interpolation, /api/credentials writes, and the

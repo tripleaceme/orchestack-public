@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pipelines — OrcheStack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="../index.html" class="brand">
+        <div class="brand-mark">O</div>
+        <span>OrcheStack</span>
+      </a>
+      <div class="docs-search">
+        <input type="text" placeholder="Search the docs...">
+        <span class="kbd">⌘K</span>
+      </div>
+      <ul>
+        <li><a class="nav-link" href="../docs/install.html">Get started</a></li>
+        <li><a class="nav-link" href="../services.html">Services</a></li>
+        <li><a class="nav-link active" href="index.html">Docs</a></li>
+        <li><a class="nav-link" href="#">Blog</a></li>
+        <li><a class="nav-link" href="../contact.html">Contact</a></li>
+      </ul>
+      <div class="cta">
+        <a class="btn btn-primary btn-sm" href="../docs/install.html">Get started</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="docs-layout">
+
+  <aside class="docs-sidebar">
+    <div class="group">
+      <div class="group-title">Get started</div>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="install.html">Step 1 — Install OrcheStack</a></li>
+        <li><a href="signup.html">Step 2 — Sign up</a></li>
+        <li><a href="configure.html">Step 3 — Configure services</a></li>
+        <li><a href="first-pipeline.html">Step 4 — Run first pipeline</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Concepts</div>
+      <ul>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="hot-cold-tiers.html">Hot &amp; cold tiers</a></li>
+        <li><a href="roles-permissions.html">Roles &amp; permissions</a></li>
+        <li><a href="sessions.html">Service sessions</a></li>
+        <li><a class="active" href="pipelines.html">Pipelines</a></li>
+        <li><a href="account-management.html">Account management</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Services</div>
+      <ul>
+        <li><a href="services/airbyte.html">Airbyte</a></li>
+        <li><a href="services/airflow.html">Apache Airflow</a></li>
+        <li><a href="services/dbt.html">dbt Core</a></li>
+        <li><a href="services/postgres.html">PostgreSQL</a></li>
+        <li><a href="services/minio.html">MinIO</a></li>
+        <li><a href="services/metabase.html">Metabase</a></li>
+        <li><a href="services/openmetadata.html">OpenMetadata</a></li>
+        <li><a href="services/great-expectations.html">Great Expectations</a></li>
+        <li><a href="services/pgadmin.html">pgAdmin</a></li>
+      </ul>
+    </div>
+    <div class="group">
+      <div class="group-title">Operations</div>
+      <ul>
+        <li><a href="credentials.html">Managing credentials</a></li>
+        <li><a href="backup-restore.html">Backup &amp; restore</a></li>
+        <li><a href="upgrading.html">Upgrading OrcheStack</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="docs-main">
+    <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Concepts</a> › Pipelines</div>
+    <h1>Pipelines</h1>
+    <p class="lede">A pipeline wakes a sequence of cold-tier services on a schedule. It does not run jobs — it just turns the lights on so each tool's own internal scheduler can fire its own work.</p>
+
+<h2 id="why">Why pipelines exist</h2>
+<p>Most data tools have their own scheduler:</p>
+<ul>
+  <li><strong>Airflow</strong> runs DAGs on a schedule.</li>
+  <li><strong>Airbyte</strong> runs connections on a schedule.</li>
+  <li><strong>dbt + cosmos</strong> generates per-model tasks inside Airflow's schedule.</li>
+</ul>
+<p>But all of these only fire if the tool's container is <em>running</em>. OrcheStack puts these tools in the <a href="hot-cold-tiers.html">cold tier</a> — they sleep after 10&nbsp;minutes of no activity to save resources. A cold Airflow can't fire an 8&nbsp;AM DAG because it's not running at 8&nbsp;AM.</p>
+<p>Pinning solves this (a pinned service never sleeps) but it's blunt — you lose the cold-tier savings entirely. Pipelines are the lighter alternative: <strong>schedule the wake-up</strong>, then let the service go cold again when idle.</p>
+
+<h2 id="not-a-job-orchestrator">Pipelines are NOT a job orchestrator</h2>
+<p>Pipelines don't run dbt models, they don't trigger Airbyte syncs, they don't shape DAGs. Each tool keeps owning that. The pipeline's only job is "be UP at the right time."</p>
+<p>If you need to RUN a job (e.g. "trigger this specific Airbyte connection then run dbt models then refresh Metabase"), use Airflow — write a DAG with <code class="inline">HttpOperator</code> + <code class="inline">DbtTaskGroup</code> as documented in <a href="services/airflow.html">the Airflow service page</a>. That DAG lives inside Airflow's scheduler. The OrcheStack pipeline's job is just to make sure Airflow itself is awake when its DAG schedule fires.</p>
+
+<h2 id="triggers">Trigger types</h2>
+<table>
+  <thead><tr><th>Type</th><th>When it fires</th><th>Trigger value</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Manual</strong></td>
+      <td>Only when an operator clicks <strong>Run</strong> on the pipeline list page.</td>
+      <td>None.</td>
+    </tr>
+    <tr>
+      <td><strong>Once</strong></td>
+      <td>Once at the configured datetime, then never again.</td>
+      <td>ISO datetime (your local timezone, stored as UTC).</td>
+    </tr>
+    <tr>
+      <td><strong>Cron</strong></td>
+      <td>Recurring on a cron schedule.</td>
+      <td>5-field cron expression (<code class="inline">min hour dom mon dow</code>) + timezone. E.g. <code class="inline">0 8 * * *</code> = 8 AM daily.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="steps">Steps</h2>
+<p>A pipeline is an ordered list of steps. Each step has:</p>
+<ul>
+  <li><strong>Service</strong> — picked from the cold-tier services in your catalogue (Airflow, Airbyte, dbt, GE, MinIO, OpenMetadata). Hot-tier services (Postgres, Metabase, pgAdmin) aren't pickable — they're already running.</li>
+  <li><strong>Action</strong> — <code class="inline">start</code> or <code class="inline">stop</code>.</li>
+  <li><strong>Buffer (seconds)</strong> — after the action completes, the pipeline waits this long BEFORE running the next step. Lets the service finish booting (Airflow scheduler tick, Airbyte worker register, etc.) so step N+1 can rely on step N being responsive. Default 300&nbsp;s (5&nbsp;min). The last step's buffer is ignored (nothing follows it).</li>
+</ul>
+
+<h2 id="execution">Execution semantics</h2>
+<p>Steps run <strong>sequentially</strong>, top to bottom.</p>
+<p><strong>Bail on first failure.</strong> If a step's <code class="inline">docker compose up</code> / <code class="inline">stop</code> fails, the pipeline stops there — remaining steps don't fire. Operators model pipelines as dependency chains: if "start Airbyte" fails, running "start dbt" after it is meaningless because dbt's data source isn't up. The <code class="inline">step_results</code> field of the pipeline_run shows exactly which step blew up.</p>
+<p><strong>Manual fire subsumes the pending scheduled fire.</strong> If you manually <strong>Run</strong> a pipeline that's also scheduled for later (cron or once), the upcoming scheduled fire is skipped. For cron triggers, the run advances <code class="inline">next_run_at</code> to the cron match <em>after</em> the pending slot; for once triggers, <code class="inline">next_run_at</code> is cleared. Prevents the "I ran it at 16:15 and now it's running AGAIN at 16:30" surprise.</p>
+<p><strong>No overlap.</strong> If a pipeline's previous run is still in progress when its trigger fires, the new fire is skipped (the scheduler's check is <code class="inline">NOT EXISTS (... WHERE status='running')</code>). The trigger won't queue — it just waits for the next match.</p>
+
+<h2 id="when-to-stop">When stop actions make sense</h2>
+<p>Cold-tier services already auto-stop after 10&nbsp;minutes of no sessions (the reconciler handles this). So you usually don't need explicit stop steps. They're useful in two cases:</p>
+<ul>
+  <li><strong>Pinned services</strong> — pinning bypasses the reconciler's idle-stop. A stop step in a pipeline is the only way to stop a pinned service on a schedule.</li>
+  <li><strong>Coordinated shutdown</strong> — "stop Airflow at 11&nbsp;PM and Airbyte at 11:05&nbsp;PM" — a single pipeline with two stop steps + a 5-min buffer between them. Two stop-pipelines on cron would also work; pick whichever reads cleanest.</li>
+</ul>
+
+<h2 id="cancelling">Cancelling a running pipeline</h2>
+<p>The Recent runs table on a pipeline's detail page shows a <strong>Cancel</strong> button next to any run with status <code class="inline">running</code> (admin-only). Clicking it:</p>
+<ol>
+  <li>Marks the run as <code class="inline">cancelled</code> in the database immediately.</li>
+  <li>The executor checks this flag between steps AND every 5&nbsp;seconds during the buffer wait. As soon as it sees <code class="inline">cancelled</code>, no further steps fire.</li>
+  <li>The in-flight step (the one currently running) is allowed to complete — <code class="inline">docker compose up</code> is already racing against the daemon and there's no clean way to abort it mid-stream. The exact behaviour: cancel after step 1 succeeds + while waiting buffer → step 2 never fires; cancel mid-step-1 → step 1 still completes, step 2 never fires.</li>
+</ol>
+
+<h2 id="ui-walkthrough">Editor walkthrough</h2>
+<ol>
+  <li><strong>Pipelines</strong> in the sidebar → click <strong>+ New pipeline</strong>.</li>
+  <li>Give it a name (unique, shown everywhere) + optional description.</li>
+  <li>Pick a trigger. For cron, the timezone field accepts any IANA name (<code class="inline">UTC</code>, <code class="inline">Europe/London</code>, <code class="inline">Africa/Lagos</code>, etc.).</li>
+  <li>Click <strong>+ Add a step</strong> to add a service. Set start/stop + buffer.</li>
+  <li>Click <strong>Create</strong>. You land back on the list page; the new pipeline shows its next-run time + step count.</li>
+</ol>
+<p>On the list page each pipeline has three buttons: <strong>Run</strong> (fire now), <strong>Edit</strong> (open the config form), <strong>Delete</strong> (remove + drop history).</p>
+
+<h2 id="audit-trail">Audit trail</h2>
+<p>Every operation writes an event to <code class="inline">platform.audit_log</code>:</p>
+<ul>
+  <li><code class="inline">pipeline_created</code> / <code class="inline">pipeline_updated</code> / <code class="inline">pipeline_deleted</code></li>
+  <li><code class="inline">pipeline_run_started</code> — when a run begins (whether scheduled or manual).</li>
+  <li><code class="inline">pipeline_run_succeeded</code> / <code class="inline">pipeline_run_failed</code> — when a run completes.</li>
+  <li><code class="inline">pipeline_run_cancelled</code> — when an operator clicks Cancel.</li>
+</ul>
+<p>The pipeline_run row itself stores <code class="inline">step_results</code> (per-step status + error if any) so you can drill from an audit event into the exact failure point.</p>
+
+<h2 id="limitations">Current limitations (v0.1.x)</h2>
+<ul>
+  <li><strong>No inter-pipeline dependencies.</strong> Pipelines fire independently. You can't say "fire pipeline B after pipeline A completes." Workaround: stagger their cron times.</li>
+  <li><strong>No parallel steps within one pipeline.</strong> Steps are strictly sequential. To start two services at the same wall-clock time, create two cron pipelines with the same trigger.</li>
+  <li><strong>No conditional steps.</strong> Steps always run (until a failure stops the chain). No if-X-then-Y logic. That's by design — pipelines are scheduling, not orchestration.</li>
+  <li><strong>Cancel doesn't abort the in-flight compose command.</strong> The step that's currently racing against docker compose continues; cancel takes effect at the next inter-step boundary. Usually within seconds.</li>
+</ul>
+
+    <div class="next-prev">
+      <a href="sessions.html">
+        <span class="dir">← Previous</span>
+        <span class="title">Service sessions</span>
+      </a>
+      <a class="next" href="account-management.html">
+        <span class="dir">Next</span>
+        <span class="title">Account management →</span>
+      </a>
+    </div>
+  </main>
+
+  <aside class="docs-toc">
+    <div class="toc-title">On this page</div>
+    <ul>
+      <li><a class="active" href="#why">Why pipelines exist</a></li>
+      <li><a href="#not-a-job-orchestrator">Not a job orchestrator</a></li>
+      <li><a href="#triggers">Trigger types</a></li>
+      <li><a href="#steps">Steps</a></li>
+      <li><a href="#execution">Execution semantics</a></li>
+      <li><a href="#when-to-stop">When to use stop</a></li>
+      <li><a href="#cancelling">Cancelling a running run</a></li>
+      <li><a href="#ui-walkthrough">Editor walkthrough</a></li>
+      <li><a href="#audit-trail">Audit trail</a></li>
+      <li><a href="#limitations">Current limitations</a></li>
+    </ul>
+  </aside>
+
+</div>
+
+</body>
+</html>

@@ -27,15 +27,23 @@
     .pipe-form .trigger-fields { display: none; margin-top: 8px; }
     .pipe-form .trigger-fields.active { display: block; }
     .pipe-form .step-row {
-      display: grid; grid-template-columns: 30px 1fr 120px 100px 60px;
+      display: grid;
+      /* Six grid columns to match the six cells we render. Previously
+         five columns + six elements made the last element (the remove
+         button) wrap onto a second row inside each step, which the
+         operator saw as a "messed up UI". */
+      grid-template-columns: 32px 1fr 120px 110px 40px;
       gap: 10px; padding: 10px; align-items: center;
       border: 1px solid var(--border); border-radius: 6px;
       background: var(--bg); margin-bottom: 8px;
     }
     .pipe-form .step-row .order { font-weight: 600; color: var(--text-2); text-align: center; }
     .pipe-form .step-row select,
-    .pipe-form .step-row input { padding: 6px 8px; font-size: 13px; }
-    .pipe-form .step-row .remove { background: none; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 4px; padding: 5px 8px; cursor: pointer; font-size: 12px; }
+    .pipe-form .step-row input { padding: 6px 8px; font-size: 13px; width: 100%; box-sizing: border-box; }
+    .pipe-form .step-row .buffer-cell { display: flex; align-items: center; gap: 6px; }
+    .pipe-form .step-row .buffer-cell input { width: 64px; }
+    .pipe-form .step-row .buffer-cell span { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+    .pipe-form .step-row .remove { background: none; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 4px; padding: 5px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
     .pipe-form .step-row .remove:hover { background: #fef2f2; }
     .pipe-form .add-step { margin-top: 8px; padding: 8px 14px; background: var(--bg); border: 1px dashed var(--border); border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--navy); }
     .pipe-form .add-step:hover { background: var(--surface); border-color: var(--navy); }
@@ -107,7 +115,7 @@
         follows it).
         <br>
         <strong>Why only cold-tier services in the dropdown:</strong> hot-tier
-        services (Postgres, Metabase, pgAdmin) are always running &mdash; starting
+        services (Postgres, Metabase, pgAdmin) are always running, starting
         them via a pipeline is a no-op. Pipelines are for waking cold services
         before their internal schedulers fire.
       </div>
@@ -215,6 +223,11 @@
       const opts = SERVICES.map(s =>
         `<option value="${s.name}" ${prefill && prefill.service_name === s.name ? 'selected' : ''}>${s.display_name}</option>`
       ).join('');
+      // Five grid cells in the row: order | service | action | buffer | remove.
+      // The buffer cell holds BOTH the input and the "s buffer" label
+      // inside a flex wrapper so the grid stays at five columns. Previously
+      // six top-level children + five columns wrapped the X-button onto a
+      // second visible row inside each step (operator's "messed up UI").
       row.innerHTML =
         `<div class="order">${idx + 1}</div>
          <select class="step-service">${opts}</select>
@@ -222,9 +235,12 @@
            <option value="start" ${(!prefill || prefill.action === 'start') ? 'selected' : ''}>start</option>
            <option value="stop" ${prefill && prefill.action === 'stop' ? 'selected' : ''}>stop</option>
          </select>
-         <input type="number" class="step-buffer" min="0" max="3600"
-                value="${prefill ? prefill.buffer_seconds : 300}" /><span style="font-size:11px;color:var(--text-2);">s buffer</span>
-         <button type="button" class="remove" onclick="this.parentElement.remove(); orchestackRenumberSteps()">✕</button>`;
+         <div class="buffer-cell">
+           <input type="number" class="step-buffer" min="0" max="3600"
+                  value="${prefill ? prefill.buffer_seconds : 300}" />
+           <span>s buffer</span>
+         </div>
+         <button type="button" class="remove" onclick="this.parentElement.remove(); orchestackRenumberSteps()" title="Remove step">✕</button>`;
       list.appendChild(row);
     }
 
