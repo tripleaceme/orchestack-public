@@ -129,8 +129,8 @@
 <h2 id="steps">Steps</h2>
 <p>A pipeline is an ordered list of steps. Each step has:</p>
 <ul>
-  <li><strong>Service</strong> — picked from the cold-tier services in your catalogue (Airflow, Airbyte, dbt, GE, MinIO, OpenMetadata). Hot-tier services (Postgres, Metabase, pgAdmin) aren't pickable — they're already running.</li>
-  <li><strong>Action</strong> — <code class="inline">start</code> or <code class="inline">stop</code>.</li>
+  <li><strong>Service</strong> — any service in your catalogue. Cold-tier services get woken; hot-tier services (Postgres, Metabase, pgAdmin) are tagged <code class="inline">(always-on)</code> in the dropdown and execute as no-ops — they're allowed in the step list so a pipeline reads as a complete dependency chain ("start postgres → start dbt") even though postgres is already up.</li>
+  <li><strong>Action</strong> — <code class="inline">start</code> or <code class="inline">stop</code>. The action picker is greyed out for hot-tier picks since the step no-ops regardless.</li>
   <li><strong>Buffer (seconds)</strong> — after the action completes, the pipeline waits this long BEFORE running the next step. Lets the service finish booting (Airflow scheduler tick, Airbyte worker register, etc.) so step N+1 can rely on step N being responsive. Default 300&nbsp;s (5&nbsp;min). The last step's buffer is ignored (nothing follows it).</li>
 </ul>
 

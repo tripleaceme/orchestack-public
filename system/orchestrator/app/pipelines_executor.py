@@ -26,7 +26,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import audit, db, docker_ops
+from . import audit, config, db, docker_ops
 
 log = logging.getLogger(__name__)
 
@@ -215,22 +215,40 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
             "status":       "running",
         }
         try:
-            if s["action"] == "start":
+            # Hot-tier services (Postgres, Metabase, pgAdmin) are always
+            # on — start_service would no-op via `docker compose up -d`
+            # but we still want stop steps on them to NOT actually stop
+            # them (stopping Postgres breaks the warehouse). Short-circuit
+            # both actions to an instant success with a note. The
+            # dashboard editor flags hot-tier picks with a "(always-on)"
+            # suffix and a faded action picker, so operators are warned
+            # before they save.
+            tier = config.SERVICE_CATALOGUE.get(s["service_name"], {}).get("tier")
+            if tier == "hot":
+                result["status"] = "succeeded"
+                result["note"]   = f"hot-tier (always-on) — {s['action']} no-op"
+            elif s["action"] == "start":
                 op = await asyncio.wait_for(
                     docker_ops.start_service(s["service_name"]),
                     timeout=STEP_ACTION_TIMEOUT_SECONDS,
                 )
+                if op.ok:
+                    result["status"] = "succeeded"
+                else:
+                    result["status"] = "failed"
+                    result["error"]  = op.short_stderr
+                    any_failed = True
             else:
                 op = await asyncio.wait_for(
                     docker_ops.stop_service(s["service_name"]),
                     timeout=STEP_ACTION_TIMEOUT_SECONDS,
                 )
-            if op.ok:
-                result["status"] = "succeeded"
-            else:
-                result["status"] = "failed"
-                result["error"]  = op.short_stderr
-                any_failed = True
+                if op.ok:
+                    result["status"] = "succeeded"
+                else:
+                    result["status"] = "failed"
+                    result["error"]  = op.short_stderr
+                    any_failed = True
         except asyncio.TimeoutError:
             result["status"] = "failed"
             result["error"]  = f"timeout after {STEP_ACTION_TIMEOUT_SECONDS}s"

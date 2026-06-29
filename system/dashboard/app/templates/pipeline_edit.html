@@ -115,7 +115,7 @@
     <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border);" />
 
     <div class="form-row">
-      <label>Steps <span class="hint">cold-tier services execute in order, top to bottom</span></label>
+      <label>Steps <span class="hint">services execute in order, top to bottom</span></label>
       <div style="font-size: 12px; color: var(--text-2); margin-bottom: 8px; line-height: 1.5;">
         <strong>About the buffer:</strong> after each step's <code>start</code> or <code>stop</code> command
         completes, the pipeline waits this many seconds BEFORE running the next step.
@@ -124,10 +124,10 @@
         Default 300&nbsp;s = 5&nbsp;min. Last step's buffer is ignored (nothing
         follows it).
         <br>
-        <strong>Why only cold-tier services in the dropdown:</strong> hot-tier
-        services (Postgres, Metabase, pgAdmin) are always running, starting
-        them via a pipeline is a no-op. Pipelines are for waking cold services
-        before their internal schedulers fire.
+        <strong>Hot-tier services (Postgres, Metabase, pgAdmin):</strong> always-on,
+        so picking them is a no-op at runtime — but allowed so a pipeline's step
+        list reads as a complete dependency chain ("start postgres → start dbt").
+        The step succeeds instantly and the next step fires after the buffer.
       </div>
       <div id="step-list"></div>
       <button type="button" class="add-step" onclick="orchestackAddStep()">+ Add a step</button>
@@ -213,10 +213,12 @@
   </script>
 
   <script>
-    // Build the step picker. Cold-tier only — hot-tier services are
-    // already running so a pipeline start is a no-op, and putting them
-    // in the dropdown just confuses operators about what pipelines do.
-    const SERVICES = ({{ services | tojson }}).filter(s => s.tier === 'cold');
+    // Build the step picker. Includes BOTH tiers — cold-tier services
+    // need waking, hot-tier services are already on but operators want
+    // them in the step list for readability ("start postgres → start dbt"
+    // reads better than "start dbt" alone). Hot-tier steps execute as
+    // no-ops; the executor short-circuits docker compose for them.
+    const SERVICES = ({{ services | tojson }});
     const INITIAL_STEPS = {{ (pipeline.steps if pipeline else []) | tojson }};
 
     function orchestackUpdateTriggerFields() {
@@ -230,17 +232,18 @@
       const idx = list.children.length;
       const row = document.createElement('div');
       row.className = 'step-row';
-      const opts = SERVICES.map(s =>
-        `<option value="${s.name}" ${prefill && prefill.service_name === s.name ? 'selected' : ''}>${s.display_name}</option>`
-      ).join('');
+      // Suffix hot-tier services with "(always-on)" in the dropdown so
+      // operators see immediately that the pick is a no-op step.
+      const opts = SERVICES.map(s => {
+        const suffix = s.tier === 'hot' ? ' (always-on)' : '';
+        return `<option value="${s.name}" data-tier="${s.tier}" ${prefill && prefill.service_name === s.name ? 'selected' : ''}>${s.display_name}${suffix}</option>`;
+      }).join('');
       // Five grid cells in the row: order | service | action | buffer | remove.
       // The buffer cell holds BOTH the input and the "s buffer" label
-      // inside a flex wrapper so the grid stays at five columns. Previously
-      // six top-level children + five columns wrapped the X-button onto a
-      // second visible row inside each step (operator's "messed up UI").
+      // inside a flex wrapper so the grid stays at five columns.
       row.innerHTML =
         `<div class="order">${idx + 1}</div>
-         <select class="step-service">${opts}</select>
+         <select class="step-service" onchange="orchestackUpdateStepTierUI(this)">${opts}</select>
          <select class="step-action">
            <option value="start" ${(!prefill || prefill.action === 'start') ? 'selected' : ''}>start</option>
            <option value="stop" ${prefill && prefill.action === 'stop' ? 'selected' : ''}>stop</option>
@@ -252,6 +255,28 @@
          </div>
          <button type="button" class="remove" onclick="this.parentElement.remove(); orchestackRenumberSteps()" title="Remove step">✕</button>`;
       list.appendChild(row);
+      // Reflect the initial selection's tier in the row's visual style
+      // (greyed-out action picker for hot-tier, since it'll no-op).
+      orchestackUpdateStepTierUI(row.querySelector('.step-service'));
+    }
+
+    function orchestackUpdateStepTierUI(serviceSelect) {
+      // When a hot-tier service is selected, fade the action picker
+      // to signal "this will no-op at runtime regardless of start/stop."
+      // We don't disable it — operator can still pick stop for visual
+      // parallelism in the step list — but the colour change makes
+      // clear that the action doesn't change runtime behaviour.
+      const tier = serviceSelect.selectedOptions[0]?.dataset.tier;
+      const row = serviceSelect.closest('.step-row');
+      if (!row) return;
+      const action = row.querySelector('.step-action');
+      if (tier === 'hot') {
+        action.style.opacity = '0.55';
+        action.title = "Hot-tier service — step is a no-op regardless of start/stop";
+      } else {
+        action.style.opacity = '';
+        action.title = '';
+      }
     }
 
     function orchestackRenumberSteps() {
