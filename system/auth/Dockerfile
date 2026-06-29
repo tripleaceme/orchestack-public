@@ -53,7 +53,9 @@ RUN rm /etc/nginx/conf.d/default.conf
 # Site configuration (scoped to /signup, /login, /setup/*, /assets/*).
 COPY system/auth/nginx.conf /etc/nginx/conf.d/OrcheStack.conf
 
-# In-container pages: signup.html, login.html, setup/*.html.
+# In-container pages: signup.html, setup/*.html. /login is no longer
+# served from a static page here — nginx 302-redirects to the
+# dashboard's /app/login template instead (see nginx.conf).
 # The public/ folder contains an `assets/css` SYMLINK that points up to the
 # repo-root assets/css/ — this exists only for local development (so that
 # `python3 -m http.server --directory system/auth/public` can resolve the
