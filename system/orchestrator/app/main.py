@@ -110,6 +110,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Heal-on-startup is best-effort — never block app start on it.
             log.warning("startup: admin auto-heal skipped: %s", e)
 
+    # Hot-tier autostart: walk the catalogue + ensure every configured
+    # hot-tier service is RUNNING. The reconciler excludes hot-tier from
+    # idle-stop but never STARTS them — so if a hot-tier service stops
+    # for any reason (operator's `docker stop`, OOM kill, restart-policy
+    # gap mid-upgrade) it stays down until the operator notices and
+    # restarts manually. One operator hit this after upgrade: 1/3 hot
+    # services showing as running. start_service is idempotent (no-ops
+    # if already up via `docker compose up -d`), so this is cheap on a
+    # healthy boot. Best-effort: don't block app start on it.
+    if pool_ready:
+        try:
+            configured = await db.fetch(
+                "SELECT name FROM platform.installed_services WHERE enabled = true",
+            )
+            configured_names = {r["name"] for r in configured}
+            for svc, meta in config.SERVICE_CATALOGUE.items():
+                if meta.get("tier") != "hot":
+                    continue
+                if meta.get("control_plane"):
+                    # Control-plane (dashboard/orchestrator/auth) are
+                    # already running — that's HOW this code is executing.
+                    continue
+                if svc not in configured_names:
+                    continue
+                try:
+                    op = await docker_ops.start_service(svc)
+                    if op.ok:
+                        log.info("startup: hot-tier autostart ensured %s is running", svc)
+                    else:
+                        log.warning(
+                            "startup: hot-tier autostart for %s returned non-ok: %s",
+                            svc, op.short_stderr,
+                        )
+                except Exception as e:
+                    log.warning("startup: hot-tier autostart of %s failed: %s", svc, e)
+        except Exception as e:
+            log.warning("startup: hot-tier autostart skipped: %s", e)
+
     stop_event = asyncio.Event()
     reconciler_task: asyncio.Task | None = None
     pipelines_task: asyncio.Task | None = None

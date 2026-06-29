@@ -125,7 +125,7 @@
         follows it).
         <br>
         <strong>Hot-tier services (Postgres, Metabase, pgAdmin):</strong> always-on,
-        so picking them is a no-op at runtime — but allowed so a pipeline's step
+        so picking them is a no-op at runtime, but allowed so a pipeline's step
         list reads as a complete dependency chain ("start postgres → start dbt").
         The step succeeds instantly and the next step fires after the buffer.
       </div>
