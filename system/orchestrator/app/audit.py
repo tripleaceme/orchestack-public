@@ -28,7 +28,7 @@ async def write(
             action,
             user_id if user_id is not None else config.DEFAULT_USER_ID,
             service_name,
-            json.dumps(details or {}),
+            details or {},
         )
     except Exception as e:
         # Never raise — caller's operation continues even if audit fails.

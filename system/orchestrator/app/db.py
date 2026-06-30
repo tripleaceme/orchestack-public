@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -13,6 +14,31 @@ from . import config
 log = logging.getLogger("orchestrator.db")
 
 _pool: asyncpg.Pool | None = None
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """Per-connection init: register a JSONB codec so JSONB columns
+    surface in Python as dicts/lists instead of raw JSON strings.
+
+    Without this codec, asyncpg returns JSONB as a string. The pipeline
+    runs page was the surfaced symptom: step_results came back as a
+    JSON-encoded string, Jinja's selectattr couldn't iterate it, every
+    step rendered as "queued" even after several had succeeded. Fixing
+    it at the pool layer covers every JSONB column in the schema
+    (audit_log.details, etc.) so the same class of bug can't recur.
+    """
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
+    await conn.set_type_codec(
+        "json",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
 
 
 async def init_pool() -> asyncpg.Pool:
@@ -35,6 +61,8 @@ async def init_pool() -> asyncpg.Pool:
         max_size=config.DB_POOL_MAX,
         # Set search_path so queries don't need to qualify `platform.x`.
         server_settings={"search_path": "platform, public"},
+        # Per-connection init: register JSON/JSONB codecs.
+        init=_init_connection,
     )
     log.info("postgres pool ready")
     return _pool

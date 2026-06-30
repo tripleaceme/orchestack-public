@@ -133,7 +133,7 @@ async def deploy(req: DeployRequest) -> dict[str, object]:
             updated_at   = now(),
             completed_at = now()
         """,
-        user_id, json.dumps(req.selections),
+        user_id, req.selections,
     )
 
     # Snapshot which services were already enabled BEFORE this deploy.

@@ -201,7 +201,7 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
         try:
             await db.fetch(
                 "UPDATE platform.pipeline_runs SET step_results = $2::jsonb WHERE id = $1",
-                run_id, json.dumps(step_results),
+                run_id, step_results,
             )
         except Exception as e:
             # Persistence failure shouldn't kill the run — log + continue.
@@ -329,7 +329,7 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
         # before the cancel signal was observed.
         await db.fetch(
             "UPDATE platform.pipeline_runs SET step_results = $2::jsonb WHERE id = $1 AND status = 'cancelled'",
-            run_id, json.dumps(step_results),
+            run_id, step_results,
         )
         await db.fetch(
             "UPDATE platform.pipelines SET last_run_status = 'cancelled' WHERE id = $1",
@@ -349,7 +349,7 @@ async def _execute_run(pipeline_id: int, run_id: int) -> None:
             step_results = $3::jsonb, error_summary = $4
         WHERE id = $1
         """,
-        run_id, final_status, json.dumps(step_results), summary,
+        run_id, final_status, step_results, summary,
     )
     await db.fetch(
         "UPDATE platform.pipelines SET last_run_status = $2 WHERE id = $1",
