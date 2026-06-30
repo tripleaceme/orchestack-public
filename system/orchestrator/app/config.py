@@ -133,25 +133,39 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # whose React SPAs emit absolute-root asset paths), so no external_url
     # override is needed.
     # scheduling_warning surfaces as a banner on the dashboard tile +
-    # service-detail page. Airflow is the canonical case: cold-tier
-    # services sleep after 10 min idle, but Airflow's whole job is to
-    # fire schedules at specific times. A cold Airflow can't fire an
-    # 8 AM DAG because it's not running at 8 AM. The fix today is to
-    # pin Airflow from the dashboard; a v0.2 feature will read DAG
-    # schedules + auto-wake briefly before each scheduled run.
+    # service-detail page. ANY cold-tier service that runs an internal
+    # scheduler (Airflow DAGs, Airbyte connection schedules, OpenMetadata
+    # ingestion workflows) needs this warning, because cold-tier sleeps
+    # after IDLE_THRESHOLD (currently 20 min) and a sleeping container
+    # can't fire scheduled work. Operators have two fixes today:
+    # (a) pin the service from the Keep warm card, or (b) create an
+    # OrcheStack Pipeline that wakes the service before its scheduled
+    # window. v0.2 will read schedules + auto-wake briefly.
     "airflow":      {
         "tier": "cold", "display_name": "Apache Airflow", "layer": "orchestration", "managed": True,
         "scheduling_warning": (
-            "Airflow runs cold-tier — it sleeps after 10 minutes of no "
+            "Airflow runs cold-tier — it sleeps after 20 minutes of no "
             "activity, which means scheduled DAGs won't fire while it's "
             "asleep. Pin Airflow from the Keep warm card if you rely on "
-            "scheduled DAGs."
+            "scheduled DAGs, or create a Pipeline that wakes Airflow "
+            "before each scheduled run."
         ),
     },
     # Airbyte's webapp emits absolute-root asset paths (/assets/index-XXX.js)
     # — same subpath-incompatibility class as MinIO. external_url sends
     # operators to host port 8001 instead of the broken /app/airbyte subpath.
-    "airbyte":      {"tier": "cold", "display_name": "Airbyte",             "layer": "ingestion",    "managed": True, "external_url": "http://{host}:8001"},
+    "airbyte":      {
+        "tier": "cold", "display_name": "Airbyte", "layer": "ingestion", "managed": True,
+        "external_url": "http://{host}:8001",
+        "scheduling_warning": (
+            "Airbyte runs cold-tier — it sleeps after 20 minutes of no "
+            "activity. Connection schedules (e.g. \"every 6 hours\", "
+            "\"daily at 02:00\") won't fire while it's asleep. Pin "
+            "Airbyte from the Keep warm card if you rely on scheduled "
+            "syncs, or create a Pipeline that wakes Airbyte before each "
+            "scheduled window."
+        ),
+    },
     # OpenMetadata: React SPA emits absolute-root asset paths that don't
     # survive Traefik's stripprefix middleware. WEB_CONF_URI is supposed to
     # control this in OM 1.6.x but doesn't — the webpack publicPath is
@@ -163,6 +177,14 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
         "tier": "cold", "display_name": "OpenMetadata", "layer": "governance", "managed": True,
         "external_url": "http://{host}:8585",
         "ready_probe": (8585, "/api/v1/system/version"),
+        "scheduling_warning": (
+            "OpenMetadata runs cold-tier — it sleeps after 20 minutes of "
+            "no activity. Metadata-ingestion workflows scheduled in "
+            "OpenMetadata won't fire while it's asleep. Pin OpenMetadata "
+            "from the Keep warm card if you rely on scheduled ingestion, "
+            "or create a Pipeline that wakes it before each scheduled "
+            "run."
+        ),
         # OpenMetadata is a 3-container stack (server + Elasticsearch +
         # ingestion). Combined image size is ~6 GB across the 3 images;
         # on residential broadband the pull can exceed the default 1200s.
