@@ -81,20 +81,22 @@
                                flex-direction: column; justify-content: center;
                                min-width: 60px; }
     .pipeline-shape .parrow .arrow { font-size: 16px; line-height: 1; color: #d1d5db; }
-    /* Legend chips inherit the same shared-bg + coloured-border treatment
-       as the pills, just smaller, so the legend visually matches what it
-       describes. */
-    .pipeline-shape .legend { font-size: 10px; padding-top: 12px; line-height: 1.7; }
+    /* Legend chips — Airflow's exact recipe: WHITE background, 1px
+       coloured border, text colour matches the border. The previous
+       cream-on-cream rendered the text near-invisible because the
+       text colour was dark (#1f2937) and there wasn't enough chip
+       separation from the page. Airflow uses border-color = text-color
+       per label, so each label visually IS its colour. */
+    .pipeline-shape .legend { font-size: 11px; padding-top: 12px; line-height: 1.8; }
     .pipeline-shape .legend .lchip { display: inline-block; padding: 2px 7px;
-                                      border-radius: 3px; border: 1.5px solid;
-                                      background: #fffaf0; color: #1f2937;
-                                      margin-right: 4px;
-                                      font-weight: 500; letter-spacing: 0.2px; }
-    .pipeline-shape .legend .lchip-queued    { border-color: #9ca3af; }
-    .pipeline-shape .legend .lchip-starting  { border-color: #22c55e; }
-    .pipeline-shape .legend .lchip-warming   { border-color: #eab308; }
-    .pipeline-shape .legend .lchip-running   { border-color: #15803d; background: #f0fdf4; }
-    .pipeline-shape .legend .lchip-stopped   { border-color: #dc2626; background: #fef2f2; }
+                                      border-radius: 3px; border: 1px solid;
+                                      background: #ffffff; margin-right: 6px;
+                                      font-weight: 500; }
+    .pipeline-shape .legend .lchip-queued    { border-color: #9ca3af; color: #6b7280; }
+    .pipeline-shape .legend .lchip-starting  { border-color: #22c55e; color: #15803d; }
+    .pipeline-shape .legend .lchip-warming   { border-color: #eab308; color: #a16207; }
+    .pipeline-shape .legend .lchip-running   { border-color: #15803d; color: #14532d; }
+    .pipeline-shape .legend .lchip-stopped   { border-color: #dc2626; color: #b91c1c; }
   </style>
   {# Server-rendered initial label + pills. The JS overwrites these on
      first successful fetch, but seeing the latest run immediately on
