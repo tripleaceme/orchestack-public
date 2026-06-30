@@ -128,20 +128,20 @@
     }
 
     async function orchestackRunPipeline(pid, name) {
-      if (!confirm("Run \"" + name + "\" now?\n\nEach step's service will be started in order with the configured buffer between steps.")) return;
+      if (!confirm("Run \"" + name + "\" now?\n\nEach step's service will be started in order with the configured buffer between steps.\n\nYou'll be taken to the View Runs page to watch live progress.")) return;
       const resp = await fetch("/app/api/dashboard/pipelines/" + pid + "/run",
         { method: "POST", credentials: "same-origin" });
       if (!resp.ok) {
         orchestackToast("Run failed: " + (await resp.text()), 'error');
         return;
       }
-      const data = await resp.json();
-      // Show inline confirmation + flip the row's last-run cell to "running".
-      orchestackToast("Pipeline \"" + name + "\" is running (run #" + data.run_id + "). It'll update on the next page refresh or check the pipeline detail page for live status.", 'info');
-      const lastCell = document.getElementById('p-last-' + pid);
-      if (lastCell) {
-        lastCell.innerHTML = '<span style="color: #0ea5e9;">⟳ running</span>';
-      }
+      // Navigate straight to the runs page — its server-rendered shape
+      // overlay shows the new run's first step as 'starting' before the
+      // page even finishes loading. Without this nav the operator just
+      // sees a toast on the list page and has to manually click View
+      // runs to watch anything, which is exactly the "I had to reload"
+      // friction the operator flagged.
+      window.location.href = "/app/pipelines/" + pid + "/runs";
     }
 
     async function orchestackDeletePipeline(pid, name) {

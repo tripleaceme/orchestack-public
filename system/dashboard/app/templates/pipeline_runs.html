@@ -36,46 +36,65 @@
               box-shadow: 0 8px 24px rgba(0,0,0,0.2);
               display: none; max-width: 380px;"></div>
 
-  {# Horizontal pipeline shape — overlays the latest run's per-step
-     status on the configured step list. Colors per the operator's spec:
-       blue   = queued (step plan, not yet started this run)
-       light  = starting (docker compose up in progress)
-       yellow = warming (succeeded, waiting buffer before next step)
-       deep   = running (succeeded; service is up)
-       red    = stopped (failed or cancelled)
-     Hot-tier steps are tagged "always-on" since they no-op. #}
+  {# Horizontal pipeline shape — modelled on Airflow's task-graph
+     palette (pale shared background, status conveyed by a coloured
+     2px border + dark text). The shared bg means the eye reads
+     "set of related steps" first, with the borders providing the
+     status signal — much calmer than chunky filled pills. #}
   <style>
     .pipeline-shape { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; padding: 16px; }
-    .pipeline-shape .pstep { padding: 10px 14px; border-radius: 8px; border: 1px solid transparent;
-                              min-width: 130px; font-size: 13px; line-height: 1.35; }
-    .pipeline-shape .pstep .svc { font-weight: 600; }
-    .pipeline-shape .pstep .meta { font-size: 11px; opacity: 0.85; margin-top: 2px; }
-    .pipeline-shape .pstep .tag-always { display: inline-block; font-size: 10px; padding: 1px 5px;
-                                          background: rgba(0,0,0,0.08); border-radius: 3px;
+    /* Shared pill base: cream background, dark text, 2px coloured
+       border (set per-state below). 4px corner radius matches
+       Airflow's task pills. */
+    .pipeline-shape .pstep { padding: 8px 12px; border-radius: 4px;
+                              border: 2px solid #d1d5db; background: #fffaf0;
+                              color: #1f2937; min-width: 120px;
+                              font-size: 12.5px; line-height: 1.35; }
+    .pipeline-shape .pstep .svc { font-weight: 600; font-size: 13px; }
+    .pipeline-shape .pstep .meta { font-size: 10.5px; color: #6b7280; margin-top: 2px;
+                                    text-transform: lowercase; letter-spacing: 0.2px; }
+    .pipeline-shape .pstep .tag-always { display: inline-block; font-size: 9.5px;
+                                          padding: 1px 5px; background: #f3f4f6;
+                                          color: #4b5563; border-radius: 3px;
                                           margin-left: 4px; vertical-align: middle; }
-    .pipeline-shape .pstep-queued    { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
-    .pipeline-shape .pstep-starting  { background: #bbf7d0; border-color: #4ade80; color: #14532d; }
-    .pipeline-shape .pstep-warming   { background: #fef08a; border-color: #facc15; color: #713f12; }
-    .pipeline-shape .pstep-running   { background: #16a34a; border-color: #15803d; color: white; }
-    .pipeline-shape .pstep-stopped   { background: #fecaca; border-color: #f87171; color: #7f1d1d; }
-    .pipeline-shape .pstep-cancelled { background: #e5e7eb; border-color: #9ca3af; color: #374151; }
-    .pipeline-shape .parrow { display: flex; align-items: center; padding: 0 4px; color: var(--text-2); font-size: 11px;
-                               flex-direction: column; justify-content: center; min-width: 70px; }
-    .pipeline-shape .parrow .arrow { font-size: 16px; line-height: 1; }
-    /* Legend chips — same fill as the corresponding step pill, but
-       tiny (10px font) so they read as "button decoration" rather than
-       a wall of swatches. Each chip's background = that state's pill
-       background, so the operator can match a pill to its label
-       by colour alone. */
-    .pipeline-shape .legend { font-size: 10px; padding-top: 12px; line-height: 1.6; }
-    .pipeline-shape .legend .lchip { display: inline-block; padding: 2px 7px; border-radius: 3px;
-                                      border: 1px solid transparent; margin-right: 4px;
+    /* Per-state borders — Airflow uses these exact colours:
+         queued=gray, running/starting=green, warming/up_for_retry=yellow,
+         succeeded=dark-green, failed/stopped=red.
+       The pale shared background stays the same; only the border colour
+       changes between states. */
+    .pipeline-shape .pstep-queued    { border-color: #9ca3af; }
+    .pipeline-shape .pstep-starting  { border-color: #22c55e; }
+    .pipeline-shape .pstep-warming   { border-color: #eab308; }
+    .pipeline-shape .pstep-running   { border-color: #15803d; background: #f0fdf4; }
+    .pipeline-shape .pstep-stopped   { border-color: #dc2626; background: #fef2f2; }
+    .pipeline-shape .pstep-cancelled { border-color: #9ca3af; background: #f3f4f6;
+                                         color: #6b7280; }
+    /* Subtle pulse on the actively-starting step so the eye picks out
+       "right now" at a glance — matches Airflow's "running task" feel. */
+    .pipeline-shape .pstep-starting { animation: pstep-pulse 1.6s ease-in-out infinite; }
+    @keyframes pstep-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+      50%      { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.0); }
+    }
+    .pipeline-shape .parrow { display: flex; align-items: center; padding: 0 4px;
+                               color: #9ca3af; font-size: 10.5px;
+                               flex-direction: column; justify-content: center;
+                               min-width: 60px; }
+    .pipeline-shape .parrow .arrow { font-size: 16px; line-height: 1; color: #d1d5db; }
+    /* Legend chips inherit the same shared-bg + coloured-border treatment
+       as the pills, just smaller, so the legend visually matches what it
+       describes. */
+    .pipeline-shape .legend { font-size: 10px; padding-top: 12px; line-height: 1.7; }
+    .pipeline-shape .legend .lchip { display: inline-block; padding: 2px 7px;
+                                      border-radius: 3px; border: 1.5px solid;
+                                      background: #fffaf0; color: #1f2937;
+                                      margin-right: 4px;
                                       font-weight: 500; letter-spacing: 0.2px; }
-    .pipeline-shape .legend .lchip-queued    { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
-    .pipeline-shape .legend .lchip-starting  { background: #bbf7d0; border-color: #4ade80; color: #14532d; }
-    .pipeline-shape .legend .lchip-warming   { background: #fef08a; border-color: #facc15; color: #713f12; }
-    .pipeline-shape .legend .lchip-running   { background: #16a34a; border-color: #15803d; color: white; }
-    .pipeline-shape .legend .lchip-stopped   { background: #fecaca; border-color: #f87171; color: #7f1d1d; }
+    .pipeline-shape .legend .lchip-queued    { border-color: #9ca3af; }
+    .pipeline-shape .legend .lchip-starting  { border-color: #22c55e; }
+    .pipeline-shape .legend .lchip-warming   { border-color: #eab308; }
+    .pipeline-shape .legend .lchip-running   { border-color: #15803d; background: #f0fdf4; }
+    .pipeline-shape .legend .lchip-stopped   { border-color: #dc2626; background: #fef2f2; }
   </style>
   {# Server-rendered initial label + pills. The JS overwrites these on
      first successful fetch, but seeing the latest run immediately on
@@ -371,20 +390,60 @@
       }
     }
 
+    // Optimistic update + tick retries — when an operator clicks Run
+    // or Cancel they should see the page change IMMEDIATELY, not wait
+    // for the next 3s poll. We patch the visible state synchronously
+    // (optimistic) and then run a small burst of ticks so the real
+    // server state catches up + overwrites if anything diverged.
+    function _tickBurst() {
+      // Three ticks: now, +400ms, +1500ms. Covers the race where the
+      // orchestrator returns 200 before its INSERT lands in the DB
+      // (rare, but observable on slow boxes — three tries always wins).
+      tick();
+      setTimeout(tick, 400);
+      setTimeout(tick, 1500);
+    }
+
     async function orchestackRunNow() {
       if (!confirm("Run this pipeline now?")) return;
+      // Optimistic: flip the latest-run label + every pill to a
+      // "queued/starting" hint immediately so the operator sees the
+      // click registered, instead of staring at the previous run's
+      // state for ~1s.
+      const label = document.getElementById('latest-run-label');
+      if (label) label.textContent = 'starting…';
+      document.querySelectorAll('#pipeline-shape .pstep').forEach((p, i) => {
+        p.className = 'pstep ' + (i === 0 ? 'pstep-starting' : 'pstep-queued');
+        const meta = p.querySelector('.meta');
+        if (meta) {
+          const action = (meta.textContent.split('·')[0] || 'start').trim();
+          meta.textContent = `${action} · ${i === 0 ? 'starting' : 'queued'}`;
+        }
+      });
       const r = await fetch("/app/api/dashboard/pipelines/" + PIPELINE_ID + "/run",
         { method: 'POST', credentials: 'same-origin' });
       if (!r.ok) {
         toast('Run failed: ' + (await r.text()), 'error');
+        if (label) label.textContent = '— run failed to start —';
         return;
       }
-      toast('Run started — polling for status…', 'info');
-      tick();
+      toast('Run started', 'info');
+      _tickBurst();
     }
 
     async function orchestackCancelRun(runId) {
       if (!confirm("Cancel this pipeline run?\n\nThe in-flight step finishes, no more steps fire.")) return;
+      // Optimistic: immediately mark the row's status cell as
+      // "cancelling…" so the click visibly registers. The real
+      // 'cancelled' label arrives on the next tick burst (the
+      // executor sees the DB flag and stops between steps).
+      const row = document.getElementById('run-row-' + runId);
+      if (row) {
+        const statusCell = row.children[2];
+        if (statusCell) statusCell.innerHTML = '<span style="color: var(--text-2);">⊘ cancelling…</span>';
+        const actionCell = row.children[5];
+        if (actionCell) actionCell.innerHTML = '';
+      }
       const r = await fetch("/app/api/dashboard/pipeline-runs/" + runId + "/cancel",
         { method: 'POST', credentials: 'same-origin' });
       if (!r.ok) {
@@ -392,7 +451,7 @@
         return;
       }
       toast('Cancel requested', 'info');
-      tick();
+      _tickBurst();
     }
 
     // On load: the server has already rendered the shape from the
