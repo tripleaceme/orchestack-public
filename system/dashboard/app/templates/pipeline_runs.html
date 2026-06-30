@@ -62,10 +62,20 @@
     .pipeline-shape .parrow { display: flex; align-items: center; padding: 0 4px; color: var(--text-2); font-size: 11px;
                                flex-direction: column; justify-content: center; min-width: 70px; }
     .pipeline-shape .parrow .arrow { font-size: 16px; line-height: 1; }
-    .pipeline-shape .legend { font-size: 11px; color: var(--text-2); padding-top: 14px; }
-    .pipeline-shape .legend span { display: inline-block; margin-right: 10px; }
-    .pipeline-shape .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
-                                 vertical-align: middle; margin-right: 4px; }
+    /* Legend chips — same fill as the corresponding step pill, but
+       tiny (10px font) so they read as "button decoration" rather than
+       a wall of swatches. Each chip's background = that state's pill
+       background, so the operator can match a pill to its label
+       by colour alone. */
+    .pipeline-shape .legend { font-size: 10px; padding-top: 12px; line-height: 1.6; }
+    .pipeline-shape .legend .lchip { display: inline-block; padding: 2px 7px; border-radius: 3px;
+                                      border: 1px solid transparent; margin-right: 4px;
+                                      font-weight: 500; letter-spacing: 0.2px; }
+    .pipeline-shape .legend .lchip-queued    { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+    .pipeline-shape .legend .lchip-starting  { background: #bbf7d0; border-color: #4ade80; color: #14532d; }
+    .pipeline-shape .legend .lchip-warming   { background: #fef08a; border-color: #facc15; color: #713f12; }
+    .pipeline-shape .legend .lchip-running   { background: #16a34a; border-color: #15803d; color: white; }
+    .pipeline-shape .legend .lchip-stopped   { background: #fecaca; border-color: #f87171; color: #7f1d1d; }
   </style>
   {# Server-rendered initial label + pills. The JS overwrites these on
      first successful fetch, but seeing the latest run immediately on
@@ -125,11 +135,11 @@
       {% endif %}
     </div>
     <div class="pipeline-shape legend" style="padding: 0 16px 14px;">
-      <span><i style="background:#dbeafe;border:1px solid #93c5fd;"></i>queued</span>
-      <span><i style="background:#bbf7d0;border:1px solid #4ade80;"></i>starting</span>
-      <span><i style="background:#fef08a;border:1px solid #facc15;"></i>warming&nbsp;(buffer)</span>
-      <span><i style="background:#16a34a;border:1px solid #15803d;"></i>running</span>
-      <span><i style="background:#fecaca;border:1px solid #f87171;"></i>stopped&nbsp;(failed/cancelled)</span>
+      <span class="lchip lchip-queued">queued</span>
+      <span class="lchip lchip-starting">starting</span>
+      <span class="lchip lchip-warming">warming</span>
+      <span class="lchip lchip-running">running</span>
+      <span class="lchip lchip-stopped">stopped</span>
     </div>
   </div>
 
@@ -165,7 +175,12 @@
             </td>
             <td class="font-mono" style="font-size: 12.5px;">{% if r.completed_at %}{{ r.completed_at[:19] | replace('T', ' ') }}{% else %}&mdash;{% endif %}</td>
             <td style="font-size: 12px; color: var(--text-2);">{{ r.error_summary or '' }}</td>
-            <td style="text-align: right;"></td>
+            <td style="text-align: right;">
+              {% if r.status == 'running' and user and 'Admin' in (user.roles or []) %}
+                <button type="button" class="btn btn-sm btn-danger"
+                        onclick="orchestackCancelRun({{ r.id }})">Cancel</button>
+              {% endif %}
+            </td>
           </tr>
         {% else %}
           <tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--text-2);">No runs yet.</td></tr>

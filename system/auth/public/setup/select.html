@@ -226,11 +226,19 @@
   async function syncFromServer(prior) {
     // Pull installed_services from the orchestrator. Server-side state is
     // the authoritative answer to "what's deployed" — localStorage can
-    // drift if the operator clears storage, switches browsers, or had
-    // services deployed outside the wizard (e.g. CLI compose). When the
-    // server says X is configured, override localStorage; when the server
-    // says X is NOT configured, drop it from prior so the operator can
-    // re-pick it. Falls through to localStorage-only on network error.
+    // drift if the operator clears storage, switches browsers, picks a
+    // service that fails to deploy, or installs/removes services
+    // outside the wizard (e.g. CLI compose). Operator hit exactly this:
+    // clicked Airbyte during initial setup, deployment failed, but
+    // localStorage retained `ingestion: 'Airbyte'`. The wizard then
+    // locked the Ingestion dropdown with "already deployed" forever
+    // because the spread-merge (the OLD code) kept localStorage's
+    // value when serverPrior didn't have the same layer.
+    //
+    // Fix: take ONLY server state. Drop any localStorage layer the
+    // server doesn't confirm. Falls through to localStorage-only on
+    // network error (the orchestrator being down shouldn't lock the
+    // operator out of re-picking).
     try {
       const res = await fetch('/orchestrator/api/services', { credentials: 'same-origin' });
       if (!res.ok) return prior;
@@ -244,11 +252,17 @@
         serverPrior[wizardLayer] = svc.display_name || svc.name;
         serverPriorNames[wizardLayer] = svc.name;
       }
-      // Persist back to localStorage so future loads stay consistent.
+      // Persist the SERVER state to localStorage (full replace, not
+      // merge) so a future load doesn't resurrect the stale value if
+      // syncFromServer ever falls through to its catch branch.
       const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      state.selections = { ...(state.selections || {}), ...serverPrior };
+      state.selections = serverPrior;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      return { ...prior, ...serverPrior };
+      // Return ONLY serverPrior — the "lock dropdowns for already-
+      // deployed layers" logic downstream walks this map, and any
+      // layer it contains becomes a locked + tagged row. We must NOT
+      // merge prior here.
+      return serverPrior;
     } catch (e) {
       console.warn('wizard server-sync failed, using localStorage:', e);
       return prior;
