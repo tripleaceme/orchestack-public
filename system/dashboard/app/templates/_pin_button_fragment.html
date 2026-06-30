@@ -15,7 +15,7 @@
     </div>
     <div class="hint">
       Pinning keeps the service running even when no sessions are active.
-      Without a pin, the orchestrator stops cold-tier services after 5
+      Without a pin, the orchestrator stops cold-tier services after 20
       minutes idle.
     </div>
     <form hx-post="{{ url_for('pin_service_action', name=service_name) }}"
@@ -44,11 +44,11 @@
   <div id="pin-container-inner">
     <div class="pin-state">
       <span class="badge badge-neutral">not pinned</span>
-      <span style="font-size: 13px; color: var(--text-2);">stops after 5 min idle</span>
+      <span style="font-size: 13px; color: var(--text-2);">stops after 20 min idle</span>
     </div>
     <div class="hint">
       Pinning keeps the service running even when no sessions are active.
-      Without a pin, the orchestrator stops cold-tier services after 5
+      Without a pin, the orchestrator stops cold-tier services after 20
       minutes idle.
     </div>
     <form hx-post="{{ url_for('pin_service_action', name=service_name) }}"

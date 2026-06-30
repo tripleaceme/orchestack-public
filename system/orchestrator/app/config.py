@@ -35,7 +35,12 @@ DB_POOL_MAX: int = _int("ORCHESTRATOR_DB_POOL_MAX", 5)
 # ----- Reconciler -----------------------------------------------------------
 RECONCILE_INTERVAL: int = _int("ORCHESTRATOR_RECONCILE_INTERVAL", 30)
 
-IDLE_THRESHOLD: int = _int("ORCHESTRATOR_IDLE_THRESHOLD", 600)
+# Operator-tunable idle stop. 1200s = 20 min. Was 600s (10 min) but the
+# operator hit the edge case where a long-running notebook (Metabase
+# SQL workbench, Airflow log tail) would idle the service down right
+# before they Cmd-Tab back to it. 20 min covers typical "stepped away
+# for a bit" pauses without burning resources on truly idle stacks.
+IDLE_THRESHOLD: int = _int("ORCHESTRATOR_IDLE_THRESHOLD", 1200)
 
 # Grace period after start during which the reconciler won't shut a
 # service down even if no sessions exist yet. Prevents the race where a

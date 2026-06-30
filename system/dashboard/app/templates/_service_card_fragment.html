@@ -167,7 +167,28 @@
   <div class="card-links">
     <a href="{{ url_for('service_config_page', name=service.name) }}"
        title="Edit {{ service.display_name }} credentials and config">Edit config</a>
-    <a href="{{ url_for('service_detail', name=service.name) }}">Details · pin · activity</a>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      {# Pin toggle on the card itself — operator asked for the pin
+         affordance to live here instead of only on the Details page.
+         Hot-tier + control-plane services skip the toggle because
+         pinning a service that's already always-on is a no-op. The
+         toggle endpoint reads the current pin state and flips it
+         (24h TTL when pinning), returning the full card fragment so
+         the 📌 indicator + pinned border styling update in place. #}
+      {% if not service.control_plane and service.tier != 'hot' %}
+        <button hx-post="{{ url_for('toggle_pin_card_action', name=service.name) }}"
+                hx-target="#service-card-{{ service.name }}"
+                hx-swap="outerHTML swap:200ms"
+                hx-disabled-elt="this"
+                title="{% if service.pinned %}Unpin — service can stop after the idle timeout again{% else %}Pin — keep this service running even when no sessions are active{% endif %}"
+                style="background: none; border: none; padding: 0; color: var(--text-2);
+                       cursor: pointer; font-size: 11.5px; font-family: inherit;
+                       text-decoration: none;{% if service.pinned %} color: #b45309; font-weight: 600;{% endif %}">
+          {% if service.pinned %}📌 Unpin{% else %}📌 Pin{% endif %}
+        </button>
+      {% endif %}
+      <a href="{{ url_for('service_detail', name=service.name) }}">Details · activity</a>
+    </div>
   </div>
   {% else %}
   <div class="card-links">

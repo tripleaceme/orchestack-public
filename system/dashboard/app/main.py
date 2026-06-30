@@ -2157,6 +2157,29 @@ async def unpin_service_action(request: Request, name: str) -> HTMLResponse:
     return await _render_pin_button(request, name)
 
 
+@app.post("/api/dashboard/services/{name}/toggle-pin", response_class=HTMLResponse,
+           name="toggle_pin_card_action")
+async def toggle_pin_card_action(request: Request, name: str) -> HTMLResponse:
+    """Pin/unpin a service from the dashboard card (not the detail page).
+
+    Operator asked for a pin affordance on the main card so they don't
+    have to click into Details just to toggle the keep-warm pin. Reads
+    the service's current pin state and flips it — pinned -> unpin,
+    not-pinned -> pin with a 24h TTL (matches the detail page's default
+    select option). Returns the FULL card fragment so HTMX replaces the
+    entire card and the 📌 indicator + pinned border styling update.
+    """
+    try:
+        svc_data = await orchestrator.get_service(name)
+        if svc_data.get("pinned"):
+            await orchestrator.unpin_service(name)
+        else:
+            await orchestrator.pin_service(name, ttl_seconds=86400)
+    except httpx.HTTPError as e:
+        log.warning("toggle_pin_card(%s) failed: %s", name, e)
+    return await _render_card(request, name)
+
+
 # ===========================================================================
 #  HTMX action: disable / enable / remove a configured service
 # ===========================================================================

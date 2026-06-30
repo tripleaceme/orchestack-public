@@ -128,35 +128,32 @@
     }
 
     async function orchestackRunPipeline(pid, name) {
-      if (!confirm("Run \"" + name + "\" now?\n\nEach step's service will be started in order with the configured buffer between steps.\n\nYou'll be taken to the View Runs page to watch live progress.")) return;
+      // No confirm + no toast — operator clicked Run. Navigate straight
+      // to the runs page so they can watch the live DAG; errors go to
+      // the console instead of a popup.
       const resp = await fetch("/app/api/dashboard/pipelines/" + pid + "/run",
         { method: "POST", credentials: "same-origin" });
       if (!resp.ok) {
-        orchestackToast("Run failed: " + (await resp.text()), 'error');
+        console.warn('orchestackRunPipeline failed:', await resp.text());
         return;
       }
-      // Navigate straight to the runs page — its server-rendered shape
-      // overlay shows the new run's first step as 'starting' before the
-      // page even finishes loading. Without this nav the operator just
-      // sees a toast on the list page and has to manually click View
-      // runs to watch anything, which is exactly the "I had to reload"
-      // friction the operator flagged.
       window.location.href = "/app/pipelines/" + pid + "/runs";
     }
 
     async function orchestackDeletePipeline(pid, name) {
-      if (!confirm("Delete pipeline \"" + name + "\"?\n\nThis removes the pipeline + its run history. Cannot be undone.")) return;
+      // Delete is destructive; KEEP the confirm here so an accidental
+      // click can't nuke the pipeline + its run history. Only the
+      // success/failure TOAST is removed — failure goes to console.
+      if (!confirm("Delete pipeline \"" + name + "\"?")) return;
       const resp = await fetch("/app/api/dashboard/pipelines/" + pid, {
         method: "DELETE", credentials: "same-origin",
       });
       if (!resp.ok) {
-        orchestackToast("Delete failed: " + (await resp.text()), 'error');
+        console.warn('orchestackDeletePipeline failed:', await resp.text());
         return;
       }
-      // Remove the row in-place; spares a full page reload.
       const row = document.getElementById('p-row-' + pid);
       if (row) row.remove();
-      orchestackToast("Pipeline \"" + name + "\" deleted.");
     }
   </script>
 {% endblock %}

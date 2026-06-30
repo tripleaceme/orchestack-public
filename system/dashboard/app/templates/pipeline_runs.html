@@ -29,12 +29,9 @@
     {% endif %}
   </div>
 
-  <div id="runs-toast"
-       style="position: fixed; top: 16px; right: 16px; z-index: 1000;
-              padding: 10px 14px; border-radius: 6px;
-              background: #064e3b; color: white; font-size: 13px;
-              box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-              display: none; max-width: 380px;"></div>
+  {# Toast div removed — operator wanted Run / Cancel to act
+     immediately without any popup notification. Errors land in the
+     browser console instead. #}
 
   {# Horizontal pipeline shape — modelled on Airflow's task-graph
      palette (pale shared background, status conveyed by a coloured
@@ -133,15 +130,27 @@
     {%- endif -%}
   {% endmacro %}
   <div class="surface" style="margin-bottom: 18px;">
-    <div class="surface-head">
-      <h2>Latest run · <span id="latest-run-label" style="font-weight: 400; color: var(--text-2);">
+    {# Latest run header + colour-coded legend on the SAME line.
+       Operator wanted "information about the running and the status
+       on the same straight line", DAG below. Flex-wrap lets the
+       legend drop to its own line on narrow viewports without breaking
+       the layout. #}
+    <div class="surface-head" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; row-gap: 6px;">
+      <h2 style="margin: 0;">Latest run · <span id="latest-run-label" style="font-weight: 400; color: var(--text-2);">
         {%- if _latest -%}
           #{{ _latest.id }} · {{ _latest.triggered_by }} · {{ _latest.status }} · started {{ _latest.started_at[:19] | replace('T', ' ') }}
         {%- else -%}
           no runs yet
         {%- endif -%}
       </span></h2>
-      <span class="sub" id="shape-poll-status" style="font-size: 12px; color: var(--text-2);"></span>
+      <div class="pipeline-shape legend" style="padding: 0; margin-left: auto;">
+        <span class="lchip lchip-queued">queued</span>
+        <span class="lchip lchip-starting">starting</span>
+        <span class="lchip lchip-warming">warming</span>
+        <span class="lchip lchip-running">running</span>
+        <span class="lchip lchip-stopped">stopped</span>
+      </div>
+      <span class="sub" id="shape-poll-status" style="font-size: 12px; color: var(--text-2); flex-basis: 100%;"></span>
     </div>
     <div id="pipeline-shape" class="pipeline-shape">
       {% if pipeline.steps %}
@@ -162,13 +171,7 @@
         <div style="color: var(--text-2); padding: 8px;">Pipeline has no steps yet.</div>
       {% endif %}
     </div>
-    <div class="pipeline-shape legend" style="padding: 0 16px 14px;">
-      <span class="lchip lchip-queued">queued</span>
-      <span class="lchip lchip-starting">starting</span>
-      <span class="lchip lchip-warming">warming</span>
-      <span class="lchip lchip-running">running</span>
-      <span class="lchip lchip-stopped">stopped</span>
-    </div>
+    {# Legend now lives in the surface-head row above the DAG, not here. #}
   </div>
 
   <div class="surface">
@@ -414,11 +417,10 @@
     }
 
     async function orchestackRunNow() {
-      if (!confirm("Run this pipeline now?")) return;
-      // Optimistic: flip the latest-run label + every pill to a
-      // "queued/starting" hint immediately so the operator sees the
-      // click registered, instead of staring at the previous run's
-      // state for ~1s.
+      // No confirm dialog and no toast — operator clicked Run, do it.
+      // The DAG below reflects the new state via the polling tick we
+      // kick off immediately. If anything fails we log to the console
+      // instead of popping a notification.
       const label = document.getElementById('latest-run-label');
       if (label) label.textContent = 'starting…';
       document.querySelectorAll('#pipeline-shape .pstep').forEach((p, i) => {
@@ -432,20 +434,15 @@
       const r = await fetch("/app/api/dashboard/pipelines/" + PIPELINE_ID + "/run",
         { method: 'POST', credentials: 'same-origin' });
       if (!r.ok) {
-        toast('Run failed: ' + (await r.text()), 'error');
+        console.warn('orchestackRunNow failed:', await r.text());
         if (label) label.textContent = '— run failed to start —';
         return;
       }
-      toast('Run started', 'info');
       _tickBurst();
     }
 
     async function orchestackCancelRun(runId) {
-      if (!confirm("Cancel this pipeline run?\n\nThe in-flight step finishes, no more steps fire.")) return;
-      // Optimistic: immediately mark the row's status cell as
-      // "cancelling…" so the click visibly registers. The real
-      // 'cancelled' label arrives on the next tick burst (the
-      // executor sees the DB flag and stops between steps).
+      // No confirm and no toast — the click is the intent.
       const row = document.getElementById('run-row-' + runId);
       if (row) {
         const statusCell = row.children[2];
@@ -456,10 +453,9 @@
       const r = await fetch("/app/api/dashboard/pipeline-runs/" + runId + "/cancel",
         { method: 'POST', credentials: 'same-origin' });
       if (!r.ok) {
-        toast('Cancel failed: ' + (await r.text()), 'error');
+        console.warn('orchestackCancelRun failed:', await r.text());
         return;
       }
-      toast('Cancel requested', 'info');
       _tickBurst();
     }
 

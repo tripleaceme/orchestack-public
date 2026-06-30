@@ -141,7 +141,7 @@
 <p><strong>No overlap.</strong> If a pipeline's previous run is still in progress when its trigger fires, the new fire is skipped (the scheduler's check is <code class="inline">NOT EXISTS (... WHERE status='running')</code>). The trigger won't queue — it just waits for the next match.</p>
 
 <h2 id="when-to-stop">When stop actions make sense</h2>
-<p>Cold-tier services already auto-stop after 10&nbsp;minutes of no sessions (the reconciler handles this). So you usually don't need explicit stop steps. They're useful in two cases:</p>
+<p>Cold-tier services already auto-stop after 20&nbsp;minutes of no sessions (the reconciler handles this). So you usually don't need explicit stop steps. They're useful in two cases:</p>
 <ul>
   <li><strong>Pinned services</strong> — pinning bypasses the reconciler's idle-stop. A stop step in a pipeline is the only way to stop a pinned service on a schedule.</li>
   <li><strong>Coordinated shutdown</strong> — "stop Airflow at 11&nbsp;PM and Airbyte at 11:05&nbsp;PM" — a single pipeline with two stop steps + a 5-min buffer between them. Two stop-pipelines on cron would also work; pick whichever reads cleanest.</li>
