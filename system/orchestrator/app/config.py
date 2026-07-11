@@ -77,14 +77,24 @@ DEFAULT_USER_ID: int = 1
 # `managed` (True iff we have a compose snippet at services/<name>.yml and
 # can actually start/stop it).
 SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
-    "metabase":     {"tier": "hot",  "display_name": "Metabase",            "layer": "bi",           "managed": True},
-    "pgadmin":      {"tier": "hot",  "display_name": "pgAdmin",             "layer": "admin-ui",     "managed": True, "requires": ["postgresql"]},
-    # MinIO's console doesn't support subpath deployment reliably (their
-    # 2024+ SPA assumes /api/v1 at root). external_url sends the operator
-    # to localhost:9001 instead of /app/minio. The S3 API on 9000 stays
-    # internal to the docker network — Airbyte/dbt reach it as
-    # orchestack-minio:9000.
-    "minio":        {"tier": "cold", "display_name": "MinIO",               "layer": "data-lake",    "managed": True, "external_url": "http://{host}:9001"},
+    "metabase":     {"tier": "hot",  
+                     "display_name": "Metabase", 
+                      "layer": "bi", 
+                      "managed": True},
+
+    "pgadmin":      {"tier": "hot",  
+                     "display_name": "pgAdmin",             
+                     "layer": "admin-ui",     
+                     "managed": True, 
+                     "requires": ["postgresql"]},
+    # MinIO's console doesn't support subpath deployment reliably (their 2024+ SPA assumes /api/v1 at root). 
+    # external_url sends the operatorto localhost:9001 instead of /app/minio. 
+    # The S3 API on 9000 stays internal to the docker network — Airbyte/dbt reach it as  orchestack-minio:9000.
+    "minio":        {"tier": "cold", 
+                     "display_name": "MinIO",               
+                     "layer": "data-lake",   
+                       "managed": True, 
+                       "external_url": "http://{host}:9001"},
     "dbt": {
         "tier": "cold", "display_name": "dbt Core",
         "layer": "transformation", "managed": True,
@@ -93,18 +103,15 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
                 "key": "docs",
                 "label": "Open Docs",
                 "external_url": "http://{host}:8002",
-                # ready_probe is a (port, path) tuple inside the service
-                # container. None means "use the default state==running
-                # check".
+                # ready_probe is a (port, path) tuple inside the service container. 
+                # None means "use the default state==running  check".
                 "ready_probe": (8080, "/index.html"),
             },
             {
                 "key": "cli",
                 "label": "Open Terminal",
-                # ttyd is served at /app/dbt-terminal via Traefik subpath
-                # routing (it honors --base-path cleanly, unlike
-                # Airbyte/MinIO). The OrcheStack auth forward-auth chain
-                # gates the terminal too — no separate credentials.
+                # ttyd is served at /app/dbt-terminal via Traefik subpath routing (it honors --base-path cleanly, unlike
+                # Airbyte/MinIO). The OrcheStack auth forward-auth chain gates the terminal too — no separate credentials.
                 "external_url": "http://{host}/app/dbt-terminal/",
                 "ready_probe": (7681, "/"),
             },
@@ -128,23 +135,18 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
             },
         ],
     },
-    # Airflow's webserver honors AIRFLOW__WEBSERVER__BASE_URL and works
-    # cleanly under Traefik's /app/airflow subpath (unlike MinIO/Airbyte
-    # whose React SPAs emit absolute-root asset paths), so no external_url
-    # override is needed.
-    # scheduling_warning surfaces as a banner on the dashboard tile +
-    # service-detail page. ANY cold-tier service that runs an internal
-    # scheduler (Airflow DAGs, Airbyte connection schedules, OpenMetadata
-    # ingestion workflows) needs this warning, because cold-tier sleeps
-    # after IDLE_THRESHOLD (currently 20 min) and a sleeping container
-    # can't fire scheduled work. Operators have two fixes today:
-    # (a) pin the service from the Keep warm card, or (b) create an
-    # OrcheStack Pipeline that wakes the service before its scheduled
-    # window. v0.2 will read schedules + auto-wake briefly.
+    # Airflow's webserver honors AIRFLOW__WEBSERVER__BASE_URL and works cleanly under Traefik's /app/airflow subpath (unlike MinIO/Airbyte
+    # whose React SPAs emit absolute-root asset paths), so no external_url override is needed.
+    # scheduling_warning surfaces as a banner on the dashboard tile + service-detail page. ANY cold-tier service that runs an internal
+    # scheduler (Airflow DAGs, Airbyte connection schedules, OpenMetadata ingestion workflows) needs this warning, because cold-tier sleeps
+    # after IDLE_THRESHOLD (currently 20 min) and a sleeping container can't fire scheduled work. Operators have two fixes today:
+    # (a) pin the service from the Keep warm card, or 
+    # (b) create an OrcheStack Pipeline that wakes the service before its scheduled window. 
+    # v0.2 will read schedules + auto-wake briefly.
     "airflow":      {
         "tier": "cold", "display_name": "Apache Airflow", "layer": "orchestration", "managed": True,
         "scheduling_warning": (
-            "Airflow runs cold-tier — it sleeps after 20 minutes of no "
+            "Airflow runs cold-tier, it sleeps after 20 minutes of no "
             "activity, which means scheduled DAGs won't fire while it's "
             "asleep. Pin Airflow from the Keep warm card if you rely on "
             "scheduled DAGs, or create a Pipeline that wakes Airflow "
@@ -158,7 +160,7 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
         "tier": "cold", "display_name": "Airbyte", "layer": "ingestion", "managed": True,
         "external_url": "http://{host}:8001",
         "scheduling_warning": (
-            "Airbyte runs cold-tier — it sleeps after 20 minutes of no "
+            "Airbyte runs cold-tier, it sleeps after 20 minutes of no "
             "activity. Connection schedules (e.g. \"every 6 hours\", "
             "\"daily at 02:00\") won't fire while it's asleep. Pin "
             "Airbyte from the Keep warm card if you rely on scheduled "
@@ -168,9 +170,9 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     },
     # OpenMetadata: React SPA emits absolute-root asset paths that don't
     # survive Traefik's stripprefix middleware. WEB_CONF_URI is supposed to
-    # control this in OM 1.6.x but doesn't — the webpack publicPath is
-    # hardcoded to /. ready_probe targets the operator-facing API on 8585
-    # (the /healthcheck endpoint on 8586 is the admin port — green there
+    # control this in OM 1.6.x but doesn't. The webpack publicPath is hardcoded to /. 
+    # ready_probe targets the operator-facing API on 8585
+    # (the /healthcheck endpoint on 8586 is the admin port and green there
     # means the JVM is up but doesn't say anything about whether /api/v1/*
     # requests can be served).
     "openmetadata": {
@@ -178,7 +180,7 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
         "external_url": "http://{host}:8585",
         "ready_probe": (8585, "/api/v1/system/version"),
         "scheduling_warning": (
-            "OpenMetadata runs cold-tier — it sleeps after 20 minutes of "
+            "OpenMetadata runs cold-tier, it sleeps after 20 minutes of "
             "no activity. Metadata-ingestion workflows scheduled in "
             "OpenMetadata won't fire while it's asleep. Pin OpenMetadata "
             "from the Keep warm card if you rely on scheduled ingestion, "
@@ -190,7 +192,7 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
         # on residential broadband the pull can exceed the default 1200s.
         # The server also runs DB migrations + waits on ES on first start,
         # which extends `docker compose up -d` to ~5-10 min even with
-        # warm caches. Override both timeouts with generous ceilings —
+        # warm caches. Override both timeouts with generous ceilings and 
         # cached starts are still sub-second so this costs nothing in
         # steady state. Audit log will surface the failure if even these
         # caps are exceeded.
@@ -202,7 +204,11 @@ SERVICE_CATALOGUE: dict[str, dict[str, object]] = {
     # `control_plane` flag tells the dashboard to report state="running"
     # unconditionally, render no Start/Stop buttons, and point Open at
     # pgAdmin since PostgreSQL has no UI of its own.
-    "postgresql":   {"tier": "hot",  "display_name": "PostgreSQL",          "layer": "warehouse",    "managed": True,  "control_plane": True, "external_url": "http://{host}/app/pgadmin"},
+    "postgresql":   {"tier": "hot",  "display_name": "PostgreSQL",         
+                      "layer": "warehouse",   
+                        "managed": True, 
+                          "control_plane": True,
+                          "external_url": "http://{host}/app/pgadmin"},
 }
 
 # Wizard layer keys → platform.installed_services.layer CHECK-constraint values.

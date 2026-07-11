@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Hot-tier autostart: walk the catalogue + ensure every configured
     # hot-tier service is RUNNING. The reconciler excludes hot-tier from
-    # idle-stop but never STARTS them — so if a hot-tier service stops
+    # idle-stop but never STARTS them, so if a hot-tier service stops
     # for any reason (operator's `docker stop`, OOM kill, restart-policy
     # gap mid-upgrade) it stays down until the operator notices and
     # restarts manually. One operator hit this after upgrade: 1/3 hot
