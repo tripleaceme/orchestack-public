@@ -217,7 +217,7 @@ services:
       POSTGRES_DB: ${ORCHESTACK_DB_NAME:-orchestack_db}
       ORCHESTRATOR_LOG_LEVEL: ${ORCHESTRATOR_LOG_LEVEL:-info}
       ORCHESTRATOR_RECONCILE_INTERVAL: ${ORCHESTRATOR_RECONCILE_INTERVAL:-30}
-      ORCHESTRATOR_IDLE_THRESHOLD: ${ORCHESTRATOR_IDLE_THRESHOLD:-600}
+      ORCHESTRATOR_IDLE_THRESHOLD: ${ORCHESTRATOR_IDLE_THRESHOLD:-1200}
     volumes:
       # Direct socket — the orchestrator's job IS container management, so
       # full access is intentional (vs. Traefik's read-only socket-proxy).
