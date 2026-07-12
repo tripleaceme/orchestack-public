@@ -140,7 +140,7 @@ services:
   # 3. auth — Signup + login + setup wizard (nginx serving static HTML).
   # ==========================================================================
   auth:
-    image: tripleaceme/orchestack-auth:${AUTH_TAG:-latest}
+    image: tripleaceme/orchestack-auth:${AUTH_TAG:-v0.1.1}
     # Uncomment during development to rebuild from local sources. Context is
     # the repo root so the Dockerfile can COPY both system/auth/ AND
     # assets/css/ (the canonical CSS source shared with the marketing site).
@@ -163,7 +163,7 @@ services:
   # 4. dashboard — Administrator UI (HTMX + FastAPI + Tailwind).
   # ==========================================================================
   dashboard:
-    image: tripleaceme/orchestack-dashboard:${DASHBOARD_TAG:-latest}
+    image: tripleaceme/orchestack-dashboard:${DASHBOARD_TAG:-v0.1.1}
     container_name: orchestack-dashboard
     restart: unless-stopped
     environment:
@@ -205,7 +205,7 @@ services:
   # 5. orchestrator — Service-lifecycle daemon.
   # ==========================================================================
   orchestrator:
-    image: tripleaceme/orchestack-orchestrator:${ORCHESTRATOR_TAG:-latest}
+    image: tripleaceme/orchestack-orchestrator:${ORCHESTRATOR_TAG:-v0.1.1}
     container_name: orchestack-orchestrator
     restart: unless-stopped
     environment:

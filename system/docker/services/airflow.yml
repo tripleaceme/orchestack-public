@@ -12,7 +12,7 @@
 
 services:
   airflow:
-    image: tripleaceme/orchestack-airflow:${AIRFLOW_TAG:-latest}
+    image: tripleaceme/orchestack-airflow:${AIRFLOW_TAG:-v0.1.1}
     container_name: orchestack-airflow
     restart: unless-stopped
     user: "0:0"          # need root to chown the dags + logs volumes

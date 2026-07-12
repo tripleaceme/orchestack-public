@@ -156,12 +156,23 @@ cd "${ORCHESTACK_DIR}"
 
 if [ -z "${ORCHESTACK_DB_PASSWORD:-}" ]; then
   # Interactive prompt. Hide the input. Confirm by asking twice.
+  #
+  # `read </dev/tty` is load-bearing when this script is invoked via
+  # `curl -fsSL ... | bash`. In that mode the script's stdin IS the
+  # curl pipe, not the terminal; a bare `read` returns an empty string
+  # instantly and the empty-password branch below then loops forever.
+  # Reading explicitly from /dev/tty bypasses the pipe and takes input
+  # from the user's actual terminal. Falls back to plain `read` if no
+  # tty is available (CI environments, some SSH pipelines), which is
+  # the case where the operator should have set ORCHESTACK_DB_PASSWORD
+  # as an env var anyway.
+  if [ -r /dev/tty ]; then TTY_IN=/dev/tty; else TTY_IN=/dev/stdin; fi
   printf '%sSet a strong password for OrcheStack'\''s internal database.%s\n' "${BOLD}" "${RESET}"
   printf '%sThis is the bootstrap superuser for OrcheStack metadata only — your%s\n' "${DIM}" "${RESET}"
   printf '%spipeline DB credentials are collected later in the browser wizard.%s\n\n' "${DIM}" "${RESET}"
   while :; do
-    read -r -s -p "ORCHESTACK_DB_PASSWORD: " PW1; echo
-    read -r -s -p "Confirm:               " PW2; echo
+    read -r -s -p "ORCHESTACK_DB_PASSWORD: " PW1 <"${TTY_IN}"; echo
+    read -r -s -p "Confirm:               " PW2 <"${TTY_IN}"; echo
     [ -z "${PW1}" ]      && { warn "Password cannot be empty."; continue; }
     [ "${PW1}" = "${PW2}" ] || { warn "Passwords don't match. Try again."; continue; }
     [ "${#PW1}" -ge 12 ]    || { warn "Password is shorter than 12 characters. Try again (or set ORCHESTACK_DB_PASSWORD env var to bypass this check)."; continue; }
