@@ -1,0 +1,34 @@
+# Cloudflare Worker configuration for orchestack.africa.
+#
+# This deploys the built _site/ directory as a static-assets-only Worker
+# (no JavaScript entrypoint required). Cloudflare's edge serves every
+# file in _site/ directly, matching what Cloudflare Pages would do for
+# a static site. Documented at:
+# https://developers.cloudflare.com/workers/static-assets/
+#
+# Build + deploy flow (matches the Cloudflare dashboard's Worker setup):
+#   1. Build command:  bash scripts/build-site.sh
+#   2. Deploy command: npx wrangler deploy
+#   3. Wrangler reads THIS file, sees the [assets] block, and uploads
+#      _site/ as the Worker's static-asset bundle.
+
+name = "orchestack"
+compatibility_date = "2025-01-01"
+
+[assets]
+# The directory to upload as static assets. Cloudflare's edge serves
+# _site/index.html at "/", _site/docs/pipelines.html at "/docs/pipelines.html",
+# etc. — no path rewriting required because build-site.sh produces the
+# exact URL layout we want.
+directory = "./_site"
+
+# not_found_handling = "single-page-application" would rewrite every
+# 404 to /index.html, which is right for a React SPA but wrong for
+# a documentation site where /docs/nonexistent.html should actually
+# return 404. Leaving it at the default so misspelled URLs get a
+# proper 404.
+
+# Route the static assets at the site root. Wrangler will assign a
+# workers.dev subdomain automatically; the custom domain
+# (orchestack.africa) is attached via the Cloudflare dashboard's
+# "Custom Domains" tab on the Worker after first deploy.
