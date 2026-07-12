@@ -14,7 +14,7 @@
 # Marketing site — deployed separately to orchestack.africa via Cloudflare.
 # Source kept locally only; not in this product repo.
 # ============================================================================
-front-facing/
+# (front-facing/ is now tracked — build-site.sh needs it for orchestack.africa)
 
 # ============================================================================
 # Extracted runtime bundles — bundles are built fresh by CI on tag push and

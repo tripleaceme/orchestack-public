@@ -1,34 +1,32 @@
-# Cloudflare Worker configuration for orchestack.africa.
+# Cloudflare Pages configuration for orchestack.africa.
 #
-# This deploys the built _site/ directory as a static-assets-only Worker
-# (no JavaScript entrypoint required). Cloudflare's edge serves every
-# file in _site/ directly, matching what Cloudflare Pages would do for
-# a static site. Documented at:
-# https://developers.cloudflare.com/workers/static-assets/
+# The Cloudflare "Create a Worker" UI actually runs a Pages deployment
+# under the hood when the build produces a static-file output directory
+# instead of a JavaScript entrypoint. Pages requires this file to
+# declare `pages_build_output_dir` — pointing at the directory
+# scripts/build-site.sh produces — rather than the Worker-style
+# [assets] block. Documented at:
+# https://developers.cloudflare.com/pages/functions/wrangler-configuration/
 #
-# Build + deploy flow (matches the Cloudflare dashboard's Worker setup):
+# Build + deploy flow:
 #   1. Build command:  bash scripts/build-site.sh
-#   2. Deploy command: npx wrangler deploy
-#   3. Wrangler reads THIS file, sees the [assets] block, and uploads
-#      _site/ as the Worker's static-asset bundle.
+#   2. Cloudflare Pages reads THIS file, sees pages_build_output_dir,
+#      and uploads _site/ to its edge network.
+#
+# Custom domain (orchestack.africa) is attached via the Pages project's
+# "Custom Domains" tab in the Cloudflare dashboard after first deploy —
+# NOT configured in this file.
 
 name = "orchestack"
 compatibility_date = "2025-01-01"
 
-[assets]
-# The directory to upload as static assets. Cloudflare's edge serves
-# _site/index.html at "/", _site/docs/pipelines.html at "/docs/pipelines.html",
-# etc. — no path rewriting required because build-site.sh produces the
-# exact URL layout we want.
-directory = "./_site"
-
-# not_found_handling = "single-page-application" would rewrite every
-# 404 to /index.html, which is right for a React SPA but wrong for
-# a documentation site where /docs/nonexistent.html should actually
-# return 404. Leaving it at the default so misspelled URLs get a
-# proper 404.
-
-# Route the static assets at the site root. Wrangler will assign a
-# workers.dev subdomain automatically; the custom domain
-# (orchestack.africa) is attached via the Cloudflare dashboard's
-# "Custom Domains" tab on the Worker after first deploy.
+# Directory produced by scripts/build-site.sh. Contains:
+#   _site/index.html            — marketing landing (front-facing/index.html)
+#   _site/services.html         — services list
+#   _site/contact.html          — contact page
+#   _site/install.sh            — operator install script (curl-safe)
+#   _site/docs/*.html           — operator documentation (28 pages)
+#   _site/docs/services/*.html  — per-service pages
+#   _site/docs/guides/*.html    — operator guides
+#   _site/assets/*              — shared CSS + images
+pages_build_output_dir = "./_site"
