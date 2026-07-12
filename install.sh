@@ -30,6 +30,11 @@
 
 set -euo pipefail
 
+# START_TIME anchors the "started in Ns" figure printed at the end.
+# Recorded before any real work so the total includes download + extract
+# + compose up + first-boot wait, not just the last step.
+START_TIME=$(date +%s)
+
 # ----------------------------------------------------------------------------
 # Configuration (overridable via env vars)
 # ----------------------------------------------------------------------------
@@ -223,8 +228,8 @@ done
 
 echo
 # ────────────────────────────────────────────────────────────────
-# Banner shown at the "platform is reachable" moment. Same style
-# and same visual role as Airflow's webserver-startup banner.
+# Banner + status summary shown at the "platform is reachable"
+# moment. Same visual role as Airflow's webserver-startup banner.
 # Single-quoted heredoc so ` and $ inside the ASCII art aren't
 # interpolated by the shell.
 # ────────────────────────────────────────────────────────────────
@@ -239,12 +244,38 @@ BANNER
 printf '%s\n' "${RESET}"
 printf '%s v%s is up.%s\n\n' "${BOLD}${GREEN}OrcheStack" "${ACTUAL_VERSION}" "${RESET}"
 
-echo "  Open ${CYAN}http://localhost${RESET} to sign up."
-echo
-echo "  Useful commands (from ${ORCHESTACK_DIR}/):"
+# Health snapshot — running vs total container count, plus elapsed
+# install time. `docker compose ps` output width isn't stable across
+# versions so we count via --quiet which prints one line per matching
+# container.
+RUNNING=$(docker compose ps --status running --quiet 2>/dev/null | wc -l | tr -d ' ')
+TOTAL=$(docker compose ps --quiet 2>/dev/null | wc -l | tr -d ' ')
+ELAPSED=$(( $(date +%s) - START_TIME ))
+# Format elapsed as "42s" or "2m 15s" for the >60s case.
+if [ "${ELAPSED}" -lt 60 ]; then
+  ELAPSED_HUMAN="${ELAPSED}s"
+else
+  ELAPSED_HUMAN="$((ELAPSED / 60))m $((ELAPSED % 60))s"
+fi
+
+# Resolve the install directory to an absolute path so operators see
+# the full location, not the "./orchestack" they passed in.
+INSTALL_ABS="$(cd "${ORCHESTACK_DIR}" && pwd)"
+
+printf '  %s✓%s Health      %s/%s containers healthy · started in %s\n' \
+  "${GREEN}" "${RESET}" "${RUNNING}" "${TOTAL}" "${ELAPSED_HUMAN}"
+printf '  %s✓%s Location    %s\n\n' "${GREEN}" "${RESET}" "${INSTALL_ABS}"
+
+# Next-step guidance so the operator does not stall on "what now?"
+printf '  %s▸%s Next: sign up at %shttp://localhost%s, then walk through\n' \
+  "${CYAN}" "${RESET}" "${CYAN}" "${RESET}"
+printf '    the setup wizard (~5 min).\n\n'
+
+echo "  Useful commands (from ${INSTALL_ABS}):"
 echo "    docker compose ps        # service status"
 echo "    docker compose logs -f   # tail logs"
 echo "    docker compose down      # stop everything (data preserved)"
 echo "    docker compose down -v   # stop AND wipe the database volume"
 echo
-echo "  Docs: ${CYAN}https://orchestack.africa/docs/${RESET}"
+echo "  Docs:    ${CYAN}https://orchestack.africa/docs/${RESET}"
+echo "  Issues:  ${CYAN}https://github.com/tripleaceme/orchestack-public/issues${RESET}"
