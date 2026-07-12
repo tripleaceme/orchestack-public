@@ -130,6 +130,15 @@ OrcheStack welcomes contributions. The full guide is in
 4. A maintainer reviews. Once approved, your change is merged into `main`.
 5. It ships to operators when the next release is cut.
 
+### Documentation contributions
+
+The public site at [orchestack.africa](https://orchestack.africa) is
+built from `front-facing/` (marketing pages) and `docs/` (operator
+documentation) in this repo. `scripts/build-site.sh` assembles both
+into `_site/` for Cloudflare Pages, which redeploys on every push to
+`main`. Doc changes go in the same PR as the code they describe — no
+separate documentation repo, no synchronisation step.
+
 If you find a security vulnerability, please [report it privately](https://github.com/tripleaceme/orchestack-public/security/advisories/new)
 rather than in the public issue tracker.
 
