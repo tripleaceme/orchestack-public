@@ -222,8 +222,23 @@ for i in $(seq 1 60); do
 done
 
 echo
-ok "${BOLD}OrcheStack is up.${RESET}"
-echo
+# ────────────────────────────────────────────────────────────────
+# Banner shown at the "platform is reachable" moment. Same style
+# and same visual role as Airflow's webserver-startup banner.
+# Single-quoted heredoc so ` and $ inside the ASCII art aren't
+# interpolated by the shell.
+# ────────────────────────────────────────────────────────────────
+printf '%s' "${BOLD}${CYAN}"
+cat <<'BANNER'
+    ___           _         ____  _             _
+   / _ \ _ __ ___| |__   __/ ___|| |_ __ _  ___| | __
+  | | | | '__/ __| '_ \ / _\___ \| __/ _` |/ __| |/ /
+  | |_| | | | (__| | | |  __/___) | || (_| | (__|   <
+   \___/|_|  \___|_| |_|\___|____/ \__\__,_|\___|_|\_\
+BANNER
+printf '%s\n' "${RESET}"
+printf '%s v%s is up.%s\n\n' "${BOLD}${GREEN}OrcheStack" "${ACTUAL_VERSION}" "${RESET}"
+
 echo "  Open ${CYAN}http://localhost${RESET} to sign up."
 echo
 echo "  Useful commands (from ${ORCHESTACK_DIR}/):"
