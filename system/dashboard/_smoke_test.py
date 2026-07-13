@@ -1,4 +1,4 @@
-"""Dashboard smoke test — phases 3.1 → 3.6.
+"""Dashboard smoke test
 
 Drives every dashboard route against a stubbed OrchestratorClient.
 Verifies routes wire up, templates render, error paths degrade gracefully,
