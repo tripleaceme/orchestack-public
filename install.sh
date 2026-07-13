@@ -259,8 +259,12 @@ else
 fi
 
 # Resolve the install directory to an absolute path so operators see
-# the full location, not the "./orchestack" they passed in.
-INSTALL_ABS="$(cd "${ORCHESTACK_DIR}" && pwd)"
+# the full location, not the "./orchestack" they passed in. The script
+# already cd'd into ORCHESTACK_DIR near line 160 (before compose up),
+# so `pwd` here IS the install location. Re-doing `cd "${ORCHESTACK_DIR}"`
+# would try to resolve "./orchestack" relative to "./orchestack",
+# which does not exist and fails the whole script under `set -e`.
+INSTALL_ABS="$(pwd)"
 
 printf '  %s✓%s Health      %s/%s containers healthy · started in %s\n' \
   "${GREEN}" "${RESET}" "${RUNNING}" "${TOTAL}" "${ELAPSED_HUMAN}"
