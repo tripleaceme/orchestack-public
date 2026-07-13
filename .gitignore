@@ -94,3 +94,9 @@ Thumbs.db
 *.webm
 
 _site/
+
+# Playwright — installed on demand per developer, never committed
+testing/PlayWright/node_modules/
+testing/PlayWright/test-results/
+testing/PlayWright/playwright-report/
+testing/PlayWright/package-lock.json

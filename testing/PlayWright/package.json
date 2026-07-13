@@ -1,0 +1,12 @@
+{
+  "name": "orchestack-playwright-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Targeted Playwright drives for OrcheStack HTMX flows. See README.md.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}
