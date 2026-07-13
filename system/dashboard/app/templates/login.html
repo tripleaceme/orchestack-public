@@ -136,18 +136,33 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
     }
-    /* Password field with eye toggle — same visual as OM */
+    /* Password field with eye toggle.
+       Uses two inline SVGs (eye + eye-slash) instead of emojis so the
+       icon renders identically across OSes — the emoji-based toggle
+       showed 🙈👁 side-by-side on some fonts, which broke the visual
+       intent of a single toggleable icon. */
     .form-panel .password-wrap { position: relative; }
     .form-panel .password-wrap .toggle {
       position: absolute;
-      right: 10px; top: 50%;
+      right: 8px; top: 50%;
       transform: translateY(-50%);
-      background: none; border: none; padding: 4px;
+      background: none; border: none; padding: 6px;
       cursor: pointer; color: var(--text-2);
-      display: flex; align-items: center;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+      transition: color 0.12s, background 0.12s;
     }
-    .form-panel .password-wrap .toggle:hover { color: var(--text); }
-    .form-panel .password-wrap input { padding-right: 36px; }
+    .form-panel .password-wrap .toggle:hover {
+      color: var(--navy);
+      background: rgba(37, 99, 235, 0.08);
+    }
+    .form-panel .password-wrap .toggle svg { width: 18px; height: 18px; display: block; }
+    /* Only one icon visible at a time — the JS flips .visible on the
+       wrapper to show the eye-slash instead of the eye. */
+    .form-panel .password-wrap .toggle .eye-slash { display: none; }
+    .form-panel .password-wrap.visible .toggle .eye { display: none; }
+    .form-panel .password-wrap.visible .toggle .eye-slash { display: block; }
+    .form-panel .password-wrap input { padding-right: 40px; }
 
     .form-panel .submit {
       display: block;
@@ -379,7 +394,7 @@
             <label for="login-password">
               <span class="req">*</span><span class="lbl">Password</span>
             </label>
-            <div class="password-wrap">
+            <div class="password-wrap" id="login-password-wrap">
               <input id="login-password"
                      name="password"
                      type="password"
@@ -387,9 +402,29 @@
                      autocomplete="current-password"
                      placeholder="Password" />
               <button type="button" class="toggle"
-                      onclick="(function(b){const i=document.getElementById('login-password');i.type=i.type==='password'?'text':'password';b.firstChild.textContent=i.type==='password'?'👁':'🙈';})(this)"
-                      aria-label="Toggle password visibility">
-                <span>👁</span>
+                      onclick="(function(b){
+                        const wrap = document.getElementById('login-password-wrap');
+                        const input = document.getElementById('login-password');
+                        const showing = input.type === 'text';
+                        input.type = showing ? 'password' : 'text';
+                        wrap.classList.toggle('visible', !showing);
+                        b.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+                        b.setAttribute('title', showing ? 'Show password' : 'Hide password');
+                      })(this)"
+                      aria-label="Show password"
+                      title="Show password">
+                {# eye — password currently hidden #}
+                <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                {# eye-slash — password currently visible #}
+                <svg class="eye-slash" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17.94 17.94A10.06 10.06 0 0 1 12 19c-6.5 0-10-7-10-7a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="2" y1="2" x2="22" y2="22"/>
+                </svg>
               </button>
             </div>
           </div>
@@ -399,7 +434,7 @@
           <button type="submit" class="submit">Login</button>
         </form>
 
-        <a href="#" class="forgot" onclick="alert('Password reset isn\\'t wired up yet — ask an admin to reset it from the Users page, or reach support@orchestack.africa.'); return false;">
+        <a href="/docs/account-management.html#password-recovery" class="forgot" target="_blank" rel="noopener">
           Forgot Password
         </a>
 

@@ -153,16 +153,37 @@
 <h3 id="change-username">Change username</h3>
 <p>Enter the new username. OrcheStack checks uniqueness against the <code class="inline">platform.users</code> table. On success, the change is immediate.</p>
 
-<h2 id="forgot-password">Forgot password</h2>
-<p>On the login page, click <strong>Forgot?</strong> next to the password field. OrcheStack:</p>
-<ol>
-  <li>Asks for your email address.</li>
-  <li>Generates a one-time reset token, stored in <code class="inline">platform.password_resets</code> with a 30-minute expiry.</li>
-  <li>Sends the token to your email (OrcheStack uses the SMTP credentials configured during install; if none, the token is shown to the Admin in the dashboard for manual delivery).</li>
-  <li>On click, you land on a form that accepts the new password and consumes the token.</li>
-</ol>
+<h2 id="password-recovery">Forgot password</h2>
+<p>OrcheStack does not send password-reset emails — the platform is designed to run without an SMTP dependency. Recovery goes through one of two paths, chosen by whether or not another admin is available.</p>
+
+<h3 id="another-admin-available">Path 1 — another admin resets it for you</h3>
+<p>If your install has more than one admin, the fastest recovery is for a colleague-admin to reset your password from the <strong>Users</strong> page in the dashboard. On the Users page they click <strong>Reset password</strong> next to your row, choose a temporary password, and share it with you through a channel you trust. Sign in with the temporary password, then rotate it immediately from your Profile page.</p>
+
+<h3 id="sole-admin-recovery">Path 2 — you're the only admin (host-shell recovery)</h3>
+<p>When there is no second admin — a fresh install where the first-sign-up admin has forgotten the password, for example — recovery runs against the running platform from the host operator's shell. Anyone with SSH access to the OrcheStack host can invoke it:</p>
+
+<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
+    --email your-email@example.com</code></pre>
+
+<p>The command locates your user record, generates a strong random password, writes its bcrypt hash back to <code class="inline">platform.users.password_hash</code>, prints the new password on stdout, and emits a <code class="inline">password_reset_by_cli</code> event to the audit log so the reset is traceable. Sign in with the printed password, then rotate it from your Profile page as soon as possible.</p>
+
+<p>To supply your own password instead of generating one:</p>
+
+<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
+    --email your-email@example.com \
+    --password 'YourNewStrongPassword!2026'</code></pre>
+
+<p>To reset by username instead of email:</p>
+
+<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
+    --username your-username</code></pre>
+
+<div class="callout">
+  <p><strong>Security model.</strong> This recovery path is intentionally reserved to whoever holds shell access on the OrcheStack host. The threat model treats <em>root-on-host</em> as equivalent to <em>root-on-platform</em> — if an attacker already has host shell access, they can already write arbitrary values to the platform database directly. Requiring only a <code class="inline">docker exec</code> is therefore not a privilege escalation, just a documented shortcut for the operator who legitimately holds that access.</p>
+</div>
+
 <div class="callout warn">
-  <p><strong>No email configured?</strong> In a development install where SMTP isn't set up, an Admin can reset any user's password from the <strong>Users</strong> page (see below). The user will be required to change it on next login.</p>
+  <p><strong>Do NOT run <code class="inline">UPDATE platform.users SET password_hash = ...</code> directly in psql.</strong> The password hash must be produced by bcrypt with the exact cost factor and format the login endpoint verifies against; a shell-computed hash will silently fail the login check. The CLI above computes it correctly and writes the audit event; the direct-SQL path does neither.</p>
 </div>
 
 <h2 id="admin-actions">What Admins can do</h2>
@@ -196,7 +217,7 @@
     <ul>
       <li><a class="active" href="#where-creds-live">Where your credentials live</a></li>
       <li><a href="#change-your-own">Change your own password, email, or username</a></li>
-      <li><a href="#forgot-password">Forgot password</a></li>
+      <li><a href="#password-recovery">Forgot password</a></li>
       <li><a href="#admin-actions">What Admins can do</a></li>
       <li><a href="#deleting-account">Deleting an account</a></li>
     </ul>
