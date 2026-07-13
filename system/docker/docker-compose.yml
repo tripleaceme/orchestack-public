@@ -235,6 +235,10 @@ services:
       # also passes it to `docker compose --env-file` for per-service
       # variable interpolation.
       - ./.env:/etc/orchestack/.env
+      # VERSION file, read at import time by app.main:_read_version()
+      # so /api/health reports the actual release string rather than
+      # a hardcoded "0.1.0". Same file the dashboard mounts.
+      - ./VERSION:/etc/orchestack/VERSION:ro
       # Named volume (not a host bind-mount) because the per-service
       # compose subprocess runs inside the orchestrator container and
       # would resolve `./config` relative to /services/ rather than the

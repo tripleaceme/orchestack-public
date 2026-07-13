@@ -109,6 +109,23 @@ async def transaction() -> AsyncIterator[asyncpg.Connection]:
 
 
 async def ping() -> bool:
+    """/api/health readiness check for Postgres.
+
+    Lazy-inits the pool if it is None so the orchestrator recovers
+    from a first-boot init_pool() failure once Postgres becomes
+    reachable — e.g. after an operator rotates a bad password or
+    restarts the postgres container. Without this lazy retry, a
+    single startup-time auth failure permanently degrades the
+    orchestrator until it is itself restarted, which surprised the
+    v0.1.1 stabilisation cycle.
+    """
+    global _pool
+    if _pool is None:
+        try:
+            await init_pool()
+        except Exception as e:
+            log.warning("postgres ping: lazy init_pool failed: %s", e)
+            return False
     try:
         await fetchval("SELECT 1")
         return True

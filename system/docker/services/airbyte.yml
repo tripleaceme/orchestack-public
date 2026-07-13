@@ -227,6 +227,17 @@ services:
     depends_on:
       airbyte-bootloader:
         condition: service_completed_successfully
+    healthcheck:
+      # Airbyte's server exposes /api/v1/health on 8001. Use a pure-bash
+      # TCP probe as a fallback so the healthcheck works even on
+      # rebuilds of the airbyte/server image that strip curl/wget.
+      # Interval 30s / timeout 5s / retries 3 matches the platform
+      # convention documented in the report §4.5.
+      test: ["CMD-SHELL", "curl -fs http://localhost:8001/api/v1/health >/dev/null 2>&1 || (bash -c ':>/dev/tcp/localhost/8001') || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     labels:
       - orchestack.service=airbyte
       - orchestack.tier=hot
@@ -250,6 +261,14 @@ services:
     depends_on:
       airbyte-bootloader:
         condition: service_completed_successfully
+    healthcheck:
+      # The webapp's nginx serves at :80. HEAD on / returns 200 once
+      # the nginx worker is up and the built assets are available.
+      test: ["CMD-SHELL", "curl -fsI http://localhost:80/ >/dev/null 2>&1 || (bash -c ':>/dev/tcp/localhost/80') || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
     labels:
       - orchestack.service=airbyte
       - orchestack.tier=hot

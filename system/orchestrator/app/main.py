@@ -19,6 +19,29 @@ logging.basicConfig(
 log = logging.getLogger("orchestrator")
 
 
+def _read_version() -> str:
+    """Resolve the release version at import time.
+
+    The release bundle mounts VERSION (a single-line file, e.g. `0.1.1`)
+    at /etc/orchestack/VERSION inside every OrcheStack container. Read
+    from there; fall back to "dev" for local runs without the bind
+    mount. Also checked /etc/orchestack/bundle/VERSION which is the
+    alternate mount path some older bundles used — kept for backward
+    compatibility with pre-v0.1.1 installs the operator may still
+    have on disk.
+    """
+    import os
+    for path in ("/etc/orchestack/VERSION", "/etc/orchestack/bundle/VERSION"):
+        try:
+            if os.path.isfile(path):
+                v = open(path).read().strip()
+                if v:
+                    return v
+        except OSError:
+            pass
+    return "dev"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Open the DB pool + launch the reconciler at startup; close on shutdown.
@@ -192,7 +215,12 @@ app = FastAPI(
         "tier service orchestration. See design/m2-orchestrator.md for the full "
         "design."
     ),
-    version="0.1.0",
+    # Version resolves at import time from /etc/orchestack/VERSION (the
+    # release bundle mounts this file at deploy). Falls back to "dev"
+    # for local runs where the file isn't mounted. Never hardcode a
+    # release string here — a stale one silently misleads operators
+    # and /api/health response consumers about what they're running.
+    version=_read_version(),
     lifespan=lifespan,
 )
 
