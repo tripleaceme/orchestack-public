@@ -162,21 +162,21 @@
 <h3 id="sole-admin-recovery">Path 2 — you're the only admin (host-shell recovery)</h3>
 <p>When there is no second admin — a fresh install where the first-sign-up admin has forgotten the password, for example — recovery runs against the running platform from the host operator's shell. Anyone with SSH access to the OrcheStack host can invoke it:</p>
 
-<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
-    --email your-email@example.com</code></pre>
+<pre>docker exec orchestack-orchestrator python -m app.reset_password \
+    --email your-email@example.com</pre>
 
 <p>The command locates your user record, generates a strong random password, writes its bcrypt hash back to <code class="inline">platform.users.password_hash</code>, prints the new password on stdout, and emits a <code class="inline">password_reset_by_cli</code> event to the audit log so the reset is traceable. Sign in with the printed password, then rotate it from your Profile page as soon as possible.</p>
 
 <p>To supply your own password instead of generating one:</p>
 
-<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
+<pre>docker exec orchestack-orchestrator python -m app.reset_password \
     --email your-email@example.com \
-    --password 'YourNewStrongPassword!2026'</code></pre>
+    --password 'YourNewStrongPassword!2026'</pre>
 
 <p>To reset by username instead of email:</p>
 
-<pre><code class="inline">docker exec orchestack-orchestrator python -m app.reset_password \
-    --username your-username</code></pre>
+<pre>docker exec orchestack-orchestrator python -m app.reset_password \
+    --username your-username</pre>
 
 <div class="callout">
   <p><strong>Security model.</strong> This recovery path is intentionally reserved to whoever holds shell access on the OrcheStack host. The threat model treats <em>root-on-host</em> as equivalent to <em>root-on-platform</em> — if an attacker already has host shell access, they can already write arbitrary values to the platform database directly. Requiring only a <code class="inline">docker exec</code> is therefore not a privilege escalation, just a documented shortcut for the operator who legitimately holds that access.</p>
