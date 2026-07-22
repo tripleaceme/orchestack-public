@@ -2394,21 +2394,6 @@ async def service_ready_probe(
         except httpx.HTTPError:
             return JSONResponse({"ready": False, "phase": "starting"})
 
-    # pgAdmin: 5-10s window between gunicorn start and first /misc/ping success
-    # where Traefik routes a "starting" container, surfacing 502 in the new tab.
-    if name == "pgadmin":
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # /misc/ping MUST include the SCRIPT_NAME prefix — pgAdmin rejects any path that doesn't start with it.
-                r = await client.get(
-                    "http://orchestack-pgadmin:80/app/pgadmin/misc/ping",
-                )
-                if r.status_code == 200:
-                    return JSONResponse({"ready": True})
-                return JSONResponse({"ready": False, "phase": "starting"})
-        except httpx.HTTPError:
-            return JSONResponse({"ready": False, "phase": "starting"})
-
     _SERVICE_READY_PROBES = {
         "minio":        ("orchestack-minio",        9000, "/minio/health/ready"),
         # Airflow 2's webserver DOES honor BASE_URL for its internal
@@ -2424,6 +2409,11 @@ async def service_ready_probe(
         # /healthcheck is on ADMIN port 8586, not operator-facing 8585. On 8585
         # the React router 404s the path → ready loop never gets 200.
         "openmetadata": ("orchestack-openmetadata", 8585, "/api/v1/system/version"),
+        # pgAdmin: 5-10s window between gunicorn start and first /misc/ping success
+        # where Traefik routes a "starting" container, surfacing 502 in the new tab.
+        # /misc/ping MUST include the SCRIPT_NAME prefix — pgAdmin rejects any path
+        # that doesn't start with it.
+        "pgadmin":      ("orchestack-pgadmin",      80,   "/app/pgadmin/misc/ping"),
     }
     # Per-action probes: dbt-docs takes 30-90s (runs deps + run + docs generate);
     # ttyd is up in ~2s. Probing separately lets Open Terminal work while docs build.
