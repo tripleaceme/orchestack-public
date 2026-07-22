@@ -1,6 +1,6 @@
 # orchestack-airflow
 
-Apache Airflow 3 customised for [**OrcheStack**](https://orchestack.africa) —
+Apache Airflow 2.10 customised for [**OrcheStack**](https://orchestack.africa) —
 an open-source containerised data platform that integrates Airbyte, Apache
 Airflow, dbt Core, Great Expectations, Metabase, MinIO, OpenMetadata, and
 pgAdmin behind a single operator-facing interface.
@@ -13,9 +13,9 @@ granularity, without any runtime pip install.
 
 | Package | Purpose |
 |---|---|
-| `dbt-core` (1.10.x) | The dbt CLI for running transformations |
-| `dbt-postgres` (1.10.x) | dbt adapter for the OrcheStack PostgreSQL warehouse |
-| `astronomer-cosmos` (1.14.x) | Generates one Airflow task per dbt model + per dbt test, with per-model failure attribution and re-run-from-failed support |
+| `dbt-core` (1.8.0) | The dbt CLI for running transformations |
+| `dbt-postgres` (1.8.0) | dbt adapter for the OrcheStack PostgreSQL warehouse |
+| `astronomer-cosmos` (1.8.x) | Generates one Airflow task per dbt model + per dbt test, with per-model failure attribution and re-run-from-failed support |
 
 Everything is baked in at build time so cold-start time is sub-15s on
 subsequent boots. The first start is slower because Airflow's metadata
@@ -23,7 +23,7 @@ migrations run.
 
 ## Base image
 
-`apache/airflow:3.2.2-python3.12`
+`apache/airflow:2.10.5-python3.12`
 
 Apache 2.0 license inherited from upstream.
 
@@ -64,7 +64,7 @@ shipped in the OrcheStack runtime bundle.
 To deploy OrcheStack:
 
 ```sh
-curl -sSL https://orchestack.africa/install.sh | bash
+curl -fsSL https://orchestack.africa/install.sh | bash
 ```
 
 Or download the [latest runtime bundle](https://github.com/tripleaceme/orchestack-public/releases/latest)

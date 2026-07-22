@@ -54,7 +54,7 @@ jobs:
           - image: orchestack-dashboard
             short: "OrcheStack administrator dashboard — FastAPI + HTMX + Jinja UI for platform operators."
           - image: orchestack-airflow
-            short: "Apache Airflow 3 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack."
+            short: "Apache Airflow 2.10 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack."
           - image: orchestack-ge
             short: "Great Expectations 0.18.21 + ttyd + editors preinstalled — in-browser data quality work in OrcheStack."
 

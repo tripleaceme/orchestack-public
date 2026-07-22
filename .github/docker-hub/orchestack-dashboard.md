@@ -42,7 +42,7 @@ standalone. It runs alongside the rest of the platform via the
 To deploy OrcheStack:
 
 ```sh
-curl -sSL https://orchestack.africa/install.sh | bash
+curl -fsSL https://orchestack.africa/install.sh | bash
 ```
 
 Or download the [latest runtime bundle](https://github.com/tripleaceme/orchestack-public/releases/latest)
@@ -55,7 +55,7 @@ and follow its `INSTALL.md`. Once running, sign in at
 |---|---|
 | [`tripleaceme/orchestack-auth`](https://hub.docker.com/r/tripleaceme/orchestack-auth) | Signup, login, setup wizard |
 | [`tripleaceme/orchestack-orchestrator`](https://hub.docker.com/r/tripleaceme/orchestack-orchestrator) | Service lifecycle daemon |
-| [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) | Airflow 3 with dbt + Cosmos preinstalled |
+| [`tripleaceme/orchestack-airflow`](https://hub.docker.com/r/tripleaceme/orchestack-airflow) | Airflow 2.10 with dbt + Cosmos preinstalled |
 | [`tripleaceme/orchestack-ge`](https://hub.docker.com/r/tripleaceme/orchestack-ge) | Great Expectations preinstalled |
 
 ## Project links

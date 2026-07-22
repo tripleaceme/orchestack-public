@@ -1,8 +1,8 @@
 # PR-gate CI for OrcheStack.
 #
-# Runs on every pull request against main. Builds all four OrcheStack-owned
-# images (auth, orchestrator, dashboard, ge) without pushing, runs each
-# image's healthcheck inside a container, and reports per-image status.
+# Runs on every pull request against main. Builds all five OrcheStack-owned
+# images (auth, orchestrator, dashboard, airflow, ge) without pushing, runs
+# each image's healthcheck inside a container, and reports per-image status.
 #
 # Why this exists
 # ---------------
