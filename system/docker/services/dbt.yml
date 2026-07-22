@@ -28,7 +28,15 @@
 
 services:
   dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.9.latest
+    # Pinned to 1.8 (not the newer 1.9/1.10) to match the dbt version baked
+    # into the orchestack-airflow image, which is itself held at 1.8 by the
+    # protobuf 4 / cosmos 1.8 / Airflow 2.10 constraint documented in
+    # system/docker/airflow-image/Dockerfile. Keeping both surfaces on the
+    # same dbt release avoids the case where an operator's project runs on
+    # 1.9 in the in-browser terminal but drops to 1.8 when Cosmos schedules
+    # it through Airflow, which can surface as spurious "works locally,
+    # fails in prod" behaviour on 1.9-only project features.
+    image: ghcr.io/dbt-labs/dbt-postgres:1.8.latest
     container_name: orchestack-dbt
     restart: unless-stopped
     entrypoint: ["/bin/bash", "-c"]
