@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CLI commands — OrcheStack</title>
+  <title>Host-shell commands — OrcheStack</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -110,23 +110,27 @@
   </aside>
 
   <main class="docs-main">
-    <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Reference</a> › CLI commands</div>
-    <h1>CLI commands</h1>
-    <p class="lede">The <code class="inline">OrcheStack</code> command-line tool for operators who prefer the terminal over the UI.</p>
+    <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Reference</a> › Host-shell commands</div>
+    <h1>Host-shell commands</h1>
+    <p class="lede">Recovery + inspection commands you run from the OrcheStack host. v0.1.1 does not ship a general-purpose CLI; the one shell entrypoint that exists is the password-reset helper.</p>
 
-<h2 id="install-cli">Install the CLI</h2>
-<pre>curl -fsSL https://orchestack.africa/cli | sh</pre>
-<p>The CLI is a thin wrapper around the OrcheStack REST API and <code class="inline">docker compose</code>. It runs on the host and needs access to the Docker socket.</p>
+<h2 id="reset-password">Reset an operator's password</h2>
+<p>Recovery path for when an operator (particularly the sole administrator on a fresh install) has forgotten their password and no other admin exists to reset it via the Users page. Only someone with shell access to the OrcheStack host can run this — which mirrors the platform's threat model: root-on-host = root-on-platform.</p>
+<pre># Reset by email — recommended when the operator remembers their email
+docker exec orchestack-orchestrator python -m app.reset_password \
+    --email admin@example.com
 
-<h2 id="commands">Commands</h2>
-<pre>OrcheStack status                     # show state of all services
-OrcheStack services list              # list configured services
-OrcheStack run &lt;dag&gt;                  # trigger an Airflow DAG
-OrcheStack logs &lt;service&gt;              # stream logs
-OrcheStack users list                 # list platform users
-OrcheStack backup                     # trigger a manual backup
-OrcheStack version                    # print platform and CLI versions</pre>
-<p>Full reference with flags and examples: <code class="inline">OrcheStack --help</code>.</p>
+# Reset by username
+docker exec orchestack-orchestrator python -m app.reset_password \
+    --username ayoade
+
+# Pass an explicit new password instead of auto-generating one
+docker exec orchestack-orchestrator python -m app.reset_password \
+    --email admin@example.com --password 'MyNewSecret!2026'</pre>
+<p>The generated password prints on stdout on success. A <code class="inline">password_reset_by_cli</code> event is written to the audit log so the reset is traceable — the operator returning to the dashboard sees the event on the Audit page and knows their password was rotated.</p>
+
+<h2 id="planned">Planned for v0.2</h2>
+<p>A general-purpose <code class="inline">orchestack</code> CLI — <code class="inline">status</code>, <code class="inline">services list</code>, <code class="inline">logs</code>, <code class="inline">backup</code>, <code class="inline">version</code> — is on the v0.2 roadmap. Until then, use the dashboard for lifecycle actions and <code class="inline">docker compose -f system/docker/docker-compose.yml logs &lt;service&gt;</code> from the host for raw container logs.</p>
 
     <div class="next-prev">
       <a href="troubleshooting.html">
@@ -143,8 +147,8 @@ OrcheStack version                    # print platform and CLI versions</pre>
   <aside class="docs-toc">
     <div class="toc-title">On this page</div>
     <ul>
-      <li><a class="active" href="#install-cli">Install the CLI</a></li>
-      <li><a href="#commands">Commands</a></li>
+      <li><a class="active" href="#reset-password">Reset an operator's password</a></li>
+      <li><a href="#planned">Planned for v0.2</a></li>
     </ul>
   </aside>
 

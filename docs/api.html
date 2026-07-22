@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>REST API — OrcheStack</title>
+  <title>HTTP endpoints — OrcheStack</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -110,23 +110,33 @@
   </aside>
 
   <main class="docs-main">
-    <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Reference</a> › REST API</div>
-    <h1>REST API</h1>
-    <p class="lede">The dashboard exposes a small REST API for automation and external integrations. Authenticate with a bearer token.</p>
+    <div class="breadcrumb"><a href="index.html">Docs</a> › <a href="index.html">Reference</a> › HTTP endpoints</div>
+    <h1>HTTP endpoints</h1>
+    <p class="lede">The dashboard is an HTMX-rendered server app in v0.1.1 — endpoints return HTML fragments, not JSON. A JSON REST API with bearer-token auth is planned for v0.2.</p>
 
 <h2 id="auth">Authentication</h2>
-<p>Generate an API token from <strong>Account settings → API tokens</strong> in the dashboard. Include it on every request:</p>
-<pre>Authorization: Bearer &lt;your-token&gt;</pre>
+<p>Every dashboard route sits behind the session cookie set by <code class="inline">POST /login</code>. There is no bearer-token issuance in v0.1.1 — if you want to script against these endpoints today, sign in with <code class="inline">curl -c cookies.txt -d 'username=…&amp;password=…' http://localhost/login</code> and reuse the cookie jar on subsequent calls.</p>
 
-<h2 id="endpoints">Core endpoints</h2>
-<pre>GET  /app/api/services          # list services and their status
-POST /app/api/services/{id}/start   # start a cold service
-POST /app/api/services/{id}/stop    # end the caller's session
-POST /app/api/pipelines/{dag}/run   # trigger a DAG run
-GET  /app/api/users             # list users (admin only)
-POST /app/api/users             # create a user (admin only)
-GET  /app/api/audit             # query the audit log</pre>
-<p>Responses are JSON. Rate limit is 60 requests/minute per token.</p>
+<h2 id="shape">Response shape</h2>
+<p>Most endpoints return partial HTML for HTMX to swap into the page. Two exceptions return JSON: <code class="inline">/api/dashboard/pipelines/{id}/runs.json</code> for pipeline-run polling, and the health endpoints.</p>
+
+<h2 id="endpoints">Real endpoints</h2>
+<pre>POST /api/dashboard/services/{name}/start        # start a cold service
+POST /api/dashboard/services/{name}/stop         # end the caller's session
+POST /api/dashboard/services/{name}/open         # start (if cold) + open in a new tab
+POST /api/dashboard/services/{name}/pin          # pin (keep-warm)
+DELETE /api/dashboard/services/{name}/pin        # unpin
+POST /api/dashboard/pipelines/{pipeline_id}/run  # trigger a DAG run
+GET  /api/dashboard/pipelines/{pipeline_id}/runs.json  # poll run status (JSON)
+POST /api/dashboard/pipeline-runs/{run_id}/cancel      # cancel an in-flight run
+GET  /api/dashboard/users/table                  # rendered users table
+POST /api/dashboard/users/invite                 # invite a user (admin only)
+POST /api/dashboard/users/{user_id}/toggle       # activate/deactivate user
+POST /api/dashboard/roles/{role_id}/permissions/bulk-set  # save role matrix</pre>
+<p>The full route table lives in <code class="inline">system/dashboard/app/main.py</code>.</p>
+
+<h2 id="planned">Planned for v0.2</h2>
+<p>A separate JSON REST API under <code class="inline">/api/v1/…</code> with per-user bearer tokens, rate limiting, and OpenAPI docs is on the v0.2 roadmap. It will sit beside the HTMX endpoints, not replace them.</p>
 
     <div class="next-prev">
       <a href="cli.html">
@@ -144,7 +154,9 @@ GET  /app/api/audit             # query the audit log</pre>
     <div class="toc-title">On this page</div>
     <ul>
       <li><a class="active" href="#auth">Authentication</a></li>
-      <li><a href="#endpoints">Core endpoints</a></li>
+      <li><a href="#shape">Response shape</a></li>
+      <li><a href="#endpoints">Real endpoints</a></li>
+      <li><a href="#planned">Planned for v0.2</a></li>
     </ul>
   </aside>
 

@@ -50,6 +50,7 @@ SIDEBAR: list[tuple[str, list[tuple[str, str]]]] = [
         ("hot-cold-tiers.html",     "Hot & cold tiers"),
         ("roles-permissions.html",  "Roles & permissions"),
         ("sessions.html",           "Service sessions"),
+        ("pipelines.html",          "Pipelines"),
         ("account-management.html", "Account management"),
     ]),
     ("Guides", [
@@ -182,35 +183,38 @@ PAGES: list[Page] = [
 
 <h2 id="install-script">Option 1 — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
 <p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running.</p>
-<pre>curl -fsSL https://orchestack.africa/install | sh</pre>
-<p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the latest pinned <code class="inline">docker-compose.yml</code>, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
+<pre>curl -fsSL https://orchestack.africa/install.sh | bash</pre>
+<p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the pinned runtime tarball from GitHub Releases, extracts <code class="inline">system/docker/docker-compose.yml</code> and its sibling service files, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
 <div class="callout">
-  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=1.2.0 curl ... | sh</code>. Default is the latest stable tag.</p>
+  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=v0.1.1 curl -fsSL https://orchestack.africa/install.sh | bash</code>. Default is the latest stable tag.</p>
 </div>
 
 <h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>
 <p>For operators who want to read every file before running it, or who plan to fork and customise.</p>
 <pre>git clone https://github.com/tripleaceme/orchestack-public
-cd orchestack
-docker compose up -d</pre>
-<p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose pull</code>.</p>
+cd orchestack-public
+docker compose -f system/docker/docker-compose.yml up -d</pre>
+<p>Same result as option 1, but the compose file and all supporting scripts live in a git-tracked folder you own. Updates happen via <code class="inline">git pull</code> + <code class="inline">docker compose -f system/docker/docker-compose.yml pull</code>.</p>
 
-<h2 id="install-manual">Option 3 — Manual compose</h2>
-<p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts.</p>
+<h2 id="install-manual">Option 3 — Manual tarball</h2>
+<p>If you want to inspect or edit the compose file before starting anything — CI pipelines, Kubernetes migrations, airgapped hosts. The compose file uses <code class="inline">include:</code> directives to pull in sibling service files, so a single <code class="inline">docker-compose.yml</code> download is not enough — take the release tarball instead.</p>
 <pre>mkdir orchestack && cd orchestack
-curl -fsSL https://raw.githubusercontent.com/tripleaceme/orchestack-public/main/docker-compose.yml -o docker-compose.yml
-# inspect / edit as needed
-docker compose up -d</pre>
-<p>This is what options 1 and 2 do under the hood. Use it when you need to change the compose file (e.g. change exposed ports, add a volume mount) before the first boot.</p>
+curl -fsSL https://github.com/tripleaceme/orchestack-public/releases/download/v0.1.1/orchestack-runtime-0.1.1.tar.gz -o orchestack-runtime.tar.gz
+tar -xzf orchestack-runtime.tar.gz
+# inspect / edit system/docker/docker-compose.yml + service files as needed
+docker compose -f system/docker/docker-compose.yml up -d</pre>
+<p>This is what options 1 and 2 do under the hood. Use it when you need to change compose files (e.g. change exposed ports, add a volume mount) before the first boot.</p>
 
 <h2 id="verify">Verify the install</h2>
 <p>All three options end at the same place. You should see:</p>
-<pre>[+] Running 4/4
- ✔ Container orchestack-proxy        Started
- ✔ Container orchestack-auth         Started
- ✔ Container orchestack-postgres     Started
+<pre>[+] Running 6/6
+ ✔ Container orchestack-socket-proxy  Started
+ ✔ Container orchestack-postgres      Started
+ ✔ Container orchestack-proxy         Started
+ ✔ Container orchestack-auth          Started
+ ✔ Container orchestack-orchestrator  Started
  ✔ Container orchestack-dashboard     Started</pre>
-<p>Only four containers at this stage. No Airbyte, dbt, Metabase, or any other service is pulled yet — those come after you configure the platform.</p>
+<p>Only six base-install containers at this stage. No Airbyte, dbt, Metabase, or any other data service is pulled yet — those come after you configure the platform.</p>
 <p>Open a browser and go to <code class="inline">http://localhost</code>. You should land on the OrcheStack signup page (because no users exist yet).</p>
 <div class="callout warn">
   <p><strong>Port conflict?</strong> If something else is using port 80 on the host, edit the <code class="inline">PROXY_HTTP_PORT</code> variable in your <code class="inline">.env</code> file and restart.</p>
@@ -278,19 +282,19 @@ docker compose up -d</pre>
         ],
         body="""\
 <h2 id="pick-tools">Pick your tools</h2>
-<p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a dropdown with a tested default and documented alternatives:</p>
+<p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a tested default; a couple of layers let you skip the service entirely with <em>None</em>. Alternatives beyond the defaults listed below are on the roadmap for v0.2+, not shipped in v0.1.1.</p>
 <ul>
-  <li><strong>Ingestion</strong> — Airbyte <em>(recommended)</em>, Custom Python, None</li>
+  <li><strong>Ingestion</strong> — Airbyte, or None</li>
   <li><strong>Orchestration</strong> — Apache Airflow (core, always-on)</li>
-  <li><strong>Warehouse</strong> — PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
+  <li><strong>Warehouse</strong> — PostgreSQL</li>
   <li><strong>Data lake</strong> — MinIO (core)</li>
-  <li><strong>Transformation</strong> — dbt Core <em>(recommended)</em>, SQLMesh</li>
-  <li><strong>Data quality</strong> — Great Expectations <em>(recommended)</em>, Soda Core, None</li>
-  <li><strong>Governance</strong> — OpenMetadata <em>(recommended)</em>, DataHub, None</li>
-  <li><strong>BI</strong> — Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
-  <li><strong>Database admin UI</strong> — pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
+  <li><strong>Transformation</strong> — dbt Core</li>
+  <li><strong>Data quality</strong> — Great Expectations, or None</li>
+  <li><strong>Governance</strong> — OpenMetadata, or None</li>
+  <li><strong>BI</strong> — Metabase</li>
+  <li><strong>Database admin UI</strong> — pgAdmin, or None</li>
 </ul>
-<p>Pick the defaults if you're unsure — they're the ones OrcheStack tests end-to-end.</p>
+<p>These are the services OrcheStack tests end-to-end in v0.1.1.</p>
 
 <h2 id="enter-credentials">Enter credentials</h2>
 <p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool — for example, OpenMetadata asks for:</p>
@@ -642,7 +646,7 @@ with DAG(
 <p>After the admin picks tools and enters credentials, OrcheStack pulls the selected services and brings up those marked <em>hot</em> to stay running:</p>
 <ul>
   <li><strong>MinIO</strong> — data lake for raw files</li>
-  <li><strong>Metabase</strong> (or Superset / Lightdash) — BI for stakeholders</li>
+  <li><strong>Metabase</strong> — BI for stakeholders</li>
   <li><strong>Airflow scheduler</strong> — the clock that triggers cold services on schedule</li>
 </ul>
 
@@ -740,7 +744,7 @@ with DAG(
 <table>
   <thead><tr><th>State</th><th>Services running</th><th>Est. RAM</th></tr></thead>
   <tbody>
-    <tr><td>Base install</td><td>Proxy, Front, Dashboard, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
+    <tr><td>Base install</td><td>Socket-proxy, Proxy, Auth, Dashboard, Orchestrator, PostgreSQL (hot)</td><td>~2 GB</td></tr>
     <tr><td>Configured (idle)</td><td>Base + hot tier (MinIO, Metabase, Airflow scheduler)</td><td>~4–5 GB</td></tr>
     <tr><td>Active pipeline</td><td>Configured + cold tier during a run</td><td>~7–10 GB peak</td></tr>
   </tbody>
@@ -1683,7 +1687,7 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 <p><strong>Cold.</strong> pgAdmin is ~500 MB when running and is used ad-hoc, so it doesn't need to stay hot. Click <strong>Open pgAdmin</strong> in the dashboard — OrcheStack spins it up, you do your work, close your session, and it stops after the idle timeout.</p>
 
 <h2 id="role">Role</h2>
-<p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection. Alternatives: <strong>Adminer</strong> (~50 MB, single-file PHP) or <strong>pgweb</strong> (~30 MB, read-only Go binary).</p>
+<p>Engineer-only tool for exploring the warehouse. Stakeholders use Metabase; engineers use pgAdmin when they need raw SQL or schema inspection.</p>
 
 <h2 id="configuration">Configuration</h2>
 <ul>
@@ -1788,29 +1792,127 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
         path="upgrading.html",
         title="Upgrading OrcheStack",
         h1="Upgrading OrcheStack",
-        lede="How to safely move from one OrcheStack version to the next without losing data or breaking your pipelines.",
+        lede="A single command — <code class=\"inline\">./upgrade.sh</code> — moves an OrcheStack install to the latest release. This page covers what the script does, what survives the upgrade, and how to roll back if something breaks.",
         breadcrumb=[("index.html", "Docs"), ("index.html", "Operations"), (None, "Upgrading OrcheStack")],
         toc=[
+            ("quick-path", "The quick path"),
+            ("release-artefacts", "Why upgrades have two parts"),
+            ("what-the-script-does", "What upgrade.sh does"),
+            ("what-survives", "What survives an upgrade"),
+            ("what-doesnt-survive", "Fresh-start reinstall"),
+            ("manual-equivalent", "Manual equivalent"),
+            ("verifying", "Verifying the upgrade"),
             ("versioning", "Versioning"),
-            ("upgrade-steps", "Upgrade steps"),
             ("rollback", "Rollback"),
+            ("backups-first", "Backups for MAJOR upgrades"),
         ],
         body="""\
-<h2 id="versioning">Versioning</h2>
-<p>OrcheStack follows semantic versioning. Docker images are pinned by tag in <code class="inline">docker-compose.yml</code> — never use <code class="inline">:latest</code> in production.</p>
+<h2 id="quick-path">The quick path</h2>
+<p>From inside your runtime install directory (the one that has <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code>):</p>
+<pre><code>cd orchestack-runtime-X.Y.Z
+./upgrade.sh</code></pre>
+<p>That's it. The script handles everything below. You don't normally need to read the rest of this page unless something goes wrong, or you want to know what's happening under the hood.</p>
 
-<h2 id="upgrade-steps">Upgrade steps</h2>
+<h2 id="release-artefacts">Why upgrades have two parts</h2>
+<p>An OrcheStack release ships in <strong>two artefacts</strong>, and an upgrade has to pull both:</p>
+<ul>
+  <li><strong>Docker images</strong> — <code class="inline">orchestack-auth</code>, <code class="inline">orchestack-orchestrator</code>, <code class="inline">orchestack-dashboard</code>, <code class="inline">orchestack-airflow</code>, <code class="inline">orchestack-ge</code>. Pulled with <code class="inline">docker compose pull</code>.</li>
+  <li><strong>The runtime bundle</strong> — <code class="inline">docker-compose.yml</code>, the per-service compose snippets in <code class="inline">services/</code>, Traefik config in <code class="inline">traefik/</code>, postgres init SQL in <code class="inline">postgres-init/</code>. Lives in the release tarball on GitHub, NOT inside any image.</li>
+</ul>
+<p><code class="inline">docker compose pull</code> alone only handles the images. Running it without re-extracting the bundle leaves you on the old compose files, which is how operators have ended up with already-fixed bugs re-appearing after they thought they'd upgraded. The bundled <code class="inline">upgrade.sh</code> exists to do both halves correctly in one go.</p>
+
+<h2 id="what-the-script-does">What <code class="inline">upgrade.sh</code> does, step by step</h2>
 <ol>
-  <li>Read the release notes at <a href="https://github.com/tripleaceme/OrcheStack/releases">github.com/tripleaceme/OrcheStack/releases</a> for breaking changes.</li>
-  <li>Take a full backup (see <a href="backup-restore.html">Backup &amp; restore</a>).</li>
-  <li>Edit <code class="inline">docker-compose.yml</code> to bump image tags.</li>
-  <li>Run <code class="inline">docker compose pull</code> to fetch the new images.</li>
-  <li>Run <code class="inline">docker compose up -d</code>. Services with migrations will run them at startup.</li>
-  <li>Verify the dashboard loads and the nightly DAG succeeds on its next run.</li>
+  <li><strong>Pre-flight check.</strong> Verifies it's running from inside an install directory (has <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code>), and that Docker is running. Bails early with a clear error if not.</li>
+  <li><strong>Backs up your <code class="inline">.env</code></strong> to <code class="inline">.env.bak.&lt;timestamp&gt;</code>. Your passwords, repo URLs (with PATs), and custom settings are preserved verbatim.</li>
+  <li><strong>Downloads the latest release tarball</strong> from <code class="inline">https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz</code> to a staging directory.</li>
+  <li><strong>Replaces runtime config files in place:</strong> <code class="inline">docker-compose.yml</code>, <code class="inline">services/</code>, <code class="inline">traefik/</code>, <code class="inline">postgres-init/</code>, <code class="inline">INSTALL.md</code>, <code class="inline">VERSION</code>, <code class="inline">upgrade.sh</code> itself, and <code class="inline">.env.example</code>. Your <code class="inline">.env</code> is left alone.</li>
+  <li><strong>Pulls new Docker images</strong> — <code class="inline">docker compose pull</code>. Can take several minutes on first pull of heavy images like <code class="inline">orchestack-airflow</code> (~2.4 GB).</li>
+  <li><strong>Restarts the stack</strong> — <code class="inline">docker compose up -d</code>. Containers recreate against the new images and new compose config.</li>
 </ol>
 
+<h2 id="what-survives">What survives an upgrade</h2>
+<p>The upgrade replaces <strong>config</strong>, never touches <strong>state</strong>:</p>
+<ul>
+  <li><strong>Your <code class="inline">.env</code></strong> — passwords, repo URLs with PATs, custom variables. All preserved.</li>
+  <li><strong>The OrcheStack platform database</strong> — user accounts, roles, audit log, installed-services registry. Lives in the <code class="inline">orchestack-postgres-data</code> Docker volume.</li>
+  <li><strong>Per-service state</strong> — Metabase dashboards, Airflow DAG metadata + connections, dbt project files, MinIO buckets, OpenMetadata catalog. Each lives in its own named Docker volume which the upgrade doesn't touch.</li>
+  <li><strong>Operator-added files</strong> — anything you added to the install directory that the bundle doesn't ship is left alone.</li>
+</ul>
+
+<h2 id="what-doesnt-survive">What doesn't survive a <em>fresh-start</em> reinstall</h2>
+<p>The upgrade itself preserves state. But if you ever need a totally clean install:</p>
+<pre><code>docker compose down -v</code></pre>
+<p>The <code class="inline">-v</code> flag drops every named volume — that wipes the platform DB, every service's state, every credential. Run this only when you intentionally want a from-scratch install. The upgrade script never uses this flag.</p>
+
+<h2 id="manual-equivalent">Manual equivalent</h2>
+<p>If you prefer not to run the script (or you're upgrading from a version that didn't ship one), here's what it does in plain Docker commands:</p>
+<pre><code># 1. Back up .env
+cp .env /tmp/orchestack-env.bak
+
+# 2. Download the latest runtime bundle
+curl -fsSL -o /tmp/runtime.tar.gz \\
+  https://github.com/tripleaceme/orchestack-public/releases/latest/download/orchestack-runtime.tar.gz
+
+# 3. Extract to staging
+tar xzf /tmp/runtime.tar.gz -C /tmp
+
+# 4. Replace runtime config files
+cp /tmp/orchestack-runtime-*/{docker-compose.yml,INSTALL.md,upgrade.sh,VERSION,.env.example} ./
+cp -R /tmp/orchestack-runtime-*/services/. ./services/
+cp -R /tmp/orchestack-runtime-*/traefik/. ./traefik/
+cp -R /tmp/orchestack-runtime-*/postgres-init/. ./postgres-init/
+chmod +x ./upgrade.sh
+
+# 5. Pull new images + restart
+docker compose pull
+docker compose up -d</code></pre>
+
+<h2 id="verifying">Verifying the upgrade</h2>
+<p>After the script completes, give the control plane ~30 seconds to settle, then check:</p>
+<ol>
+  <li><strong>Version</strong> — <code class="inline">cat VERSION</code> should show the new release.</li>
+  <li><strong>Control plane health</strong> — <code class="inline">docker ps --filter "name=orchestack" --format "{{.Names}}: {{.Status}}"</code>. Every <code class="inline">orchestack-*</code> container should report <code class="inline">healthy</code> or <code class="inline">Up</code> (Traefik shows just <code class="inline">Up</code> — it has no healthcheck).</li>
+  <li><strong>Dashboard loads</strong> — visit <code class="inline">http://localhost/app/</code> and sign in with your existing operator account. The platform DB is preserved, so your account works as before.</li>
+  <li><strong>Services start</strong> — Open a previously-running service from the dashboard. The compose snippets for managed services were updated as part of the bundle, so any fixes in service config take effect on the next start.</li>
+</ol>
+
+<h2 id="versioning">Versioning</h2>
+<p>OrcheStack follows <a href="https://semver.org">semantic versioning</a> (MAJOR.MINOR.PATCH). Operator-facing images use <code class="inline">:latest</code> in <code class="inline">.env.example</code> by default — every release re-tags <code class="inline">:latest</code> in addition to the semver tag, so an upgrade naturally moves you to the latest published release of the line you're on. If you need to pin to a specific version, set <code class="inline">AUTH_TAG</code>, <code class="inline">ORCHESTRATOR_TAG</code>, <code class="inline">DASHBOARD_TAG</code>, <code class="inline">AIRFLOW_TAG</code>, and <code class="inline">GE_TAG</code> in your <code class="inline">.env</code> to the semver string (e.g. <code class="inline">AIRFLOW_TAG=0.1.1</code>).</p>
+<p>Release notes for every version are at <a href="https://github.com/tripleaceme/orchestack-public/releases">github.com/tripleaceme/orchestack-public/releases</a>. The <a href="https://github.com/tripleaceme/orchestack-public/blob/main/CHANGELOG.md">CHANGELOG</a> covers every fix and change in detail. Read both before upgrading across MINOR or MAJOR boundaries — PATCH upgrades within a MINOR are designed to be drop-in.</p>
+
 <h2 id="rollback">Rollback</h2>
-<p>If something breaks: revert <code class="inline">docker-compose.yml</code> to the previous tags, restore from backup, and file an issue.</p>
+<p>If the upgrade breaks something, you have two recovery paths.</p>
+
+<h3 id="rollback-images-only">Roll back images only (config breaking change)</h3>
+<p>If the new <strong>image</strong> is the culprit but the new <strong>compose config</strong> is fine, pin the image tags in <code class="inline">.env</code> to the previous version:</p>
+<pre><code>AUTH_TAG=0.1.0
+ORCHESTRATOR_TAG=0.1.0
+DASHBOARD_TAG=0.1.0
+AIRFLOW_TAG=0.1.0
+GE_TAG=0.1.0</code></pre>
+<p>Then <code class="inline">docker compose pull &amp;&amp; docker compose up -d</code>. The platform DB and volumes are unchanged, so your data + accounts come back as they were.</p>
+
+<h3 id="rollback-full">Full rollback (re-extract a prior bundle)</h3>
+<p>If the new <strong>compose config</strong> is incompatible with your setup, you need to put the old bundle back:</p>
+<pre><code># 1. Download the prior release's bundle (replace X.Y.Z with the version you want)
+curl -fsSL -o /tmp/runtime-old.tar.gz \\
+  https://github.com/tripleaceme/orchestack-public/releases/download/vX.Y.Z/orchestack-runtime.tar.gz
+
+# 2. Extract over the install dir
+tar xzf /tmp/runtime-old.tar.gz -C /tmp
+cp /tmp/orchestack-runtime-X.Y.Z/docker-compose.yml ./
+cp -R /tmp/orchestack-runtime-X.Y.Z/services/. ./services/
+
+# 3. Restore the .env image-tag pins (Edit .env and set every *_TAG to vX.Y.Z)
+# 4. Pull + restart
+docker compose pull
+docker compose up -d</code></pre>
+<p>Rollbacks are uncommon — PATCH releases are explicitly designed to be drop-in safe. If you've rolled back, please <a href="https://github.com/tripleaceme/orchestack-public/issues">open an issue</a> with the version pair and what broke, so we can fix it for the next release.</p>
+
+<h2 id="backups-first">Before any MAJOR upgrade, take a backup</h2>
+<p>PATCH and MINOR upgrades within the same MAJOR are designed to be drop-in safe. MAJOR upgrades (1.x → 2.x, etc.) may include irreversible schema migrations to the platform DB.</p>
+<p>Always take a backup before a MAJOR upgrade — see <a href="backup-restore.html">Backup &amp; restore</a> for the procedure.</p>
 """,
     ),
 
@@ -1858,55 +1960,71 @@ openmetadata   -- OpenMetadata's internal tables (if enabled)</pre>
 
     Page(
         path="cli.html",
-        title="CLI commands",
-        h1="CLI commands",
-        lede="The <code class=\"inline\">OrcheStack</code> command-line tool for operators who prefer the terminal over the UI.",
-        breadcrumb=[("index.html", "Docs"), ("index.html", "Reference"), (None, "CLI commands")],
+        title="Host-shell commands",
+        h1="Host-shell commands",
+        lede="Recovery + inspection commands you run from the OrcheStack host. v0.1.1 does not ship a general-purpose CLI; the one shell entrypoint that exists is the password-reset helper.",
+        breadcrumb=[("index.html", "Docs"), ("index.html", "Reference"), (None, "Host-shell commands")],
         toc=[
-            ("install-cli", "Install the CLI"),
-            ("commands", "Commands"),
+            ("reset-password", "Reset an operator's password"),
+            ("planned", "Planned for v0.2"),
         ],
         body="""\
-<h2 id="install-cli">Install the CLI</h2>
-<pre>curl -fsSL https://orchestack.africa/cli | sh</pre>
-<p>The CLI is a thin wrapper around the OrcheStack REST API and <code class="inline">docker compose</code>. It runs on the host and needs access to the Docker socket.</p>
+<h2 id="reset-password">Reset an operator's password</h2>
+<p>Recovery path for when an operator (particularly the sole administrator on a fresh install) has forgotten their password and no other admin exists to reset it via the Users page. Only someone with shell access to the OrcheStack host can run this — which mirrors the platform's threat model: root-on-host = root-on-platform.</p>
+<pre># Reset by email — recommended when the operator remembers their email
+docker exec orchestack-orchestrator python -m app.reset_password \\
+    --email admin@example.com
 
-<h2 id="commands">Commands</h2>
-<pre>OrcheStack status                     # show state of all services
-OrcheStack services list              # list configured services
-OrcheStack run &lt;dag&gt;                  # trigger an Airflow DAG
-OrcheStack logs &lt;service&gt;              # stream logs
-OrcheStack users list                 # list platform users
-OrcheStack backup                     # trigger a manual backup
-OrcheStack version                    # print platform and CLI versions</pre>
-<p>Full reference with flags and examples: <code class="inline">OrcheStack --help</code>.</p>
+# Reset by username
+docker exec orchestack-orchestrator python -m app.reset_password \\
+    --username ayoade
+
+# Pass an explicit new password instead of auto-generating one
+docker exec orchestack-orchestrator python -m app.reset_password \\
+    --email admin@example.com --password 'MyNewSecret!2026'</pre>
+<p>The generated password prints on stdout on success. A <code class="inline">password_reset_by_cli</code> event is written to the audit log so the reset is traceable — the operator returning to the dashboard sees the event on the Audit page and knows their password was rotated.</p>
+
+<h2 id="planned">Planned for v0.2</h2>
+<p>A general-purpose <code class="inline">orchestack</code> CLI — <code class="inline">status</code>, <code class="inline">services list</code>, <code class="inline">logs</code>, <code class="inline">backup</code>, <code class="inline">version</code> — is on the v0.2 roadmap. Until then, use the dashboard for lifecycle actions and <code class="inline">docker compose -f system/docker/docker-compose.yml logs &lt;service&gt;</code> from the host for raw container logs.</p>
 """,
     ),
 
     Page(
         path="api.html",
-        title="REST API",
-        h1="REST API",
-        lede="The dashboard exposes a small REST API for automation and external integrations. Authenticate with a bearer token.",
-        breadcrumb=[("index.html", "Docs"), ("index.html", "Reference"), (None, "REST API")],
+        title="HTTP endpoints",
+        h1="HTTP endpoints",
+        lede="The dashboard is an HTMX-rendered server app in v0.1.1 — endpoints return HTML fragments, not JSON. A JSON REST API with bearer-token auth is planned for v0.2.",
+        breadcrumb=[("index.html", "Docs"), ("index.html", "Reference"), (None, "HTTP endpoints")],
         toc=[
             ("auth", "Authentication"),
-            ("endpoints", "Core endpoints"),
+            ("shape", "Response shape"),
+            ("endpoints", "Real endpoints"),
+            ("planned", "Planned for v0.2"),
         ],
         body="""\
 <h2 id="auth">Authentication</h2>
-<p>Generate an API token from <strong>Account settings → API tokens</strong> in the dashboard. Include it on every request:</p>
-<pre>Authorization: Bearer &lt;your-token&gt;</pre>
+<p>Every dashboard route sits behind the session cookie set by <code class="inline">POST /login</code>. There is no bearer-token issuance in v0.1.1 — if you want to script against these endpoints today, sign in with <code class="inline">curl -c cookies.txt -d 'username=…&amp;password=…' http://localhost/login</code> and reuse the cookie jar on subsequent calls.</p>
 
-<h2 id="endpoints">Core endpoints</h2>
-<pre>GET  /app/api/services          # list services and their status
-POST /app/api/services/{id}/start   # start a cold service
-POST /app/api/services/{id}/stop    # end the caller's session
-POST /app/api/pipelines/{dag}/run   # trigger a DAG run
-GET  /app/api/users             # list users (admin only)
-POST /app/api/users             # create a user (admin only)
-GET  /app/api/audit             # query the audit log</pre>
-<p>Responses are JSON. Rate limit is 60 requests/minute per token.</p>
+<h2 id="shape">Response shape</h2>
+<p>Most endpoints return partial HTML for HTMX to swap into the page. Two exceptions return JSON: <code class="inline">/api/dashboard/pipelines/{id}/runs.json</code> for pipeline-run polling, and the health endpoints.</p>
+
+<h2 id="endpoints">Real endpoints</h2>
+<pre>POST /api/dashboard/services/{name}/start        # start a cold service
+POST /api/dashboard/services/{name}/stop         # end the caller's session
+POST /api/dashboard/services/{name}/open         # start (if cold) + open in a new tab
+POST /api/dashboard/services/{name}/pin          # pin (keep-warm)
+DELETE /api/dashboard/services/{name}/pin        # unpin
+POST /api/dashboard/pipelines/{pipeline_id}/run  # trigger a DAG run
+GET  /api/dashboard/pipelines/{pipeline_id}/runs.json  # poll run status (JSON)
+POST /api/dashboard/pipeline-runs/{run_id}/cancel      # cancel an in-flight run
+GET  /api/dashboard/users/table                  # rendered users table
+POST /api/dashboard/users/invite                 # invite a user (admin only)
+POST /api/dashboard/users/{user_id}/toggle       # activate/deactivate user
+POST /api/dashboard/roles/{role_id}/permissions/bulk-set  # save role matrix</pre>
+<p>The full route table lives in <code class="inline">system/dashboard/app/main.py</code>.</p>
+
+<h2 id="planned">Planned for v0.2</h2>
+<p>A separate JSON REST API under <code class="inline">/api/v1/…</code> with per-user bearer tokens, rate limiting, and OpenAPI docs is on the v0.2 roadmap. It will sit beside the HTMX endpoints, not replace them.</p>
 """,
     ),
 
@@ -1923,13 +2041,14 @@ GET  /app/api/audit             # query the audit log</pre>
         ],
         body="""\
 <h2 id="base-services">Base services</h2>
-<p>The generated compose always includes:</p>
+<p>The base compose at <code class="inline">system/docker/docker-compose.yml</code> always includes six containers:</p>
 <ul>
-  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
-  <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
-  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-socket-proxy</code> — hardened Docker-socket broker; the only container the orchestrator talks to for lifecycle actions (no service can reach the real socket)</li>
   <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
-  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
+  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
+  <li><code class="inline">orchestack-auth</code> — FastAPI serving signup, login and the setup wizard</li>
+  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager (hot/cold reconciler)</li>
+  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
 </ul>
 
 <h2 id="profiles">Profiles</h2>
@@ -2069,6 +2188,7 @@ def render_page(page: Page) -> str:
     depth = page_depth(page.path)
     up = up_prefix(depth)
     css_href = f"{up}assets/css/main.css"
+    favicon_href = f"{up}assets/logos/favicon.svg"
     header = render_header(page.path)
     sidebar = render_sidebar(page.path)
     breadcrumb_html = render_breadcrumb(page.breadcrumb, page.path) if page.breadcrumb else ""
@@ -2094,6 +2214,7 @@ def render_page(page: Page) -> str:
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{css_href}">
+  <link rel="icon" type="image/svg+xml" href="{favicon_href}">
 </head>
 <body>
 

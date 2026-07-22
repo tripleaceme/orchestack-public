@@ -148,7 +148,7 @@
 <table>
   <thead><tr><th>State</th><th>Services running</th><th>Est. RAM</th></tr></thead>
   <tbody>
-    <tr><td>Base install</td><td>Proxy, Front, Dashboard, PostgreSQL, Orchestrator</td><td>~2 GB</td></tr>
+    <tr><td>Base install</td><td>Socket-proxy, Proxy, Auth, Dashboard, Orchestrator, PostgreSQL (hot)</td><td>~2 GB</td></tr>
     <tr><td>Configured (idle)</td><td>Base + hot tier (MinIO, Metabase, Airflow scheduler)</td><td>~4–5 GB</td></tr>
     <tr><td>Active pipeline</td><td>Configured + cold tier during a run</td><td>~7–10 GB peak</td></tr>
   </tbody>

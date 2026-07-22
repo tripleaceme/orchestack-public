@@ -115,13 +115,14 @@
     <p class="lede">Structure of the docker-compose.yml that OrcheStack generates from your service selection, with common overrides documented.</p>
 
 <h2 id="base-services">Base services</h2>
-<p>The generated compose always includes:</p>
+<p>The base compose at <code class="inline">system/docker/docker-compose.yml</code> always includes six containers:</p>
 <ul>
-  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
-  <li><code class="inline">orchestack-auth</code> — nginx serving signup, login and the setup wizard</li>
-  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
+  <li><code class="inline">orchestack-socket-proxy</code> — hardened Docker-socket broker; the only container the orchestrator talks to for lifecycle actions (no service can reach the real socket)</li>
   <li><code class="inline">orchestack-postgres</code> — PostgreSQL warehouse + platform metadata store</li>
-  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager</li>
+  <li><code class="inline">orchestack-proxy</code> — reverse proxy (Traefik)</li>
+  <li><code class="inline">orchestack-auth</code> — FastAPI serving signup, login and the setup wizard</li>
+  <li><code class="inline">orchestack-orchestrator</code> — Python service-lifecycle manager (hot/cold reconciler)</li>
+  <li><code class="inline">orchestack-dashboard</code> — administrator dashboard</li>
 </ul>
 
 <h2 id="profiles">Profiles</h2>
