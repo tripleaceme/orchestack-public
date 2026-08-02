@@ -5,13 +5,13 @@ does not ship any DAGs to operators — they bring their own from their
 own Git repository.
 
 Operators populate this folder at runtime by setting
-[`AIRFLOW_DAGS_REPO_URL`](https://orchestack.africa/services/airflow.html#dags-live-where)
+[`AIRFLOW_DAGS_REPO_URL`](https://orchestack.ng/services/airflow.html#dags-live-where)
 in `.env`. The Airflow service container's entrypoint clones (or
 `git fetch && git reset --hard`) the operator's repo into the
 `orchestack-airflow-dags` docker volume on every start.
 
 For operator-facing DAG examples, see [**Compose your first
-pipeline**](https://orchestack.africa/first-pipeline.html) — three
+pipeline**](https://orchestack.ng/first-pipeline.html) — three
 concrete composition patterns documented with complete copy-paste-
 ready snippets:
 

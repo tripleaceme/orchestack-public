@@ -448,7 +448,7 @@ platform.
   Contains docker-compose.yml, .env.example, traefik config,
   postgres-init scripts, per-service compose snippets, INSTALL.md, and
   a VERSION file. ~30 KB.
-- **One-line installer** — `curl -sSL https://orchestack.africa/install.sh | bash`
+- **One-line installer** — `curl -sSL https://orchestack.ng/install.sh | bash`
   end-to-end install that prompts for the platform database password,
   writes the environment file, and starts the stack.
 - **Contribution scaffolding** — CONTRIBUTING.md (development setup,

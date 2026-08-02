@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble the public site (orchestack.africa) from the repo's
+# Assemble the public site (orchestack.ng) from the repo's
 # static-HTML sources into a single _site/ directory Cloudflare
 # Pages can serve directly.
 #

@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📖 Operator documentation
-    url: https://orchestack.africa
+    url: https://orchestack.ng
     about: Installation, configuration, and per-service guides for operators running OrcheStack
   - name: 💬 Ask a question or share an idea
     url: https://github.com/tripleaceme/orchestack-public/discussions

@@ -6,7 +6,7 @@
 > the size of the installed toolset.
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Operator docs](https://img.shields.io/badge/Operator_docs-orchestack.africa-2563eb.svg)](https://orchestack.africa)
+[![Operator docs](https://img.shields.io/badge/Operator_docs-orchestack.ng-2563eb.svg)](https://orchestack.ng)
 [![CI](https://github.com/tripleaceme/orchestack-public/actions/workflows/ci.yml/badge.svg)](https://github.com/tripleaceme/orchestack-public/actions/workflows/ci.yml)
 
 OrcheStack integrates Airbyte, Apache Airflow, dbt Core, Great Expectations,
@@ -24,7 +24,7 @@ comfortably within an eight-gigabyte envelope.
 The fastest path is the install script:
 
 ```sh
-curl -sSL https://orchestack.africa/install.sh | bash
+curl -sSL https://orchestack.ng/install.sh | bash
 ```
 
 It downloads the latest runtime bundle, prompts for the platform database
@@ -36,7 +36,7 @@ If you'd rather inspect what you're running before you run it, download
 the runtime bundle from the [latest release](https://github.com/tripleaceme/orchestack-public/releases/latest)
 instead and follow the included `INSTALL.md`.
 
-Full operator documentation: <https://orchestack.africa>
+Full operator documentation: <https://orchestack.ng>
 
 ## What's inside
 
@@ -70,7 +70,7 @@ plus optional pre-start and post-start hooks. The orchestrator's
 reconciler stops idle cold-tier services on a periodic tick. Airflow
 ships with `dbt-core` + `astronomer-cosmos` baked in so the operator
 can run dbt models with per-model task granularity from any DAG —
-see [Compose your first pipeline](https://orchestack.africa/first-pipeline.html)
+see [Compose your first pipeline](https://orchestack.ng/first-pipeline.html)
 for the canonical patterns.
 
 Deeper detail is in [ARCHITECTURE.md](ARCHITECTURE.md) — start there if
@@ -110,7 +110,7 @@ facing pattern.
 | --- | --- |
 | Container images | Docker Hub: [`tripleaceme/orchestack-*`](https://hub.docker.com/u/tripleaceme) |
 | Runtime bundle | GitHub Releases: [`orchestack-runtime.tar.gz`](https://github.com/tripleaceme/orchestack-public/releases/latest) |
-| Operator documentation | <https://orchestack.africa> |
+| Operator documentation | <https://orchestack.ng> |
 
 A maintainer cuts a release by running `make tag-release VERSION=X.Y.Z`
 and pushing the tag. That fires
@@ -132,7 +132,7 @@ OrcheStack welcomes contributions. The full guide is in
 
 ### Documentation contributions
 
-The public site at [orchestack.africa](https://orchestack.africa) is
+The public site at [orchestack.ng](https://orchestack.ng) is
 built from `front-facing/` (marketing pages) and `docs/` (operator
 documentation) in this repo. `scripts/build-site.sh` assembles both
 into `_site/` for Cloudflare Pages, which redeploys on every push to

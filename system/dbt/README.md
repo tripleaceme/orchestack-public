@@ -5,7 +5,7 @@ does not ship a dbt project to operators — they bring their own from
 their own Git repository.
 
 Operators populate the operator's dbt project at runtime by setting
-[`DBT_REPO_URL`](https://orchestack.africa/services/dbt.html#populating-your-project)
+[`DBT_REPO_URL`](https://orchestack.ng/services/dbt.html#populating-your-project)
 in `.env`. The dbt service container's entrypoint clones the
 operator's repo into the `orchestack-dbt-repo` docker volume; the
 Airflow service container then sees the same project at
@@ -13,7 +13,7 @@ Airflow service container then sees the same project at
 project's manifest at DAG-parse time.
 
 For project-layout guidance, see [**dbt Core →
-Project layout**](https://orchestack.africa/services/dbt.html#project-layout)
+Project layout**](https://orchestack.ng/services/dbt.html#project-layout)
 on the operator docs site.
 
 If the operator does not configure `DBT_REPO_URL`, the dbt service

@@ -1,4 +1,4 @@
-# Cloudflare Pages configuration for orchestack.africa.
+# Cloudflare Pages configuration for orchestack.ng.
 #
 # The Cloudflare "Create a Worker" UI actually runs a Pages deployment
 # under the hood when the build produces a static-file output directory
@@ -13,7 +13,7 @@
 #   2. Cloudflare Pages reads THIS file, sees pages_build_output_dir,
 #      and uploads _site/ to its edge network.
 #
-# Custom domain (orchestack.africa) is attached via the Pages project's
+# Custom domain (orchestack.ng) is attached via the Pages project's
 # "Custom Domains" tab in the Cloudflare dashboard after first deploy —
 # NOT configured in this file.
 

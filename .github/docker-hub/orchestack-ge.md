@@ -1,6 +1,6 @@
 # orchestack-ge
 
-Great Expectations preinstalled for [**OrcheStack**](https://orchestack.africa) —
+Great Expectations preinstalled for [**OrcheStack**](https://orchestack.ng) —
 an open-source containerised data platform that integrates Airbyte, Apache
 Airflow, dbt Core, Great Expectations, Metabase, MinIO, OpenMetadata, and
 pgAdmin behind a single operator-facing interface.
@@ -59,7 +59,7 @@ great_expectations checkpoint new daily_checks   # automate them
 ## How to deploy OrcheStack
 
 ```sh
-curl -fsSL https://orchestack.africa/install.sh | bash
+curl -fsSL https://orchestack.ng/install.sh | bash
 ```
 
 Or download the [latest runtime bundle](https://github.com/tripleaceme/orchestack-public/releases/latest)
@@ -83,8 +83,8 @@ for the original projects.
 
 ## Project links
 
-- **Website** — <https://orchestack.africa>
-- **Operator docs** — <https://orchestack.africa/services/great-expectations.html>
+- **Website** — <https://orchestack.ng>
+- **Operator docs** — <https://orchestack.ng/services/great-expectations.html>
 - **Source code** — <https://github.com/tripleaceme/orchestack-public>
 - **Releases** — <https://github.com/tripleaceme/orchestack-public/releases>
 - **License** — Apache 2.0

@@ -26,7 +26,7 @@
 #
 # What it does NOT serve: marketing landing page, services catalog, docs,
 # contact form — those are only on the public Cloudflare Pages deployment at
-# https://orchestack.africa. The architectural reason: docs change frequently
+# https://orchestack.ng. The architectural reason: docs change frequently
 # and we don't want customer installs serving stale documentation. Keeping
 # them off the image also keeps the image small.
 #
@@ -44,7 +44,7 @@ LABEL org.opencontainers.image.title="orchestack-auth" \
       org.opencontainers.image.description="OrcheStack signup, login, and setup wizard (nginx + static)" \
       org.opencontainers.image.vendor="OrcheStack" \
       org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
-      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.documentation="https://orchestack.ng" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # Remove the default nginx site config so ours takes over.
@@ -70,7 +70,7 @@ COPY system/auth/public/ /usr/share/nginx/html/
 RUN rm -rf /usr/share/nginx/html/assets
 
 # Shared CSS from the repo root. This is the SINGLE source of truth for
-# styling, used by both the marketing site (orchestack.africa) and these
+# styling, used by both the marketing site (orchestack.ng) and these
 # in-container pages.
 COPY assets/css/ /usr/share/nginx/html/assets/css/
 

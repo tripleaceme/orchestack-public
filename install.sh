@@ -2,10 +2,10 @@
 # OrcheStack — one-line installer.
 #
 # Usage (recommended):
-#   curl -sSL https://orchestack.africa/install.sh | bash
+#   curl -sSL https://orchestack.ng/install.sh | bash
 #
 # Usage (inspect first — recommended for paranoid operators):
-#   curl -sSL https://orchestack.africa/install.sh -o install.sh
+#   curl -sSL https://orchestack.ng/install.sh -o install.sh
 #   less install.sh           # read it
 #   bash install.sh           # then run it
 #
@@ -281,5 +281,5 @@ echo "    docker compose logs -f   # tail logs"
 echo "    docker compose down      # stop everything (data preserved)"
 echo "    docker compose down -v   # stop AND wipe the database volume"
 echo
-echo "  Docs:    ${CYAN}https://orchestack.africa/docs/${RESET}"
+echo "  Docs:    ${CYAN}https://orchestack.ng/docs/${RESET}"
 echo "  Issues:  ${CYAN}https://github.com/tripleaceme/orchestack-public/issues${RESET}"

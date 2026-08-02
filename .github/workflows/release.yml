@@ -188,7 +188,7 @@ jobs:
 
           ## Documentation
 
-          Full docs at https://orchestack.africa/docs/
+          Full docs at https://orchestack.ng/docs/
           EOF
 
           # Make the tarball. Reproducibility hardening: --sort=name + fixed
@@ -233,7 +233,7 @@ jobs:
           if ! gh release view "${TAG}" >/dev/null 2>&1; then
             gh release create "${TAG}" \
               --title "OrcheStack ${TAG}" \
-              --notes "Runtime bundle for OrcheStack ${TAG}. Install with the [installer script](https://orchestack.africa/install.sh) or by downloading and extracting the tarball below."
+              --notes "Runtime bundle for OrcheStack ${TAG}. Install with the [installer script](https://orchestack.ng/install.sh) or by downloading and extracting the tarball below."
           fi
 
           gh release upload "${TAG}" \

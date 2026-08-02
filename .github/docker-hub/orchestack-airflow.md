@@ -1,6 +1,6 @@
 # orchestack-airflow
 
-Apache Airflow 2.10 customised for [**OrcheStack**](https://orchestack.africa) —
+Apache Airflow 2.10 customised for [**OrcheStack**](https://orchestack.ng) —
 an open-source containerised data platform that integrates Airbyte, Apache
 Airflow, dbt Core, Great Expectations, Metabase, MinIO, OpenMetadata, and
 pgAdmin behind a single operator-facing interface.
@@ -35,7 +35,7 @@ those choices:
 
 - **DAGs** — operators bring their own from a Git repository via
   `AIRFLOW_DAGS_REPO_URL`. The
-  [first-pipeline guide](https://orchestack.africa/first-pipeline.html)
+  [first-pipeline guide](https://orchestack.ng/first-pipeline.html)
   documents three composition patterns operators can copy + adapt.
 - **dbt project** — operators bring their own from a Git repository via
   `DBT_REPO_URL`. Mounted into both the dbt service container and this
@@ -64,7 +64,7 @@ shipped in the OrcheStack runtime bundle.
 To deploy OrcheStack:
 
 ```sh
-curl -fsSL https://orchestack.africa/install.sh | bash
+curl -fsSL https://orchestack.ng/install.sh | bash
 ```
 
 Or download the [latest runtime bundle](https://github.com/tripleaceme/orchestack-public/releases/latest)
@@ -88,9 +88,9 @@ See <https://airflow.apache.org/> for the original project, and
 
 ## Project links
 
-- **Website** — <https://orchestack.africa>
-- **Operator docs** — <https://orchestack.africa/services/airflow.html>
-- **First pipeline guide** — <https://orchestack.africa/first-pipeline.html>
+- **Website** — <https://orchestack.ng>
+- **Operator docs** — <https://orchestack.ng/services/airflow.html>
+- **First pipeline guide** — <https://orchestack.ng/first-pipeline.html>
 - **Source code** — <https://github.com/tripleaceme/orchestack-public>
 - **Releases** — <https://github.com/tripleaceme/orchestack-public/releases>
 - **License** — Apache 2.0

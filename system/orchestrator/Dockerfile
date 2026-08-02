@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.title="orchestack-orchestrator" \
       org.opencontainers.image.description="OrcheStack control-plane daemon — service lifecycle, sessions, audit" \
       org.opencontainers.image.vendor="OrcheStack" \
       org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
-      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.documentation="https://orchestack.ng" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # ----------------------------------------------------------------------------

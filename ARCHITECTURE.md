@@ -11,7 +11,7 @@ that envelope on commodity hardware.
 
 This document is a starting point for contributors who want to understand
 how the platform is put together. It does not replace the operator
-documentation at https://orchestack.africa; that documentation is the
+documentation at https://orchestack.ng; that documentation is the
 right place to start if you want to *use* OrcheStack rather than work on
 its source code.
 
@@ -188,7 +188,7 @@ least-privilege credentials: no tool ever sees another tool's data.
 
 ## Front-facing assets
 
-The marketing site at https://orchestack.africa is not in this
+The marketing site at https://orchestack.ng is not in this
 repository. It is deployed separately to Cloudflare Pages from a
 maintainer-owned source. The shared brand assets (`assets/css/main.css`
 and `assets/logos/`) are mirrored in both places, with this repository

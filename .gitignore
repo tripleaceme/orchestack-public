@@ -11,10 +11,10 @@
 **/logs/
 
 # ============================================================================
-# Marketing site — deployed separately to orchestack.africa via Cloudflare.
+# Marketing site — deployed separately to orchestack.ng via Cloudflare.
 # Source kept locally only; not in this product repo.
 # ============================================================================
-# (front-facing/ is now tracked — build-site.sh needs it for orchestack.africa)
+# (front-facing/ is now tracked — build-site.sh needs it for orchestack.ng)
 
 # ============================================================================
 # Extracted runtime bundles — bundles are built fresh by CI on tag push and

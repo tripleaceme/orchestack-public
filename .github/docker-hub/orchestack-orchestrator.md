@@ -1,6 +1,6 @@
 # orchestack-orchestrator
 
-The control-plane daemon for [**OrcheStack**](https://orchestack.africa) —
+The control-plane daemon for [**OrcheStack**](https://orchestack.ng) —
 an open-source containerised data platform that integrates Airbyte, Apache
 Airflow, dbt Core, Great Expectations, Metabase, MinIO, OpenMetadata, and
 pgAdmin behind a single operator-facing interface.
@@ -37,7 +37,7 @@ containers.
 To deploy OrcheStack:
 
 ```sh
-curl -fsSL https://orchestack.africa/install.sh | bash
+curl -fsSL https://orchestack.ng/install.sh | bash
 ```
 
 Or download the [latest runtime bundle](https://github.com/tripleaceme/orchestack-public/releases/latest)
@@ -54,9 +54,9 @@ and follow its `INSTALL.md`.
 
 ## Project links
 
-- **Website** — <https://orchestack.africa>
-- **Operator docs** — <https://orchestack.africa/install.html>
-- **Architecture** — <https://orchestack.africa/architecture.html>
+- **Website** — <https://orchestack.ng>
+- **Operator docs** — <https://orchestack.ng/install.html>
+- **Architecture** — <https://orchestack.ng/architecture.html>
 - **Source code** — <https://github.com/tripleaceme/orchestack-public>
 - **Releases** — <https://github.com/tripleaceme/orchestack-public/releases>
 - **License** — Apache 2.0

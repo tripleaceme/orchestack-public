@@ -7,7 +7,7 @@ operator-facing dashboard. This guide explains how to set up a development
 environment, propose changes, and get them merged.
 
 If you're an operator looking to install OrcheStack rather than contribute,
-start with the operator guide at https://orchestack.africa instead.
+start with the operator guide at https://orchestack.ng instead.
 
 - [Code of conduct](#code-of-conduct)
 - [Ways to contribute](#ways-to-contribute)
@@ -304,7 +304,7 @@ Operators consume OrcheStack through three artefacts:
 - Docker Hub images at `tripleaceme/orchestack-{auth,orchestrator,dashboard}`
 - A runtime bundle (`orchestack-runtime.tar.gz`) attached to each GitHub
   release
-- The operator documentation site at https://orchestack.africa
+- The operator documentation site at https://orchestack.ng
 
 A release is cut by a maintainer with:
 

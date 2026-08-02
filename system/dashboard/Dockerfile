@@ -19,7 +19,7 @@ LABEL org.opencontainers.image.title="orchestack-dashboard" \
       org.opencontainers.image.description="OrcheStack administrator dashboard — HTMX + FastAPI + Jinja" \
       org.opencontainers.image.vendor="OrcheStack" \
       org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
-      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.documentation="https://orchestack.ng" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 WORKDIR /app

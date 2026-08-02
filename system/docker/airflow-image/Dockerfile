@@ -27,7 +27,7 @@ LABEL org.opencontainers.image.title="orchestack-airflow" \
       org.opencontainers.image.description="Apache Airflow 2.10 with dbt-core, dbt-postgres, and astronomer-cosmos preinstalled for OrcheStack" \
       org.opencontainers.image.vendor="OrcheStack" \
       org.opencontainers.image.source="https://github.com/tripleaceme/orchestack-public" \
-      org.opencontainers.image.documentation="https://orchestack.africa" \
+      org.opencontainers.image.documentation="https://orchestack.ng" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # ────────────────────────────────────────────────────────────────────────

@@ -122,7 +122,7 @@
   <li><strong>Ports 80 and 443</strong> available on the host (OrcheStack's reverse proxy binds here)</li>
 </ul>
 <div class="callout">
-  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">orchestack.africa</code> (installer + compose file). Everything else is internal.</p>
+  <p><strong>Working behind a firewall?</strong> You'll need outbound HTTPS to <code class="inline">hub.docker.com</code> (Docker images) and <code class="inline">orchestack.ng</code> (installer + compose file). Everything else is internal.</p>
 </div>
 
 <h2 id="distribution">Where OrcheStack lives</h2>
@@ -130,16 +130,16 @@
 <ul>
   <li><strong>Docker Hub</strong> (<code class="inline">hub.docker.com/r/tripleaceme/orchestack-*</code>) — our prebuilt images: <code class="inline">tripleaceme/orchestack-auth</code> (signup, login and setup wizard), <code class="inline">tripleaceme/orchestack-orchestrator</code> (hot/cold service lifecycle daemon), <code class="inline">tripleaceme/orchestack-dashboard</code> (administrator dashboard), and <code class="inline">tripleaceme/orchestack-airflow</code> (Apache Airflow with dbt + Cosmos preinstalled). These are what <code class="inline">docker compose</code> pulls.</li>
   <li><strong>GitHub</strong> (<code class="inline">github.com/tripleaceme/orchestack-public</code>) — source of truth for the compose file, the service generator, docs, and the setup skeleton. This is what you clone if you want to read, fork, or contribute.</li>
-  <li><strong>orchestack.africa</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
+  <li><strong>orchestack.ng</strong> — marketing + docs + the installer script you're about to run. The installer is a thin shell script that pulls from the other two places.</li>
 </ul>
 <p>Pick an install option below based on how much you want to see under the hood.</p>
 
 <h2 id="install-script">Option 1 — Installer script <span class="muted" style="font-weight:500">(recommended)</span></h2>
 <p>Single command. Good for production hosts, demo laptops, and CI runners that just need OrcheStack running.</p>
-<pre>curl -fsSL https://orchestack.africa/install.sh | bash</pre>
+<pre>curl -fsSL https://orchestack.ng/install.sh | bash</pre>
 <p>The installer creates an <code class="inline">orchestack/</code> directory in your current path, downloads the pinned runtime tarball from GitHub Releases, extracts <code class="inline">system/docker/docker-compose.yml</code> and its sibling service files, runs <code class="inline">docker compose up -d</code>, and prints the URL to visit when the control plane is up. It prompts before overwriting an existing install.</p>
 <div class="callout">
-  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=v0.1.1 curl -fsSL https://orchestack.africa/install.sh | bash</code>. Default is the latest stable tag.</p>
+  <p><strong>Pin to a specific version</strong> by passing <code class="inline">ORCHESTACK_VERSION=v0.1.1 curl -fsSL https://orchestack.ng/install.sh | bash</code>. Default is the latest stable tag.</p>
 </div>
 
 <h2 id="install-clone">Option 2 — Clone the GitHub repo</h2>

@@ -115,19 +115,19 @@
     <p class="lede">Pick one tool per pipeline layer, provide credentials, and OrcheStack pulls the Docker images you chose — writing a generated <code class="inline">docker-compose.yml</code> and <code class="inline">.env</code> under the hood.</p>
 
 <h2 id="pick-tools">Pick your tools</h2>
-<p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a dropdown with a tested default and documented alternatives:</p>
+<p>After signing up, you land on the <strong>Service selection</strong> page. Each pipeline layer has a tested default; a couple of layers let you skip the service entirely with <em>None</em>. Alternatives beyond the defaults listed below are on the roadmap for v0.2+, not shipped in v0.1.1.</p>
 <ul>
-  <li><strong>Ingestion</strong> — Airbyte <em>(recommended)</em>, Custom Python, None</li>
+  <li><strong>Ingestion</strong> — Airbyte, or None</li>
   <li><strong>Orchestration</strong> — Apache Airflow (core, always-on)</li>
-  <li><strong>Warehouse</strong> — PostgreSQL <em>(recommended)</em>, ClickHouse, DuckDB</li>
+  <li><strong>Warehouse</strong> — PostgreSQL</li>
   <li><strong>Data lake</strong> — MinIO (core)</li>
-  <li><strong>Transformation</strong> — dbt Core <em>(recommended)</em>, SQLMesh</li>
-  <li><strong>Data quality</strong> — Great Expectations <em>(recommended)</em>, Soda Core, None</li>
-  <li><strong>Governance</strong> — OpenMetadata <em>(recommended)</em>, DataHub, None</li>
-  <li><strong>BI</strong> — Metabase <em>(recommended)</em>, Apache Superset, Lightdash</li>
-  <li><strong>Database admin UI</strong> — pgAdmin <em>(recommended)</em>, Adminer, pgweb, None</li>
+  <li><strong>Transformation</strong> — dbt Core</li>
+  <li><strong>Data quality</strong> — Great Expectations, or None</li>
+  <li><strong>Governance</strong> — OpenMetadata, or None</li>
+  <li><strong>BI</strong> — Metabase</li>
+  <li><strong>Database admin UI</strong> — pgAdmin, or None</li>
 </ul>
-<p>Pick the defaults if you're unsure — they're the ones OrcheStack tests end-to-end.</p>
+<p>These are the services OrcheStack tests end-to-end in v0.1.1.</p>
 
 <h2 id="enter-credentials">Enter credentials</h2>
 <p>For each service you enabled, OrcheStack shows a credentials form. The fields are specific to that tool — for example, OpenMetadata asks for:</p>
