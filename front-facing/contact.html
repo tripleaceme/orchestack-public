@@ -34,10 +34,48 @@
           </a>
         </span>
         <a class="btn btn-primary btn-sm" href="index.html#how">Get started</a>
+        <button class="nav-hamburger" type="button" aria-label="Open menu"
+                aria-controls="mobile-nav-drawer" aria-expanded="false"
+                onclick="toggleMobileNav(true)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="4" y1="7"  x2="20" y2="7"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="17" x2="20" y2="17"/>
+          </svg>
+        </button>
       </div>
     </nav>
   </div>
 </header>
+
+<div id="mobile-nav-backdrop" onclick="toggleMobileNav(false)" aria-hidden="true"></div>
+<aside id="mobile-nav-drawer" role="dialog" aria-modal="true" aria-labelledby="mnav-title">
+  <span class="mnav-grabber" aria-hidden="true"></span>
+  <div class="mnav-header">
+    <p id="mnav-title" class="mnav-title">Navigate to</p>
+    <p class="mnav-subtitle">Select a page to navigate to.</p>
+  </div>
+  <nav class="mnav-links">
+    <a href="index.html#how">Get started</a>
+    <a href="services.html">Services</a>
+    <a href="../docs/index.html">Docs</a>
+    <a href="contact.html" onclick="toggleMobileNav(false)">Contact</a>
+    <a href="https://github.com/tripleaceme/orchestack-public" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+  <button class="mnav-close" type="button" onclick="toggleMobileNav(false)">Close</button>
+</aside>
+
+<script>
+  function toggleMobileNav(shouldOpen) {
+    const open = shouldOpen ?? !document.body.classList.contains('mnav-open');
+    document.body.classList.toggle('mnav-open', open);
+    const btn = document.querySelector('.nav-hamburger');
+    if (btn) btn.setAttribute('aria-expanded', String(open));
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') toggleMobileNav(false);
+  });
+</script>
 
 <section class="hero-compact">
   <div class="wrap">
