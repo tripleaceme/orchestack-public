@@ -1246,3 +1246,47 @@ footer { border-top: 1px solid var(--border); padding: 32px 0; color: var(--mute
   flex-wrap: wrap;
   justify-content: center;
 }
+
+/* ---------------- Join the Community ---------------- */
+.community { padding: 24px 0 80px; background: var(--bg-alt); border-top: 1px solid var(--border); }
+.community-head { text-align: center; margin: 32px 0 28px; }
+.community-head h2 {
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 700; letter-spacing: -.01em;
+  color: var(--navy); margin: 0 0 10px;
+}
+.community-head p {
+  color: var(--muted); font-size: 15px; margin: 0 auto; max-width: 560px;
+}
+.community-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; max-width: 880px; margin: 0 auto;
+}
+.community-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 28px 22px;
+  background: #fff; color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px;
+  text-align: center; text-decoration: none;
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.community-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--navy);
+  box-shadow: 0 8px 20px rgba(15, 42, 68, .08);
+}
+.community-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border-radius: 12px;
+  background: var(--bg-alt); color: var(--navy);
+}
+.community-tile:hover .community-icon { background: var(--navy); color: #fff; }
+.community-label {
+  font-size: 17px; font-weight: 700; color: var(--navy);
+}
+.community-hint {
+  font-size: 13px; color: var(--muted); line-height: 1.4;
+}
+@media (max-width: 780px) {
+  .community-grid { grid-template-columns: 1fr; gap: 12px; }
+}
