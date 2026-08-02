@@ -24,6 +24,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* Smooth in-page anchor navigation (e.g. Get Started → #how). Motion-
+   averse users get the browser's default instant jump. */
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text);
@@ -106,6 +110,45 @@ header {
 .d-r { background: #ff5f57; } .d-y { background: #febc2e; } .d-g { background: #28c840; }
 .terminal .prompt { color: #7aa9d4; }
 .terminal .out { color: #b6c2cc; display: block; margin-top: 4px; }
+
+/* ---- Auto-typing hero terminal ---- */
+/* Terminal body is a flex column so lines stack top-to-bottom and
+   the last line can carry a blinking pseudo-cursor. */
+#hero-terminal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.hero-term-line {
+  display: block;
+  min-height: 1.55em;
+}
+.hero-term-line.line-cmd     { color: #e8edf3; }         /* the $ curl command */
+.hero-term-line.line-out     { color: #b6c2cc; }         /* progress lines */
+.hero-term-line.line-ok      { color: #7ce38b; }         /* checkmark lines */
+.hero-term-line.line-final   { color: #a8e6ff; margin-top: 6px; }
+.hero-term-line.line-comment { color: #7f8b96; font-style: italic; }
+.hero-term-line.spacer       { min-height: 0.5em; }
+
+/* Blinking cursor caret on the last line only. Attached via ::after so
+   it moves as new lines append rather than sticking to a fixed spot. */
+#hero-terminal-body .hero-term-line:last-child::after {
+  content: '▊';
+  display: inline-block;
+  margin-left: 4px;
+  color: #7aa9d4;
+  animation: hero-caret 1.05s steps(2, jump-none) infinite;
+}
+@keyframes hero-caret {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #hero-terminal-body .hero-term-line:last-child::after { animation: none; }
+}
 
 /* ---------------- Trust strip ---------------- */
 .strip { background: var(--bg-alt); padding: 28px 0; border-bottom: 1px solid var(--border); }
