@@ -367,6 +367,10 @@ with DAG(
 
 <p><strong>The two repos</strong>:</p>
 <table class="docs-table">
+  <colgroup>
+    <col style="width: 28%">
+    <col style="width: 72%">
+  </colgroup>
   <thead>
     <tr><th>Repo</th><th>What lives there</th></tr>
   </thead>
@@ -395,8 +399,13 @@ with DAG(
   </tbody>
 </table>
 
-<p><strong>What Path D adds beyond Path A</strong>:</p>
+<p style="margin: 32px 0 14px"><strong>What Path D adds beyond Path A</strong>:</p>
 <table class="docs-table">
+  <colgroup>
+    <col style="width: 22%">
+    <col style="width: 28%">
+    <col style="width: 50%">
+  </colgroup>
   <thead>
     <tr><th>Concern</th><th>Path A</th><th>Path D</th></tr>
   </thead>
@@ -439,7 +448,7 @@ with DAG(
   </tbody>
 </table>
 
-<p><strong>How to adopt</strong>: fork both repos, replace the placeholder Airbyte connection UUIDs in <code class="inline">acme-airflow/dags/daily_pipeline.py::MAVEN_TABLES</code> with your own, set the four <code class="inline">RESEND_*</code> environment variables from the <code class="inline">acme-airflow/.env.example</code> template, and paste both repo URLs into OrcheStack's setup wizard under Orchestration → Airflow → DAGs repository and Transformation → dbt → project repository. The dbt project auto-clones into the dbt container; DAGs are picked up by the Airflow scheduler within ~30 seconds of the first git-sync poll.</p>
+<p style="margin-top: 24px"><strong>How to adopt</strong>: fork both repos, replace the placeholder Airbyte connection UUIDs in <code class="inline">acme-airflow/dags/daily_pipeline.py::MAVEN_TABLES</code> with your own, set the four <code class="inline">RESEND_*</code> environment variables from the <code class="inline">acme-airflow/.env.example</code> template, and paste both repo URLs into OrcheStack's setup wizard under Orchestration → Airflow → DAGs repository and Transformation → dbt → project repository. The dbt project auto-clones into the dbt container; DAGs are picked up by the Airflow scheduler within ~30 seconds of the first git-sync poll.</p>
 
 <div class="callout">
   <p><strong>Why two repos, not one?</strong> Each is deployed independently by OrcheStack's git-sync sidecars — the dbt container clones the dbt repo, the Airflow container clones the DAGs repo. Splitting them lets analytics engineers own the dbt project without touching Airflow (and vice versa), and lets you use the two independently on other projects. The <a href="https://github.com/tripleaceme/acme-dbt/blob/main/models/overview.md">acme-dbt overview</a> and the <a href="https://github.com/tripleaceme/acme-airflow/blob/main/README.md">acme-airflow README</a> both document the split.</p>
