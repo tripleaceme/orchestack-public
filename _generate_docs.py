@@ -2166,7 +2166,7 @@ def render_header(current: str) -> str:
         <span class="kbd">⌘K</span>
       </div>
       <ul>
-        <li><a class="nav-link" href="https://docs.orchestack.ng/">Home</a></li>
+        <li><a class="nav-link" href="https://orchestack.ng/">Home</a></li>
         <li><a class="nav-link" href="https://orchestack.ng/services.html">Services</a></li>
         <li><a class="nav-link" href="https://orchestack.ng/contact.html">Contact</a></li>
       </ul>
