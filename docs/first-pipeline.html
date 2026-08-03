@@ -450,12 +450,7 @@ with DAG(
 
 <p style="margin-top: 24px"><strong>How to adopt</strong>: fork both repos, replace the placeholder Airbyte connection UUIDs in <code class="inline">acme-airflow/dags/daily_pipeline.py::MAVEN_TABLES</code> with your own, set the four <code class="inline">RESEND_*</code> environment variables from the <code class="inline">acme-airflow/.env.example</code> template, and paste both repo URLs into OrcheStack's setup wizard under Orchestration → Airflow → DAGs repository and Transformation → dbt → project repository. The dbt project auto-clones into the dbt container; DAGs are picked up by the Airflow scheduler within ~30 seconds of the first git-sync poll.</p>
 
-<div class="callout">
-  <p><strong>Why two repos, not one?</strong> Each is deployed independently by OrcheStack's git-sync sidecars — the dbt container clones the dbt repo, the Airflow container clones the DAGs repo. Splitting them lets analytics engineers own the dbt project without touching Airflow (and vice versa), and lets you use the two independently on other projects. The <a href="https://github.com/tripleaceme/acme-dbt/blob/main/models/overview.md">acme-dbt overview</a> and the <a href="https://github.com/tripleaceme/acme-airflow/blob/main/README.md">acme-airflow README</a> both document the split.</p>
-</div>
-
 <h2 id="dbt-project">Set up your dbt project</h2>
-<p>All three paths assume your dbt project files exist at <code class="inline">/opt/airflow/dbt-project</code> inside the Airflow container. That path is a read-only mount of the same volume the dbt service uses (<code class="inline">orchestack-dbt-repo</code>), so you populate it from the dbt service side and it appears in Airflow.</p>
 <p>Two ways to get your dbt project in there:</p>
 <ol>
   <li><strong>Set <code class="inline">DBT_REPO_URL</code> in your <code class="inline">.env</code></strong> (or via the dashboard's Edit Config page). The dbt service clones the repo on next start.</li>
