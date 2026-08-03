@@ -338,6 +338,7 @@ docker compose -f system/docker/docker-compose.yml up -d</pre>
             ("path-a", "Path A: Airbyte → dbt → Metabase"),
             ("path-b", "Path B: Python ingest → dbt → Tableau"),
             ("path-c", "Path C: dlt → dbt → engineer queries warehouse"),
+            ("path-d", "Path D: Production reference (Maven Fuzzy Factory)"),
             ("dbt-project", "Set up your dbt project"),
             ("compose-your-dag", "Trigger and verify"),
         ],
@@ -353,10 +354,11 @@ docker compose -f system/docker/docker-compose.yml up -d</pre>
     <tr><td><a href="#path-a">A</a></td><td>Airbyte</td><td>dbt + Cosmos</td><td>Metabase</td><td>… want the classic ELT stack out of the box</td></tr>
     <tr><td><a href="#path-b">B</a></td><td>Custom Python loader</td><td>dbt + Cosmos</td><td>External Tableau (or any BI tool outside OrcheStack)</td><td>… already have a BI tool and want to bring your own ingestion logic</td></tr>
     <tr><td><a href="#path-c">C</a></td><td><a href="https://dlthub.com">dlt</a></td><td>dbt + Cosmos</td><td>None — engineers query the warehouse directly</td><td>… are a data team without analyst-facing BI yet</td></tr>
+    <tr><td><a href="#path-d">D</a></td><td>Airbyte (6 parallel tables)</td><td>dbt medallion + <code class="inline">--store-failures</code></td><td>Metabase + Tableau + MinIO archive</td><td>… want the production reference, matching the OrcheStack live demo</td></tr>
   </tbody>
 </table>
 <div class="callout">
-  <p><strong>You can compose your own path.</strong> Mix the ingestion pattern from B with the BI pattern from A. Or run two ingestion sources in the same DAG. The patterns are independent — they share only dbt+Cosmos as the middle stage.</p>
+  <p><strong>You can compose your own path.</strong> Mix the ingestion pattern from B with the BI pattern from A. Or run two ingestion sources in the same DAG. Paths A/B/C are independent teaching examples; Path D is the reference implementation the OrcheStack live demo actually runs, wired end-to-end across two public repos.</p>
 </div>
 
 <h2 id="path-a">Path A: Airbyte → dbt → Metabase</h2>
@@ -592,6 +594,89 @@ with DAG(
 <p>No third stage. Engineers query the resulting tables in pgAdmin or via <code class="inline">psql</code>. Adding BI later is a fourth task; the DAG above is already useful without it.</p>
 <div class="callout">
   <p><strong>Setting dlt destination credentials</strong>: dlt reads PostgreSQL credentials from environment variables (<code class="inline">DESTINATION__POSTGRES__CREDENTIALS__*</code>). Set these in the Airflow Variable UI or via Airflow's environment-variable pass-through — never hardcode them in the DAG.</p>
+</div>
+
+<h2 id="path-d">Path D: Production reference (Maven Fuzzy Factory)</h2>
+<p>The pattern the OrcheStack live demo actually runs. Two public repos work together — an <a href="https://github.com/tripleaceme/acme-dbt">acme-dbt</a> project that defines the medallion warehouse, and an <a href="https://github.com/tripleaceme/acme-airflow">acme-airflow</a> repo that owns the two DAGs orchestrating it.</p>
+
+<p><strong>The two repos</strong>:</p>
+<table class="docs-table">
+  <thead>
+    <tr><th>Repo</th><th>What lives there</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="https://github.com/tripleaceme/acme-dbt"><code class="inline">acme-dbt</code></a></td>
+      <td>
+        dbt project modelling the Maven Fuzzy Factory dataset through <strong>bronze / silver / gold</strong> layers.
+        Six thin passthrough bronze models, silver organised by business domain (orders / traffic / products),
+        gold facts + dimensions + one-big-table. Ships a custom <code class="inline">overview.md</code> that renders as
+        the dbt-docs landing page in the shape of a company modelling handbook.
+        <code class="inline">dbt_project_evaluator</code> lints project structure on every build.
+      </td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/tripleaceme/acme-airflow"><code class="inline">acme-airflow</code></a></td>
+      <td>
+        Two DAGs. <code class="inline">daily_pipeline</code>: six parallel Airbyte syncs (one per Maven table) →
+        parallel MinIO parquet-snapshot branch + <code class="inline">dbt build --store-failures</code> →
+        Metabase refresh → success email with per-table row counts.
+        <code class="inline">dq_pipeline</code>: reads the <code class="inline">*_dbt_test__audit</code> schemas 30 minutes later
+        and writes summary rows to <code class="inline">warehouse.dq_effort.dbt_test_failures</code> for a DQ dashboard.
+        Both DAGs alert to Slack and email on failure.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>What Path D adds beyond Path A</strong>:</p>
+<table class="docs-table">
+  <thead>
+    <tr><th>Concern</th><th>Path A</th><th>Path D</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Airbyte trigger</td>
+      <td>Raw <code class="inline">HttpOperator</code> + <code class="inline">HttpSensor</code></td>
+      <td><code class="inline">trigger_sync_and_wait()</code> helper — centralises the poll loop + row-count edge cases</td>
+    </tr>
+    <tr>
+      <td>Table count</td>
+      <td>1 connection</td>
+      <td>6 parallel connections, one per Maven table</td>
+    </tr>
+    <tr>
+      <td>Data-lake snapshot</td>
+      <td>—</td>
+      <td>Parallel branch writes each bronze table as partitioned parquet to <code class="inline">s3://data-lake/bronze/mysql_production/&lt;table&gt;/dt=YYYY-MM-DD/</code></td>
+    </tr>
+    <tr>
+      <td>dbt tests</td>
+      <td>Cosmos runs models only</td>
+      <td><code class="inline">dbt build --store-failures</code> — models + tests, with failing rows persisted to audit schemas</td>
+    </tr>
+    <tr>
+      <td>Data-quality dashboard</td>
+      <td>—</td>
+      <td>Separate <code class="inline">dq_pipeline</code> DAG that aggregates audit rows into a table Metabase can visualise</td>
+    </tr>
+    <tr>
+      <td>Notifications</td>
+      <td>—</td>
+      <td>Slack + Resend email on failure; success email with per-run ingestion summary</td>
+    </tr>
+    <tr>
+      <td>Cold-tier startup</td>
+      <td>Airbyte must already be running</td>
+      <td>OrcheStack lifecycle-pipeline recipe wakes Airbyte at 01:55 UTC before the 02:00 UTC DAG fires — Airbyte is only resident ~30 min/day</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>How to adopt</strong>: fork both repos, replace the placeholder Airbyte connection UUIDs in <code class="inline">acme-airflow/dags/daily_pipeline.py::MAVEN_TABLES</code> with your own, set the four <code class="inline">RESEND_*</code> environment variables from the <code class="inline">acme-airflow/.env.example</code> template, and paste both repo URLs into OrcheStack's setup wizard under Orchestration → Airflow → DAGs repository and Transformation → dbt → project repository. The dbt project auto-clones into the dbt container; DAGs are picked up by the Airflow scheduler within ~30 seconds of the first git-sync poll.</p>
+
+<div class="callout">
+  <p><strong>Why two repos, not one?</strong> Each is deployed independently by OrcheStack's git-sync sidecars — the dbt container clones the dbt repo, the Airflow container clones the DAGs repo. Splitting them lets analytics engineers own the dbt project without touching Airflow (and vice versa), and lets you use the two independently on other projects. The <a href="https://github.com/tripleaceme/acme-dbt/blob/main/models/overview.md">acme-dbt overview</a> and the <a href="https://github.com/tripleaceme/acme-airflow/blob/main/README.md">acme-airflow README</a> both document the split.</p>
 </div>
 
 <h2 id="dbt-project">Set up your dbt project</h2>
