@@ -152,8 +152,8 @@ body.mnav-open { overflow: hidden; }
   }
   .mnav-links a {
     display: block;
-    font-size: 22px; font-weight: 600; color: var(--text);
-    padding: 14px 0;
+    font-size: 16px; font-weight: 500; color: var(--text);
+    padding: 12px 0;
     text-decoration: none;
     border-bottom: 1px solid var(--border-2);
   }
@@ -960,9 +960,9 @@ footer { border-top: 1px solid var(--border); padding: 32px 0; color: var(--mute
   text-decoration: none;
 }
 .nav-icon svg { width: 18px; height: 18px; }
-@media (max-width: 780px) {
-  .nav-social { display: none; }
-}
+/* .nav-social stays visible on mobile — the GitHub icon appears
+   before the hamburger button in the header, matching the sidetrek
+   pattern of icon(s) + hamburger. */
 
 /* ---------------- Sidetrek-style 4-step install section ---------------- */
 .steps4 {
@@ -1210,9 +1210,22 @@ footer { border-top: 1px solid var(--border); padding: 32px 0; color: var(--mute
 .hero-bg-dot.d5 { top: 42%; left: 72%; --dx:-170px; --dy:  28px; animation-delay: 3.5s; color: #C72E49; background: #C72E49; }
 .hero-bg-dot.d6 { top: 78%; left: 64%; --dx: 140px; --dy: -38px; animation-delay: 7.5s; color: #017CEE; background: #017CEE; }
 
-/* Hide the animation on small screens (it competes with the collapsed hero)
-   and honour users who prefer reduced motion. */
-@media (max-width: 880px) { .hero-bg { display: none; } }
+/* Mobile — keep the drifting logos + dots visible but scale them down
+   so they don't dominate the collapsed hero copy. We override width/
+   height per logo (NOT `transform: scale`) because the drift animation
+   already uses `transform: translate(...)` and a scale would fight it.
+   Opacity is dropped so they read as background texture. */
+@media (max-width: 880px) {
+  .hero-bg-logo { opacity: 0.55; }
+  .hero-bg-logo.l1 { width: 32px; height: 32px; }
+  .hero-bg-logo.l2 { width: 26px; height: 26px; }
+  .hero-bg-logo.l3 { width: 24px; height: 24px; }
+  .hero-bg-logo.l4 { width: 26px; height: 26px; }
+  .hero-bg-logo.l5 { width: 28px; height: 28px; }
+  .hero-bg-logo.l6 { width: 28px; height: 28px; }
+  .hero-bg-logo.l7 { width: 26px; height: 26px; }
+  .hero-bg-dot { width: 8px; height: 8px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .hero-bg-logo, .hero-bg-dot { animation: none; }
   .hero-bg-dot { opacity: 0.4; }
