@@ -73,6 +73,22 @@ release.
   before each scheduled run; for now, pin is the answer.
 
 
+### Fixed (Setup wizard greeting hardcoded a personal name)
+
+- **Welcome page greeted every operator as "Ayoade"** regardless of
+  who signed up. The h1 in `system/auth/public/setup/welcome.html`
+  was a static string ("Welcome to OrcheStack, Ayoade 👋") left
+  behind from a design draft that never got wired to the profile the
+  signup form stashes into localStorage. Fix: default the h1 to a
+  neutral "Welcome to OrcheStack 👋", give it an id, and let the
+  existing profile-populate script derive the first name from
+  `state.profile.full_name` (split on whitespace, take the first
+  token) so a signup as "Temitope Adegbite" greets "Welcome to
+  OrcheStack, Temitope 👋". Falls back silently to the neutral form
+  if the operator navigated to `/setup/welcome` directly and
+  localStorage is empty. No template engine, no server round-trip —
+  the auth container remains static-nginx.
+
 ### Fixed (Airflow 3 health endpoint)
 
 - **Airflow container reported unhealthy forever** because the

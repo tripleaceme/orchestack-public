@@ -40,7 +40,7 @@
       </span>
     </div>
 
-    <h1>Welcome to OrcheStack, Ayoade 👋</h1>
+    <h1 id="welcome-heading">Welcome to OrcheStack 👋</h1>
     <p class="sub">Your account is created. Let's turn it into a working data platform. The next few steps will take about <strong>5–10 minutes</strong>, plus a few minutes for OrcheStack to pull and start the Docker images you pick.</p>
 
     <div class="preview-steps">
@@ -98,12 +98,26 @@
     try {
       const state = JSON.parse(localStorage.getItem('OrcheStack.setup') || '{}');
       const email = state.profile && state.profile.email;
-      if (!email) return;
-      const banner = document.getElementById('signed-in-banner');
-      const target = document.getElementById('signed-in-email');
-      if (target) target.textContent = email;
-      if (banner) banner.hidden = false;
-    } catch (e) { /* fall through; banner stays hidden */ }
+      if (email) {
+        const banner = document.getElementById('signed-in-banner');
+        const target = document.getElementById('signed-in-email');
+        if (target) target.textContent = email;
+        if (banner) banner.hidden = false;
+      }
+
+      // Personalise the h1 with the operator's first name if we have a
+      // full_name in the stashed profile. Falls back silently to the
+      // static "Welcome to OrcheStack 👋" if the profile is missing
+      // (operator navigated here directly, or cleared localStorage).
+      const fullName = state.profile && state.profile.full_name;
+      if (fullName) {
+        const first = String(fullName).trim().split(/\s+/)[0];
+        if (first) {
+          const h = document.getElementById('welcome-heading');
+          if (h) h.textContent = `Welcome to OrcheStack, ${first} 👋`;
+        }
+      }
+    } catch (e) { /* fall through; static greeting stands */ }
   })();
 </script>
 
