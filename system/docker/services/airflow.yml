@@ -1,4 +1,4 @@
-# Apache Airflow — orchestration (hot-tier).
+# Apache Airflow — orchestration (cold-tier).
 #
 # Single-container LocalExecutor deployment. Production setups split
 # webserver + scheduler + worker into separate containers; for the
@@ -160,7 +160,7 @@ services:
       start_period: 60s
     labels:
       - orchestack.service=airflow
-      - orchestack.tier=hot
+      - orchestack.tier=cold
       - traefik.enable=true
       - traefik.http.routers.airflow.rule=PathPrefix(`/app/airflow`)
       - traefik.http.routers.airflow.entrypoints=web

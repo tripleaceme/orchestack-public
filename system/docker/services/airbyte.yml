@@ -1,4 +1,4 @@
-# Airbyte — ingestion (hot-tier).
+# Airbyte — ingestion (cold-tier).
 #
 # This is the 0.50.55 multi-container Airbyte OSS layout, adapted for
 # OrcheStack's pattern. The earlier "single-image airbyte/airbyte"
@@ -75,7 +75,7 @@ services:
       - orchestack-net
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
 
   airbyte-bootloader:
     image: airbyte/bootloader:0.50.55
@@ -97,7 +97,7 @@ services:
         condition: service_completed_successfully
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
 
   airbyte-temporal:
     image: airbyte/temporal:0.50.55
@@ -125,7 +125,7 @@ services:
         target: /etc/temporal/config/dynamicconfig/development.yaml
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
 
   airbyte-server:
     image: airbyte/server:0.50.55
@@ -173,7 +173,7 @@ services:
         condition: service_completed_successfully
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
 
   airbyte-worker:
     image: airbyte/worker:0.50.55
@@ -240,7 +240,7 @@ services:
       start_period: 60s
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
 
   airbyte-webapp:
     image: airbyte/webapp:0.50.55
@@ -271,7 +271,7 @@ services:
       start_period: 45s
     labels:
       - orchestack.service=airbyte
-      - orchestack.tier=hot
+      - orchestack.tier=cold
       - traefik.enable=true
       # Airbyte's webapp expects to live at root (/). We strip /app/airbyte_db
       # via Traefik middleware; the SPA reads paths relative to its own

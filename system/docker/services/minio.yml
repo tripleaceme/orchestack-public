@@ -1,4 +1,4 @@
-# MinIO — S3-compatible object store (hot-tier).
+# MinIO — S3-compatible object store (cold-tier).
 #
 # Stays running so Airbyte can write raw landings + dbt can read them
 # without a cold-start delay. Console is served at /app/minio via
@@ -44,7 +44,7 @@ services:
       start_period: 15s
     labels:
       - orchestack.service=minio
-      - orchestack.tier=hot
+      - orchestack.tier=cold
       - traefik.enable=true
       # Console UI (port 9001) under /app/minio
       - traefik.http.routers.minio.rule=PathPrefix(`/app/minio`)
