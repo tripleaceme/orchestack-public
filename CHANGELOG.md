@@ -14,6 +14,37 @@ Entries omit categories that have no changes for that release.
 Pending changes will be listed here and rolled into the next tagged
 release.
 
+## [0.1.2] — 2026-08-17
+
+### Fixed (Setup wizard — welcome greeting hardcoded a personal name)
+
+- **Welcome page greeted every operator as "Ayoade"** regardless of
+  who signed up. The h1 in `system/auth/public/setup/welcome.html`
+  was a static string ("Welcome to OrcheStack, Ayoade 👋") left
+  behind from a design draft that never got wired to the profile the
+  signup form stashes into localStorage. Fix: default the h1 to a
+  neutral "Welcome to OrcheStack 👋", give it an id, and let the
+  existing profile-populate script derive the first name from
+  `state.profile.full_name` (split on whitespace, take the first
+  token) so a signup as "Temitope Adegbite" greets "Welcome to
+  OrcheStack, Temitope 👋". Falls back silently to the neutral form
+  if the operator navigated to `/setup/welcome` directly and
+  localStorage is empty. No template engine, no server round-trip —
+  the auth container remains static-nginx.
+
+### Fixed (Setup wizard — "None" removed from Database admin UI dropdown)
+
+- **Database admin UI dropdown offered "None" as a valid pick.** A
+  DB admin surface is functionally essential on a data platform —
+  the operator needs some way to inspect and query the warehouse.
+  Picking "None" left the operator with no SQL client at all after
+  setup. Removed the offending option from
+  `system/auth/public/setup/select.html`; pgAdmin remains the
+  selected default, Adminer and pgweb stay as coming-soon options.
+  The other five wizard rows still offer "None" because those
+  layers (ingestion, data lake, data quality, governance,
+  BI/visualisation) are legitimately optional for some deployments.
+
 ## [0.1.1] — 2026-06-25
 
 ### Changed (Airflow 2.10 instead of Airflow 3)
@@ -72,22 +103,6 @@ release.
   schedules out of Airflow's metadata DB and auto-wake briefly
   before each scheduled run; for now, pin is the answer.
 
-
-### Fixed (Setup wizard greeting hardcoded a personal name)
-
-- **Welcome page greeted every operator as "Ayoade"** regardless of
-  who signed up. The h1 in `system/auth/public/setup/welcome.html`
-  was a static string ("Welcome to OrcheStack, Ayoade 👋") left
-  behind from a design draft that never got wired to the profile the
-  signup form stashes into localStorage. Fix: default the h1 to a
-  neutral "Welcome to OrcheStack 👋", give it an id, and let the
-  existing profile-populate script derive the first name from
-  `state.profile.full_name` (split on whitespace, take the first
-  token) so a signup as "Temitope Adegbite" greets "Welcome to
-  OrcheStack, Temitope 👋". Falls back silently to the neutral form
-  if the operator navigated to `/setup/welcome` directly and
-  localStorage is empty. No template engine, no server round-trip —
-  the auth container remains static-nginx.
 
 ### Fixed (Airflow 3 health endpoint)
 
